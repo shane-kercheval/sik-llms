@@ -14,7 +14,7 @@ message = user_message("What is the capital of France?")
 # sync
 response = model(messages=[message])
 
-# async
+# async streaming
 responses = []
 summary = None
 async for response in model.run_async(messages=[message]):
