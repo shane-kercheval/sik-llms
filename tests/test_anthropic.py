@@ -3,7 +3,7 @@ import asyncio
 import os
 import pytest
 from dotenv import load_dotenv
-from sik_llms.models_base import Client, system_message, user_message, RegisteredModels
+from sik_llms.models_base import Client, system_message, user_message, RegisteredClients
 from sik_llms.anthropic import (
     Anthropic,
     ChatChunkResponse,
@@ -62,13 +62,13 @@ async def test__async_anthropic_completion_wrapper_call():
 
 
 def test__Anthropic_registration():
-    assert Client.is_registered(RegisteredModels.ANTHROPIC)
+    assert Client.is_registered(RegisteredClients.ANTHROPIC)
 
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 def test__Anthropic__instantiate():
     model = Client.instantiate(
-        model_type=RegisteredModels.ANTHROPIC,
+        client_type=RegisteredClients.ANTHROPIC,
         model_name=ANTHROPIC_TEST_MODEL,
     )
     assert isinstance(model, Anthropic)
@@ -82,7 +82,7 @@ def test__Anthropic__instantiate():
 @pytest.mark.asyncio
 async def test__Anthropic__instantiate__run_async():
     model = Client.instantiate(
-        model_type=RegisteredModels.ANTHROPIC,
+        client_type=RegisteredClients.ANTHROPIC,
         model_name=ANTHROPIC_TEST_MODEL,
     )
     responses = []
@@ -98,7 +98,7 @@ async def test__Anthropic__instantiate__run_async():
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 def test__Anthropic_instantiate___parameters():
     model = Client.instantiate(
-        model_type=RegisteredModels.ANTHROPIC,
+        client_type=RegisteredClients.ANTHROPIC,
         model_name=ANTHROPIC_TEST_MODEL,
         temperature=0.5,
         max_tokens=100,

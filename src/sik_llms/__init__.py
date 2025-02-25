@@ -2,7 +2,7 @@
 from enum import Enum
 from sik_llms.models_base import (
     Client,
-    RegisteredModels,
+    RegisteredClients,
     user_message,
     assistant_message,
     system_message,
@@ -26,7 +26,7 @@ from sik_llms.anthropic import (
 
 def create_client(
         model_name: str,
-        model_type: str | Enum | None = None,
+        client_type: str | Enum | None = None,
         **model_kwargs: dict | None,
     ) -> Client:
     """
@@ -37,7 +37,7 @@ def create_client(
     Args:
         model_name:
             The name of the model to create (e.g. 'gpt-4o-mini').
-        model_type:
+        client_type:
             The type of model to create. This can be a string or a value from RegisteredModels.
             If None, the model type is inferred from the model name. This only works for models
             registered in the RegisteredModels enum. Additionally, it will chose chat models over
@@ -48,20 +48,20 @@ def create_client(
     Returns:
         A model instance.
     """
-    if model_type is None:
+    if client_type is None:
         if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
-            model_type = RegisteredModels.OPENAI
+            client_type = RegisteredClients.OPENAI
         elif model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
-            model_type = RegisteredModels.ANTHROPIC
+            client_type = RegisteredClients.ANTHROPIC
         else:
             raise ValueError(f"Unknown model name '{model_name}'")
-    return Client.instantiate(model_type=model_type, model_name=model_name, **model_kwargs)
+    return Client.instantiate(client_type=client_type, model_name=model_name, **model_kwargs)
 
 
 __all__ = [  # noqa: RUF022
     'create_client',
     'Client',
-    'RegisteredModels',
+    'RegisteredClients',
     'user_message',
     'assistant_message',
     'system_message',

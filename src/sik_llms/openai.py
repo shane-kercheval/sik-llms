@@ -14,7 +14,7 @@ from sik_llms.models_base import (
     Client,
     ChatChunkResponse,
     ChatResponseSummary,
-    RegisteredModels,
+    RegisteredClients,
 )
 
 CHAT_MODEL_COST_PER_TOKEN = {
@@ -120,7 +120,7 @@ def _parse_completion_chunk(chunk) -> ChatChunkResponse:  # noqa: ANN001
     )
 
 
-@Client.register(RegisteredModels.OPENAI)
+@Client.register(RegisteredClients.OPENAI)
 class OpenAI(Client):
     """
     Wrapper for OpenAI API which provides a simple interface for calling the
@@ -216,7 +216,7 @@ class OpenAI(Client):
         )
 
 
-@Client.register(RegisteredModels.OPENAI_FUNCTIONS)
+@Client.register(RegisteredClients.OPENAI_FUNCTIONS)
 class OpenAIFunctions(Client):
     """Wrapper for OpenAI API function calling."""
 

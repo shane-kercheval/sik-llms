@@ -7,7 +7,7 @@ from sik_llms.models_base import (
     Client,
     ChatChunkResponse,
     ChatResponseSummary,
-    RegisteredModels,
+    RegisteredClients,
 )
 
 
@@ -67,7 +67,7 @@ def _parse_completion_chunk(chunk) -> ChatChunkResponse | None:  # noqa: ANN001
     return None
 
 
-@Client.register(RegisteredModels.ANTHROPIC)
+@Client.register(RegisteredClients.ANTHROPIC)
 class Anthropic(Client):
     """
     Wrapper for Anthropic API which provides a simple interface for calling the

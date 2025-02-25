@@ -10,7 +10,7 @@ from typing import Any, TypeVar
 from sik_llms.utilities import Registry
 
 
-class RegisteredModels(Enum):
+class RegisteredClients(Enum):
     """Enum for model types."""
 
     OPENAI = 'OpenAI'
@@ -218,28 +218,28 @@ class Client(ABC):
         pass
 
     @classmethod
-    def register(cls, model_type: str | Enum):
+    def register(cls, client_type: str | Enum):
         """Register a subclass of Model."""
 
         def decorator(subclass: type[Client]) -> type[Client]:
             assert issubclass(
                 subclass,
                 Client,
-            ), f"Model '{model_type}' ({subclass.__name__}) must extend Model"
-            cls.registry.register(type_name=model_type, item=subclass)
+            ), f"Model '{client_type}' ({subclass.__name__}) must extend Model"
+            cls.registry.register(type_name=client_type, item=subclass)
             return subclass
 
         return decorator
 
     @classmethod
-    def is_registered(cls, model_type: str | Enum) -> bool:
+    def is_registered(cls, client_type: str | Enum) -> bool:
         """Check if a model type is registered."""
-        return model_type in cls.registry
+        return client_type in cls.registry
 
     @classmethod
     def instantiate(
         cls: type[M],
-        model_type: str | Enum,
+        client_type: str | Enum,
         model_name: str,
         **model_kwargs: dict | None,
     ) -> M | list[M]:
@@ -248,10 +248,10 @@ class Client(ABC):
 
         This method requires that the Model subclass has been registered with the `register`
         decorator before calling this method. It also requires that the dictionary has a
-        `Model_type` field that matches the type name of the registered Model subclass.
+        `client_type` field that matches the type name of the registered Model subclass.
 
         Args:
-            model_type:
+            client_type:
                 The type of model to instantiate.
             model_name:
                 The name of the model to instantiate.
@@ -263,8 +263,8 @@ class Client(ABC):
                     'top_p': 0.9,
                 }
         """
-        if cls.is_registered(model_type):
+        if cls.is_registered(client_type):
             model_kwargs = deepcopy(model_kwargs)
             model_kwargs['model_name'] = model_name
-            return cls.registry.create_instance(type_name=model_type, **model_kwargs)
-        raise ValueError(f"Unknown Model type `{model_type}`")
+            return cls.registry.create_instance(type_name=client_type, **model_kwargs)
+        raise ValueError(f"Unknown Model type `{client_type}`")

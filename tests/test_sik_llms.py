@@ -8,7 +8,7 @@ from sik_llms import (
     ChatResponseSummary,
     Function,
     Parameter,
-    RegisteredModels,
+    RegisteredClients,
     FunctionCallResponse,
     FunctionCallResult,
 )
@@ -93,7 +93,7 @@ class TestOpenAIFunctions:
         ):
         """Test calling a simple function with one required parameter."""
         client = create_client(
-            model_type=RegisteredModels.OPENAI_FUNCTIONS,
+            client_type=RegisteredClients.OPENAI_FUNCTIONS,
             model_name=OPENAI_TEST_MODEL,
             functions=[simple_weather_function],
         )

@@ -10,7 +10,7 @@ from sik_llms.models_base import (
     Parameter,
     FunctionCallResponse,
     FunctionCallResult,
-    RegisteredModels,
+    RegisteredClients,
 )
 from sik_llms.openai import (
     OpenAI,
@@ -25,11 +25,11 @@ OPENAI_TEST_MODEL = 'gpt-4o-mini'
 
 
 def test__registration__openai():
-    assert Client.is_registered(RegisteredModels.OPENAI)
+    assert Client.is_registered(RegisteredClients.OPENAI)
 
 
 def test__registration__openai_functions():
-    assert Client.is_registered(RegisteredModels.OPENAI_FUNCTIONS)
+    assert Client.is_registered(RegisteredClients.OPENAI_FUNCTIONS)
 
 
 @pytest.mark.asyncio
@@ -38,7 +38,7 @@ class TestOpenAIRegistration:
 
     async def test__openai__instantiate(self):
         client = Client.instantiate(
-            model_type=RegisteredModels.OPENAI,
+            client_type=RegisteredClients.OPENAI,
             model_name=OPENAI_TEST_MODEL,
         )
         assert isinstance(client, OpenAI)
@@ -66,7 +66,7 @@ class TestOpenAIRegistration:
         # This base_url is required for openai-compatible-server
         with pytest.raises(ValueError):  # noqa: PT011
             _ = Client.instantiate(
-                model_type=RegisteredModels.OPENAI,
+                client_type=RegisteredClients.OPENAI,
                 model_name='openai-compatible-server',
             )
 
@@ -76,7 +76,7 @@ class TestOpenAIRegistration:
             'temperature': 0.5,
         }
         client = Client.instantiate(
-            model_type=RegisteredModels.OPENAI,
+            client_type=RegisteredClients.OPENAI,
             model_name='openai-compatible-server',
             **model_config,
         )
@@ -92,7 +92,7 @@ class TestOpenAIRegistration:
             'max_tokens': 10,
         }
         client = Client.instantiate(
-            model_type=RegisteredModels.OPENAI,
+            client_type=RegisteredClients.OPENAI,
             model_name='openai-compatible-server',
             **model_config,
         )
@@ -102,7 +102,7 @@ class TestOpenAIRegistration:
 
     async def test__openai__functions_instantiate(self):
         client = Client.instantiate(
-            model_type=RegisteredModels.OPENAI_FUNCTIONS,
+            client_type=RegisteredClients.OPENAI_FUNCTIONS,
             model_name=OPENAI_TEST_MODEL,
             functions=[
                 Function(
@@ -263,7 +263,7 @@ class TestOpenAIFunctions:
         ):
         """Test calling a simple function with one required parameter."""
         client = Client.instantiate(
-            model_type=RegisteredModels.OPENAI_FUNCTIONS,
+            client_type=RegisteredClients.OPENAI_FUNCTIONS,
             model_name=OPENAI_TEST_MODEL,
             functions=[simple_weather_function],
         )
