@@ -7,13 +7,13 @@ from collections.abc import AsyncGenerator
 from openai import AsyncOpenAI
 import tiktoken
 from tiktoken import Encoding
-from sik_llms import (
+from sik_llms.models_base import (
     Function,
     FunctionCallResponse,
     FunctionCallResult,
-    Model,
+    Client,
     ChatChunkResponse,
-    ChatStreamResponseSummary,
+    ChatResponseSummary,
     RegisteredModels,
 )
 
@@ -120,8 +120,8 @@ def _parse_completion_chunk(chunk) -> ChatChunkResponse:  # noqa: ANN001
     )
 
 
-@Model.register(RegisteredModels.OPENAI)
-class OpenAI(Model):
+@Client.register(RegisteredModels.OPENAI)
+class OpenAI(Client):
     """
     Wrapper for OpenAI API which provides a simple interface for calling the
     chat.completions.create method and parsing the response.
@@ -168,12 +168,12 @@ class OpenAI(Model):
         self.model = model_name
         self.model_parameters = model_kwargs or {}
 
-    async def __call__(
+    async def run_async(
         self,
         messages: list[dict],
         model_name: str | None = None,
         **model_kwargs: dict,
-    ) -> AsyncGenerator[ChatChunkResponse | ChatStreamResponseSummary, None]:
+    ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary | None]:
         """
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
@@ -206,7 +206,8 @@ class OpenAI(Model):
             output_tokens = sum(num_tokens(model_name, chunk.content) for chunk in chunks)
             total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[model_name]['input']
             total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[model_name]['output']
-        yield ChatStreamResponseSummary(
+        yield ChatResponseSummary(
+            content=''.join([chunk.content for chunk in chunks]),
             total_input_tokens=input_tokens,
             total_output_tokens=output_tokens,
             total_input_cost=total_input_cost,
@@ -215,8 +216,8 @@ class OpenAI(Model):
         )
 
 
-@Model.register(RegisteredModels.OPENAI_FUNCTIONS)
-class OpenAIFunctions(Model):
+@Client.register(RegisteredModels.OPENAI_FUNCTIONS)
+class OpenAIFunctions(Client):
     """Wrapper for OpenAI API function calling."""
 
     def __init__(
@@ -254,19 +255,19 @@ class OpenAIFunctions(Model):
         self.client = AsyncOpenAI(base_url=server_url, api_key=api_key)
         self.model = model_name
         self.functions = functions or []
-        self.model_kwargs = model_kwargs or {}
-        if 'temperature' not in self.model_kwargs:
-            self.model_kwargs['temperature'] = 0.2
+        self.model_parameters = model_kwargs or {}
+        if 'temperature' not in self.model_parameters:
+            self.model_parameters['temperature'] = 0.2
 
 
-    async def __call__(
-        self,
-        messages: list[dict[str, str]],
-        functions: list[Function] | None = None,
-        tool_choice: str = 'required',
-        model_name: str | None = None,
-        **model_kwargs: dict[str, object],
-    ) -> FunctionCallResponse:
+    async def run_async(
+            self,
+            messages: list[dict[str, str]],
+            functions: list[Function] | None = None,
+            tool_choice: str = 'required',
+            model_name: str | None = None,
+            **model_kwargs: dict[str, object],
+        ) -> FunctionCallResponse:
         """
         Call the model with functions.
 
@@ -288,8 +289,8 @@ class OpenAIFunctions(Model):
         """
         model_name = model_name or self.model
         functions_list = functions or self.functions
-        merged_kwargs = {**self.model_kwargs, **model_kwargs}
-        tools = [func.to_dict() for func in functions_list]
+        merged_kwargs = {**self.model_parameters, **model_kwargs}
+        tools = [func.to_openai_schema() for func in functions_list]
 
         completion = await self.client.chat.completions.create(
             model=model_name,

@@ -3,7 +3,12 @@ import os
 import time
 from collections.abc import AsyncGenerator
 from anthropic import AsyncAnthropic, Anthropic as SyncAnthropic
-from sik_llms import Model, ChatChunkResponse, ChatStreamResponseSummary, RegisteredModels
+from sik_llms.models_base import (
+    Client,
+    ChatChunkResponse,
+    ChatResponseSummary,
+    RegisteredModels,
+)
 
 
 CHAT_MODEL_COST_PER_TOKEN = {
@@ -62,8 +67,8 @@ def _parse_completion_chunk(chunk) -> ChatChunkResponse | None:  # noqa: ANN001
     return None
 
 
-@Model.register(RegisteredModels.ANTHROPIC)
-class Anthropic(Model):
+@Client.register(RegisteredModels.ANTHROPIC)
+class Anthropic(Client):
     """
     Wrapper for Anthropic API which provides a simple interface for calling the
     messages.create method and parsing the response.
@@ -98,12 +103,12 @@ class Anthropic(Model):
                 anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
         return system_content, anthropic_messages
 
-    async def __call__(
-    self,
-    messages: list[dict],
-    model_name: str | None = None,
-    **model_kwargs: dict,
-    ) -> AsyncGenerator[ChatChunkResponse | ChatStreamResponseSummary, None]:
+    async def run_async(
+        self,
+        messages: list[dict],
+        model_name: str | None = None,
+        **model_kwargs: dict,
+        ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary, None]:
         """
         Streams chat chunks and returns a final summary. Parameters passed here
         override those passed to the constructor.
@@ -123,6 +128,7 @@ class Anthropic(Model):
         input_tokens = 0
         output_tokens = 0
 
+        chunks = []
         response = await self.client.messages.create(**api_params)
         async for chunk in response:
             if chunk.type == 'message_start':
@@ -132,9 +138,11 @@ class Anthropic(Model):
             parsed_chunk = _parse_completion_chunk(chunk)
             if parsed_chunk and parsed_chunk.content:
                 yield parsed_chunk
+                chunks.append(parsed_chunk)
         end_time = time.time()
 
-        yield ChatStreamResponseSummary(
+        yield ChatResponseSummary(
+            content=''.join([chunk.content for chunk in chunks]),
             total_input_tokens=input_tokens,
             total_output_tokens=output_tokens,
             total_input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[model_name]['input'],

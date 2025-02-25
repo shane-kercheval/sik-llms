@@ -2,8 +2,8 @@
 import asyncio
 import pytest
 from dotenv import load_dotenv
-from sik_llms import (
-    Model,
+from sik_llms.models_base import (
+    Client,
     system_message,
     user_message,
     Function,
@@ -15,7 +15,7 @@ from sik_llms import (
 from sik_llms.openai import (
     OpenAI,
     ChatChunkResponse,
-    ChatStreamResponseSummary,
+    ChatResponseSummary,
     OpenAIFunctions,
 )
 
@@ -24,81 +24,117 @@ load_dotenv()
 OPENAI_TEST_MODEL = 'gpt-4o-mini'
 
 
-def test_registration_openai():
-    assert Model.is_registered(RegisteredModels.OPENAI)
+def test__registration__openai():
+    assert Client.is_registered(RegisteredModels.OPENAI)
 
 
-def test_registration_openai_functions():
-    assert Model.is_registered(RegisteredModels.OPENAI_FUNCTIONS)
+def test__registration__openai_functions():
+    assert Client.is_registered(RegisteredModels.OPENAI_FUNCTIONS)
 
 
 @pytest.mark.asyncio
 class TestOpenAIRegistration:
     """Test the OpenAI Completion Wrapper registration."""
 
-    async def test_openai_instantiate(self):
-        model_config = {'model_type': RegisteredModels.OPENAI, 'model_name': OPENAI_TEST_MODEL}
-        model = Model.instantiate(model_config)
-        assert isinstance(model, OpenAI)
-        assert model.model == OPENAI_TEST_MODEL
-        assert model.client is not None
-        assert model.client.api_key
-        assert model.client.api_key != 'None'
-        assert model.client.base_url
+    async def test__openai__instantiate(self):
+        client = Client.instantiate(
+            model_type=RegisteredModels.OPENAI,
+            model_name=OPENAI_TEST_MODEL,
+        )
+        assert isinstance(client, OpenAI)
+        assert client.model == OPENAI_TEST_MODEL
+        assert client.client is not None
+        assert client.client.api_key
+        assert client.client.api_key != 'None'
+        assert client.client.base_url
 
+        # call async/stream method
         responses = []
-        async for response in model(messages=[user_message("What is the capital of France?")]):
+        async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
             if isinstance(response, ChatChunkResponse):
                 responses.append(response)
 
         assert len(responses) > 0
         assert 'Paris' in ''.join([response.content for response in responses])
 
+        # call non-async method
+        response = client(messages=[user_message("What is the capital of France?")])
+        assert isinstance(response, ChatResponseSummary)
+        assert 'Paris' in response.content
 
-    async def test_openai_compatible_server_instantiate___parameters__missing_server_url(self):
+    async def test__openai__compatible_server_instantiate___parameters__missing_server_url(self):
         # This base_url is required for openai-compatible-server
         with pytest.raises(ValueError):  # noqa: PT011
-            _ = Model.instantiate({
-                'model_type': RegisteredModels.OPENAI,
-                'model_name': 'openai-compatible-server',
-            })
+            _ = Client.instantiate(
+                model_type=RegisteredModels.OPENAI,
+                model_name='openai-compatible-server',
+            )
 
-
-    async def test_openai_compatible_server_instantiate___parameters__missing_max_tokens(self):
+    async def test__openai__compatible_server_instantiate___parameters__missing_max_tokens(self):
         model_config = {
-            'model_type': RegisteredModels.OPENAI,
-            'model_name': 'openai-compatible-server',
             'server_url': 'http://localhost:8000',
             'temperature': 0.5,
         }
-        model = Model.instantiate(model_config)
-        assert isinstance(model, OpenAI)
-        assert model.model == 'openai-compatible-server'
-        assert model.model_parameters['temperature'] == 0.5
+        client = Client.instantiate(
+            model_type=RegisteredModels.OPENAI,
+            model_name='openai-compatible-server',
+            **model_config,
+        )
+        assert isinstance(client, OpenAI)
+        assert client.model == 'openai-compatible-server'
+        assert client.model_parameters['temperature'] == 0.5
         # we need to set the max_tokens parameter to -1 to avoid it sending just 1 token
-        assert model.model_parameters['max_tokens'] is not None
+        assert client.model_parameters['max_tokens'] is not None
 
-
-    async def test_openai_compatible_server_instantiate___parameters_max_tokens(self):
+    async def test__openai__compatible_server_instantiate___parameters_max_tokens(self):
         model_config = {
-            'model_type': RegisteredModels.OPENAI,
-            'model_name': 'openai-compatible-server',
             'server_url': 'http://localhost:8000',
             'max_tokens': 10,
         }
-        model = Model.instantiate(model_config)
-        assert isinstance(model, OpenAI)
-        assert model.model == 'openai-compatible-server'
-        assert model.model_parameters['max_tokens'] == 10
+        client = Client.instantiate(
+            model_type=RegisteredModels.OPENAI,
+            model_name='openai-compatible-server',
+            **model_config,
+        )
+        assert isinstance(client, OpenAI)
+        assert client.model == 'openai-compatible-server'
+        assert client.model_parameters['max_tokens'] == 10
+
+    async def test__openai__functions_instantiate(self):
+        client = Client.instantiate(
+            model_type=RegisteredModels.OPENAI_FUNCTIONS,
+            model_name=OPENAI_TEST_MODEL,
+            functions=[
+                Function(
+                    name="get_weather",
+                    description="Get the weather for a location.",
+                    parameters=[
+                        Parameter(
+                            name="location",
+                            type="string",
+                            required=True,
+                            description="The city and country for weather info.",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        assert isinstance(client, OpenAIFunctions)
+        assert client.model == OPENAI_TEST_MODEL
+        assert client.client is not None
+        assert client.client.api_key
+        assert client.client.api_key != 'None'
+        assert client.client.base_url
+        assert client
 
 
 @pytest.mark.asyncio
 class TestOpenAI:
     """Test the OpenAI Completion Wrapper."""
 
-    async def test_async_openai_completion_wrapper_call(self):
+    async def test__async_openai_completion_wrapper_call(self):
         # Create an instance of the wrapper
-        model = OpenAI(model_name=OPENAI_TEST_MODEL)
+        client = OpenAI(model_name=OPENAI_TEST_MODEL)
         messages = [
             system_message("You are a helpful assistant."),
             user_message("What is the capital of France?"),
@@ -108,10 +144,10 @@ class TestOpenAI:
             chunks = []
             summary = None
             try:
-                async for response in model(messages=messages):
+                async for response in client.run_async(messages=messages):
                     if isinstance(response, ChatChunkResponse):
                         chunks.append(response)
-                    elif isinstance(response, ChatStreamResponseSummary):
+                    elif isinstance(response, ChatResponseSummary):
                         summary = response
                 return chunks, summary
             except Exception:
@@ -124,7 +160,7 @@ class TestOpenAI:
             response = ''.join([chunk.content for chunk in chunks])
             passed_tests.append(
                 'Paris' in response
-                and isinstance(summary, ChatStreamResponseSummary)
+                and isinstance(summary, ChatResponseSummary)
                 and summary.total_input_tokens > 0
                 and summary.total_output_tokens > 0
                 and summary.total_input_cost > 0
@@ -219,19 +255,30 @@ class TestOpenAIFunctions:
             ],
         )
 
-    async def test_single_function_single_parameter__instantiate(self, simple_weather_function: Function):  # noqa: E501
+    @pytest.mark.parametrize('is_async', [True, False])
+    async def test__single_function_single_parameter__instantiate(
+            self,
+            simple_weather_function: Function,
+            is_async: bool,
+        ):
         """Test calling a simple function with one required parameter."""
-        model_config = {
-            'model_type': RegisteredModels.OPENAI_FUNCTIONS,
-            'model_name': OPENAI_TEST_MODEL,
-            'functions': [simple_weather_function],
-        }
-        wrapper = Model.instantiate(model_config)
-        response = await wrapper(
-            messages=[
-                {"role": "user", "content": "What's the weather like in Paris?"},
-            ],
+        client = Client.instantiate(
+            model_type=RegisteredModels.OPENAI_FUNCTIONS,
+            model_name=OPENAI_TEST_MODEL,
+            functions=[simple_weather_function],
         )
+        if is_async:
+            response = await client.run_async(
+                messages=[
+                    user_message("What's the weather like in Paris?"),
+                ],
+            )
+        else:
+            response = client(
+                messages=[
+                    user_message("What's the weather like in Paris?"),
+                ],
+            )
         assert isinstance(response, FunctionCallResponse)
         assert isinstance(response.function_call, FunctionCallResult)
         assert response.function_call.name == "get_weather"
@@ -242,55 +289,90 @@ class TestOpenAIFunctions:
         assert response.input_cost > 0
         assert response.output_cost > 0
 
-    @pytest.mark.asyncio
-    async def test_single_function_multiple_parameters(self, complex_weather_function: Function):
+    @pytest.mark.parametrize('is_async', [True, False])
+    async def test__single_function_multiple_parameters(
+            self,
+            complex_weather_function: Function,
+            is_async: bool,
+        ):
         """Test calling a function with multiple parameters including optional ones."""
-        wrapper = OpenAIFunctions(
+        client = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[complex_weather_function],
         )
-        response = await wrapper(
-            messages=[
-                {"role": "user", "content": "What's the weather like in Tokyo in Celsius with forecast?"},  # noqa: E501
-            ],
-        )
+        if is_async:
+            response = await client.run_async(
+                messages=[
+                    user_message("What's the weather like in Tokyo in Celsius with forecast?"),
+                ],
+            )
+        else:
+            response = client(
+                messages=[
+                    user_message("What's the weather like in Tokyo in Celsius with forecast?"),
+                ],
+            )
         assert response.function_call.name == "get_detailed_weather"
         args = response.function_call.arguments
         assert "Tokyo" in args["location"]
         assert args.get("unit") in ["celsius", "fahrenheit"]
         assert args.get("include_forecast") is not None
 
-    @pytest.mark.asyncio
-    async def test_multiple_functions(self, simple_weather_function: Function, restaurant_function: Function):  # noqa: E501
+    @pytest.mark.parametrize('is_async', [True, False])
+    async def test__multiple_functions(
+            self,
+            simple_weather_function: Function,
+            restaurant_function: Function,
+            is_async: bool,
+        ):
         """Test providing multiple functions to the model."""
-        wrapper = OpenAIFunctions(
+        client = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[simple_weather_function, restaurant_function],
         )
         # Weather query
-        weather_response = await wrapper(
-            messages=[
-                {"role": "user", "content": "What's the weather like in London?"},
-            ],
-        )
+        if is_async:
+            weather_response = await client.run_async(
+                messages=[
+                    user_message("What's the weather like in London?"),
+                ],
+            )
+        else:
+            weather_response = client(
+                messages=[
+                    user_message("What's the weather like in London?"),
+                ],
+            )
         assert weather_response.function_call.name == "get_weather"
         assert "London" in weather_response.function_call.arguments["location"]
         # Restaurant query
-        restaurant_response = await wrapper(
-            messages=[
-                {"role": "user", "content": "Find me an expensive Italian restaurant in New York"},
-            ],
-        )
+        if is_async:
+            restaurant_response = await client.run_async(
+                messages=[
+                    user_message("Find me an expensive Italian restaurant in New York"),
+                ],
+            )
+        else:
+            restaurant_response = client(
+                messages=[
+                    user_message("Find me an expensive Italian restaurant in New York"),
+                ],
+            )
         assert restaurant_response.function_call.name == "search_restaurants"
         args = restaurant_response.function_call.arguments
         assert "New York" in args["location"]
         assert args.get("cuisine") == "italian"
         assert args.get("price_range") in ["$$", "$$$", "$$$$"]
 
-    @pytest.mark.asyncio
-    async def test_enum_parameters(self, restaurant_function: Function):
+
+    @pytest.mark.parametrize('is_async', [True, False])
+    async def test__enum_parameters(
+            self,
+            restaurant_function: Function,
+            is_async: bool,
+        ):
         """Test handling of enum parameters."""
-        wrapper = OpenAIFunctions(
+        client = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[restaurant_function],
         )
@@ -310,17 +392,17 @@ class TestOpenAIFunctions:
         ]
 
         for prompt, expected_args in test_cases:
-            response = await wrapper(
-                messages=[{"role": "user", "content": prompt}],
-            )
+            if is_async:
+                response = await client.run_async(messages=[user_message(prompt)])
+            else:
+                response = client(messages=[user_message(prompt)])
             args = response.function_call.arguments
             for key, value in expected_args.items():
                 assert args.get(key) == value
 
-    @pytest.mark.asyncio
-    async def test_concurrent_function_calls(self, simple_weather_function: Function):
+    async def test__concurrent_function_calls(self, simple_weather_function: Function):
         """Test multiple concurrent function calls."""
-        wrapper = OpenAIFunctions(
+        client = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[simple_weather_function],
         )
@@ -332,7 +414,7 @@ class TestOpenAIFunctions:
         ]
 
         responses = await asyncio.gather(*(
-            wrapper(messages=msg) for msg in messages
+            client.run_async(messages=msg) for msg in messages
         ))
 
         for i, response in enumerate(responses):
@@ -341,21 +423,34 @@ class TestOpenAIFunctions:
             assert response.input_tokens > 0
             assert response.output_tokens > 0
 
-    @pytest.mark.asyncio
-    async def test_function_override(self, simple_weather_function: Function, complex_weather_function: Function):  # noqa: E501
+    @pytest.mark.parametrize('is_async', [True, False])
+    async def test__function_override(
+            self,
+            simple_weather_function: Function,
+            complex_weather_function: Function,
+            is_async: bool,
+        ):
         """Test overriding functions during the call."""
-        wrapper = OpenAIFunctions(
+        client = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[simple_weather_function],
         )
 
         # Override with complex weather function
-        response = await wrapper(
-            messages=[
-                {"role": "user", "content": "What's the weather like in Berlin in Fahrenheit?"},
-            ],
-            functions=[complex_weather_function],
-        )
+        if is_async:
+            response = await client.run_async(
+                messages=[
+                    user_message("What's the weather like in Berlin in Fahrenheit?"),
+                ],
+                functions=[complex_weather_function],
+            )
+        else:
+            response = client(
+                messages=[
+                    user_message("What's the weather like in Berlin in Fahrenheit?"),
+                ],
+                functions=[complex_weather_function],
+            )
 
         assert response.function_call.name == "get_detailed_weather"
         args = response.function_call.arguments

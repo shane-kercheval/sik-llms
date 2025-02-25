@@ -3,11 +3,11 @@ import asyncio
 import os
 import pytest
 from dotenv import load_dotenv
-from sik_llms import Model, system_message, user_message, RegisteredModels
+from sik_llms.models_base import Client, system_message, user_message, RegisteredModels
 from sik_llms.anthropic import (
     Anthropic,
     ChatChunkResponse,
-    ChatStreamResponseSummary,
+    ChatResponseSummary,
 )
 load_dotenv()
 
@@ -16,10 +16,10 @@ ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku-latest'
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 @pytest.mark.asyncio
-async def test_async_anthropic_completion_wrapper_call():
+async def test__async_anthropic_completion_wrapper_call():
     """Test the Anthropic wrapper with multiple concurrent calls."""
     # Create an instance of the wrapper
-    model = Anthropic(
+    client = Anthropic(
         model_name=ANTHROPIC_TEST_MODEL,
         max_tokens=100,
     )
@@ -32,10 +32,10 @@ async def test_async_anthropic_completion_wrapper_call():
         chunks = []
         summary = None
         try:
-            async for response in model(messages=messages):
+            async for response in client.run_async(messages=messages):
                 if isinstance(response, ChatChunkResponse):
                     chunks.append(response)
-                elif isinstance(response, ChatStreamResponseSummary):
+                elif isinstance(response, ChatResponseSummary):
                     summary = response
             return chunks, summary
         except Exception:
@@ -48,7 +48,7 @@ async def test_async_anthropic_completion_wrapper_call():
         response = ''.join([chunk.content for chunk in chunks])
         passed_tests.append(
             'Paris' in response
-            and isinstance(summary, ChatStreamResponseSummary)
+            and isinstance(summary, ChatResponseSummary)
             and summary.total_input_tokens > 0
             and summary.total_output_tokens > 0
             and summary.total_input_cost > 0
@@ -61,16 +61,16 @@ async def test_async_anthropic_completion_wrapper_call():
     )
 
 
-def test_Anthropic_registration():
-    assert Model.is_registered(RegisteredModels.ANTHROPIC)
+def test__Anthropic_registration():
+    assert Client.is_registered(RegisteredModels.ANTHROPIC)
 
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-def test_Anthropic_from_dict():
-    model = Model.instantiate({
-        'model_type': RegisteredModels.ANTHROPIC,
-        'model_name': ANTHROPIC_TEST_MODEL,
-    })
+def test__Anthropic__instantiate():
+    model = Client.instantiate(
+        model_type=RegisteredModels.ANTHROPIC,
+        model_name=ANTHROPIC_TEST_MODEL,
+    )
     assert isinstance(model, Anthropic)
     assert model.model == ANTHROPIC_TEST_MODEL
     assert model.client is not None
@@ -80,27 +80,29 @@ def test_Anthropic_from_dict():
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 @pytest.mark.asyncio
-async def test_Anthropic_from_dict_call():
-    model = Model.instantiate({
-        'model_type': RegisteredModels.ANTHROPIC,
-        'model_name': ANTHROPIC_TEST_MODEL,
-    })
+async def test__Anthropic__instantiate__run_async():
+    model = Client.instantiate(
+        model_type=RegisteredModels.ANTHROPIC,
+        model_name=ANTHROPIC_TEST_MODEL,
+    )
     responses = []
-    async for response in model(messages=[user_message("What is the capital of France?")]):
+    async for response in model.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
         if isinstance(response, ChatChunkResponse):
             responses.append(response)
 
     assert len(responses) > 0
     assert 'Paris' in ''.join([response.content for response in responses])
 
+
+
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-def test_Anthropic_from_dict___parameters():
-    model = Model.instantiate({
-        'model_type': RegisteredModels.ANTHROPIC,
-        'model_name': ANTHROPIC_TEST_MODEL,
-        'temperature': 0.5,
-        'max_tokens': 100,
-    })
+def test__Anthropic_instantiate___parameters():
+    model = Client.instantiate(
+        model_type=RegisteredModels.ANTHROPIC,
+        model_name=ANTHROPIC_TEST_MODEL,
+        temperature=0.5,
+        max_tokens=100,
+    )
     assert isinstance(model, Anthropic)
     assert model.model == ANTHROPIC_TEST_MODEL
     assert model.model_parameters['temperature'] == 0.5
