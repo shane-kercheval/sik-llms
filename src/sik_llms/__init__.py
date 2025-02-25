@@ -8,6 +8,14 @@ from typing import Any, TypeVar
 from sik_llms.utilities import Registry
 
 
+class RegisteredModels(Enum):
+    """Enum for model types."""
+
+    OPENAI = 'OpenAI'
+    OPENAI_FUNCTIONS = 'OpenAIFunctions'
+    ANTHROPIC = 'Anthropic'
+
+
 def user_message(content: str) -> dict:
     """Returns a user message."""
     return {'role': 'user', 'content': content}

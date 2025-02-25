@@ -2,28 +2,33 @@
 import os
 import time
 from collections.abc import AsyncGenerator
-from anthropic import AsyncAnthropic, Anthropic
-from sik_llms import Model, ChatChunkResponse, ChatStreamResponseSummary
+from anthropic import AsyncAnthropic, Anthropic as SyncAnthropic
+from sik_llms import Model, ChatChunkResponse, ChatStreamResponseSummary, RegisteredModels
 
-
-ANTHROPIC = 'Anthropic'
 
 CHAT_MODEL_COST_PER_TOKEN = {
+    'claude-3-7-sonnet-20250219': {'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000},
+
     'claude-3-5-haiku-20241022': {'input': 0.80 / 1_000_000, 'output': 4.0 / 1_000_000},
     'claude-3-5-sonnet-20241022': {'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000},
+
     'claude-3-opus-20240229': {'input': 15.00 / 1_000_000, 'output': 75.00 / 1_000_000},
 }
 CHAT_MODEL_COST_PER_TOKEN_LATEST = {
+    'claude-3-7-sonnet-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-7-sonnet-20250219'],
+
     'claude-3-5-haiku-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-5-haiku-20241022'],
     'claude-3-5-sonnet-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-5-sonnet-20241022'],
+
     'claude-3-opus-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-opus-20240229'],
 }
 CHAT_MODEL_COST_PER_TOKEN.update(CHAT_MODEL_COST_PER_TOKEN_LATEST)
 
 
+
 def num_tokens(model_name: str, content: str) -> int:
     """Returns the number of tokens for a given string."""
-    client = Anthropic()
+    client = SyncAnthropic()
     response = client.messages.count_tokens(
         model=model_name,
         messages=[{"role": "user", "content": content}],
@@ -32,7 +37,7 @@ def num_tokens(model_name: str, content: str) -> int:
 
 def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
     """Returns the number of tokens for a list of messages."""
-    client = Anthropic()
+    client = SyncAnthropic()
     response = client.messages.count_tokens(
         model=model_name,
         messages=messages,
@@ -57,8 +62,8 @@ def _parse_completion_chunk(chunk) -> ChatChunkResponse | None:  # noqa: ANN001
     return None
 
 
-@Model.register(ANTHROPIC)
-class AsyncAnthropicCompletionWrapper(Model):
+@Model.register(RegisteredModels.ANTHROPIC)
+class Anthropic(Model):
     """
     Wrapper for Anthropic API which provides a simple interface for calling the
     messages.create method and parsing the response.

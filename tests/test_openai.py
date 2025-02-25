@@ -10,14 +10,13 @@ from sik_llms import (
     Parameter,
     FunctionCallResponse,
     FunctionCallResult,
+    RegisteredModels,
 )
 from sik_llms.openai import (
-    AsyncOpenAICompletionWrapper,
+    OpenAI,
     ChatChunkResponse,
     ChatStreamResponseSummary,
-    AsyncOpenAIFunctionWrapper,
-    OPENAI,
-    OPENAI_FUNCTIONS,
+    OpenAIFunctions,
 )
 
 load_dotenv()
@@ -25,17 +24,22 @@ load_dotenv()
 OPENAI_TEST_MODEL = 'gpt-4o-mini'
 
 
+def test_registration_openai():
+    assert Model.is_registered(RegisteredModels.OPENAI)
+
+
+def test_registration_openai_functions():
+    assert Model.is_registered(RegisteredModels.OPENAI_FUNCTIONS)
+
+
 @pytest.mark.asyncio
-class TestOpenAICompletionWrapperRegistration:
+class TestOpenAIRegistration:
     """Test the OpenAI Completion Wrapper registration."""
 
-    def test_registration(self):
-        assert Model.is_registered(OPENAI)
-
     async def test_openai_instantiate(self):
-        model_config = {'model_type': OPENAI, 'model_name': OPENAI_TEST_MODEL}
+        model_config = {'model_type': RegisteredModels.OPENAI, 'model_name': OPENAI_TEST_MODEL}
         model = Model.instantiate(model_config)
-        assert isinstance(model, AsyncOpenAICompletionWrapper)
+        assert isinstance(model, OpenAI)
         assert model.model == OPENAI_TEST_MODEL
         assert model.client is not None
         assert model.client.api_key
@@ -54,18 +58,21 @@ class TestOpenAICompletionWrapperRegistration:
     async def test_openai_compatible_server_instantiate___parameters__missing_server_url(self):
         # This base_url is required for openai-compatible-server
         with pytest.raises(ValueError):  # noqa: PT011
-            _ = Model.instantiate({'model_type': OPENAI, 'model_name': 'openai-compatible-server'})
+            _ = Model.instantiate({
+                'model_type': RegisteredModels.OPENAI,
+                'model_name': 'openai-compatible-server',
+            })
 
 
     async def test_openai_compatible_server_instantiate___parameters__missing_max_tokens(self):
         model_config = {
-            'model_type': OPENAI,
+            'model_type': RegisteredModels.OPENAI,
             'model_name': 'openai-compatible-server',
             'server_url': 'http://localhost:8000',
             'temperature': 0.5,
         }
         model = Model.instantiate(model_config)
-        assert isinstance(model, AsyncOpenAICompletionWrapper)
+        assert isinstance(model, OpenAI)
         assert model.model == 'openai-compatible-server'
         assert model.model_parameters['temperature'] == 0.5
         # we need to set the max_tokens parameter to -1 to avoid it sending just 1 token
@@ -74,24 +81,24 @@ class TestOpenAICompletionWrapperRegistration:
 
     async def test_openai_compatible_server_instantiate___parameters_max_tokens(self):
         model_config = {
-            'model_type': OPENAI,
+            'model_type': RegisteredModels.OPENAI,
             'model_name': 'openai-compatible-server',
             'server_url': 'http://localhost:8000',
             'max_tokens': 10,
         }
         model = Model.instantiate(model_config)
-        assert isinstance(model, AsyncOpenAICompletionWrapper)
+        assert isinstance(model, OpenAI)
         assert model.model == 'openai-compatible-server'
         assert model.model_parameters['max_tokens'] == 10
 
 
 @pytest.mark.asyncio
-class TestOpenAICompletionWrapper:
+class TestOpenAI:
     """Test the OpenAI Completion Wrapper."""
 
     async def test_async_openai_completion_wrapper_call(self):
         # Create an instance of the wrapper
-        model = AsyncOpenAICompletionWrapper(model_name=OPENAI_TEST_MODEL)
+        model = OpenAI(model_name=OPENAI_TEST_MODEL)
         messages = [
             system_message("You are a helpful assistant."),
             user_message("What is the capital of France?"),
@@ -212,14 +219,10 @@ class TestOpenAIFunctions:
             ],
         )
 
-    def test_registration(self):
-        assert Model.is_registered(OPENAI)
-
-
     async def test_single_function_single_parameter__instantiate(self, simple_weather_function: Function):  # noqa: E501
         """Test calling a simple function with one required parameter."""
         model_config = {
-            'model_type': OPENAI_FUNCTIONS,
+            'model_type': RegisteredModels.OPENAI_FUNCTIONS,
             'model_name': OPENAI_TEST_MODEL,
             'functions': [simple_weather_function],
         }
@@ -242,7 +245,7 @@ class TestOpenAIFunctions:
     @pytest.mark.asyncio
     async def test_single_function_multiple_parameters(self, complex_weather_function: Function):
         """Test calling a function with multiple parameters including optional ones."""
-        wrapper = AsyncOpenAIFunctionWrapper(
+        wrapper = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[complex_weather_function],
         )
@@ -260,7 +263,7 @@ class TestOpenAIFunctions:
     @pytest.mark.asyncio
     async def test_multiple_functions(self, simple_weather_function: Function, restaurant_function: Function):  # noqa: E501
         """Test providing multiple functions to the model."""
-        wrapper = AsyncOpenAIFunctionWrapper(
+        wrapper = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[simple_weather_function, restaurant_function],
         )
@@ -287,7 +290,7 @@ class TestOpenAIFunctions:
     @pytest.mark.asyncio
     async def test_enum_parameters(self, restaurant_function: Function):
         """Test handling of enum parameters."""
-        wrapper = AsyncOpenAIFunctionWrapper(
+        wrapper = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[restaurant_function],
         )
@@ -317,7 +320,7 @@ class TestOpenAIFunctions:
     @pytest.mark.asyncio
     async def test_concurrent_function_calls(self, simple_weather_function: Function):
         """Test multiple concurrent function calls."""
-        wrapper = AsyncOpenAIFunctionWrapper(
+        wrapper = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[simple_weather_function],
         )
@@ -341,7 +344,7 @@ class TestOpenAIFunctions:
     @pytest.mark.asyncio
     async def test_function_override(self, simple_weather_function: Function, complex_weather_function: Function):  # noqa: E501
         """Test overriding functions during the call."""
-        wrapper = AsyncOpenAIFunctionWrapper(
+        wrapper = OpenAIFunctions(
             model_name=OPENAI_TEST_MODEL,
             functions=[simple_weather_function],
         )

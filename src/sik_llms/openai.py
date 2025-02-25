@@ -14,11 +14,8 @@ from sik_llms import (
     Model,
     ChatChunkResponse,
     ChatStreamResponseSummary,
+    RegisteredModels,
 )
-
-
-OPENAI = 'OpenAI'
-OPENAI_FUNCTIONS = 'OpenAIFunctions'
 
 CHAT_MODEL_COST_PER_TOKEN = {
     # minor versions
@@ -123,8 +120,8 @@ def _parse_completion_chunk(chunk) -> ChatChunkResponse:  # noqa: ANN001
     )
 
 
-@Model.register(OPENAI)
-class AsyncOpenAICompletionWrapper(Model):
+@Model.register(RegisteredModels.OPENAI)
+class OpenAI(Model):
     """
     Wrapper for OpenAI API which provides a simple interface for calling the
     chat.completions.create method and parsing the response.
@@ -200,8 +197,8 @@ class AsyncOpenAICompletionWrapper(Model):
                 chunks.append(parsed_chunk)
         end_time = time.time()
         if model_name == 'openai-compatible-server':
-            input_tokens = int(len(str(messages)) / 4)
-            output_tokens = int(sum(len(chunk.content) for chunk in chunks) / 4)
+            input_tokens = len(str(messages)) // 4
+            output_tokens = sum(len(chunk.content) for chunk in chunks) // 4
             total_input_cost=0
             total_output_cost=0
         else:
@@ -218,8 +215,8 @@ class AsyncOpenAICompletionWrapper(Model):
         )
 
 
-@Model.register(OPENAI_FUNCTIONS)
-class AsyncOpenAIFunctionWrapper(Model):
+@Model.register(RegisteredModels.OPENAI_FUNCTIONS)
+class OpenAIFunctions(Model):
     """Wrapper for OpenAI API function calling."""
 
     def __init__(
