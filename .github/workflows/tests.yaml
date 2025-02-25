@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         # Run in all these versions of Python
-        python-version: ['3.11', '3.12', '3.12']
+        python-version: ['3.11', '3.12', '3.13']
     steps:
         # Checkout the latest code from the repo
       - name: Checkout repo
