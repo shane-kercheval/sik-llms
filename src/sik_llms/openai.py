@@ -15,6 +15,7 @@ from sik_llms.models_base import (
     ChatChunkResponse,
     ChatResponseSummary,
     RegisteredClients,
+    StructuredOutputResponse,
 )
 
 CHAT_MODEL_COST_PER_TOKEN = {
@@ -181,39 +182,59 @@ class OpenAI(Client):
         model_name = model_name or self.model
         model_parameters = {**self.model_parameters, **model_kwargs}
 
-        start_time = time.time()
-        chunks = []
-        response = await self.client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            stream=True,
-            logprobs=True,
-            **model_parameters,
-        )
-        async for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                parsed_chunk = _parse_completion_chunk(chunk)
-                yield parsed_chunk
-                chunks.append(parsed_chunk)
-        end_time = time.time()
-        if model_name == 'openai-compatible-server':
-            input_tokens = len(str(messages)) // 4
-            output_tokens = sum(len(chunk.content) for chunk in chunks) // 4
-            total_input_cost=0
-            total_output_cost=0
+        if 'response_format' in model_parameters:
+            start_time = time.time()
+            completion = await self.client.beta.chat.completions.parse(
+                model=model_name,
+                messages=messages,
+                **model_parameters,
+            )
+            end_time = time.time()
+            yield ChatResponseSummary(
+                content=StructuredOutputResponse(
+                    parsed=completion.choices[0].message.parsed,
+                    refusal=completion.choices[0].message.refusal,
+                ),
+                total_input_tokens=completion.usage.prompt_tokens,
+                total_output_tokens=completion.usage.completion_tokens,
+                total_input_cost=completion.usage.prompt_tokens * MODEL_COST_PER_TOKEN[model_name]['input'],  # noqa: E501
+                total_output_cost=completion.usage.completion_tokens * MODEL_COST_PER_TOKEN[model_name]['output'],  # noqa: E501
+                duration_seconds=end_time - start_time,
+            )
         else:
-            input_tokens = num_tokens_from_messages(model_name, messages)
-            output_tokens = sum(num_tokens(model_name, chunk.content) for chunk in chunks)
-            total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[model_name]['input']
-            total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[model_name]['output']
-        yield ChatResponseSummary(
-            content=''.join([chunk.content for chunk in chunks]),
-            total_input_tokens=input_tokens,
-            total_output_tokens=output_tokens,
-            total_input_cost=total_input_cost,
-            total_output_cost=total_output_cost,
-            duration_seconds=end_time - start_time,
-        )
+            chunks = []
+            start_time = time.time()
+            response = await self.client.chat.completions.create(
+                model=model_name,
+                messages=messages,
+                stream=True,
+                logprobs=True,
+                **model_parameters,
+            )
+            async for chunk in response:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    parsed_chunk = _parse_completion_chunk(chunk)
+                    yield parsed_chunk
+                    chunks.append(parsed_chunk)
+            end_time = time.time()
+            if model_name == 'openai-compatible-server':
+                input_tokens = len(str(messages)) // 4
+                output_tokens = sum(len(chunk.content) for chunk in chunks) // 4
+                total_input_cost=0
+                total_output_cost=0
+            else:
+                input_tokens = num_tokens_from_messages(model_name, messages)
+                output_tokens = sum(num_tokens(model_name, chunk.content) for chunk in chunks)
+                total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[model_name]['input']
+                total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[model_name]['output']
+            yield ChatResponseSummary(
+                content=''.join([chunk.content for chunk in chunks]),
+                total_input_tokens=input_tokens,
+                total_output_tokens=output_tokens,
+                total_input_cost=total_input_cost,
+                total_output_cost=total_output_cost,
+                duration_seconds=end_time - start_time,
+            )
 
 
 @Client.register(RegisteredClients.OPENAI_FUNCTIONS)

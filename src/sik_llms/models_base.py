@@ -40,10 +40,17 @@ class ChatChunkResponse(BaseModel):
     logprob: float | None = None
 
 
+class StructuredOutputResponse(BaseModel):
+    """Response containing structured output data."""
+
+    parsed: BaseModel | None
+    refusal: str | object | None
+
+
 class ChatResponseSummary(BaseModel):
     """Summary of a chat response."""
 
-    content: str
+    content: str | StructuredOutputResponse
     total_input_tokens: int
     total_output_tokens: int
     total_input_cost: float

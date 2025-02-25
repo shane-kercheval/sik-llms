@@ -1,9 +1,11 @@
 """Test the OpenAI Wrapper."""
 import asyncio
+from pydantic import BaseModel
 import pytest
 from dotenv import load_dotenv
 from sik_llms.models_base import (
     Client,
+    StructuredOutputResponse,
     system_message,
     user_message,
     Function,
@@ -132,7 +134,7 @@ class TestOpenAIRegistration:
 class TestOpenAI:
     """Test the OpenAI Completion Wrapper."""
 
-    async def test__async_openai_completion_wrapper_call(self):
+    async def test__async_openai(self):
         # Create an instance of the wrapper
         client = OpenAI(model_name=OPENAI_TEST_MODEL)
         messages = [
@@ -168,6 +170,37 @@ class TestOpenAI:
                 and summary.duration_seconds > 0,
             )
         assert sum(passed_tests) / len(passed_tests) >= 0.9, f"Only {sum(passed_tests)} out of {len(passed_tests)} tests passed."  # noqa: E501
+
+
+@pytest.mark.asyncio
+class TestOpenAIStructuredOutputs:
+    """Test the OpenAI Structured Output Wrapper."""
+
+    async def test__openai__structured_outputs(self):
+        class CalendarEvent(BaseModel):
+            name: str
+            date: str
+            participants: list[str]
+
+        # Create an instance of the wrapper
+        client = OpenAI(
+            model_name=OPENAI_TEST_MODEL,
+            response_format=CalendarEvent,
+        )
+        messages=[
+            {"role": "system", "content": "Extract the event information."},
+            {"role": "user", "content": "Alice and Bob are going to a science fair on Friday."},
+        ]
+
+        response = client(messages=messages)
+        assert isinstance(response, ChatResponseSummary)
+        assert isinstance(response.content, StructuredOutputResponse)
+        assert isinstance(response.content.parsed, CalendarEvent)
+        assert response.content.parsed.name
+        assert response.content.parsed.date
+        assert response.content.parsed.participants
+        assert 'Alice' in response.content.parsed.participants
+        assert 'Bob' in response.content.parsed.participants
 
 
 @pytest.mark.asyncio
