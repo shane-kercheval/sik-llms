@@ -2,7 +2,6 @@
 
 Easy llm interface. Sync and Async support.
 
-
 ```
 from sik_llms import create_client, user_message, ChatChunkResponse
 
