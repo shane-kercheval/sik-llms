@@ -12,6 +12,8 @@ from sik_llms.models_base import (
     Function,
     FunctionCallResult,
     FunctionCallResponse,
+    StructuredOutputResponse,
+    ReasoningEffort,
 )
 from sik_llms.openai import (
     OpenAI,
@@ -71,8 +73,9 @@ __all__ = [  # noqa: RUF022
     'Function',
     'FunctionCallResult',
     'FunctionCallResponse',
+    'StructuredOutputResponse',
+    'ReasoningEffort',
     'OpenAI',
     'OpenAIFunctions',
     'Anthropic',
-
 ]

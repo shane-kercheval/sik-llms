@@ -1,11 +1,14 @@
 """Test the OpenAI Wrapper."""
 import asyncio
+import time
 from pydantic import BaseModel
 import pytest
 from dotenv import load_dotenv
-from sik_llms.models_base import (
+from sik_llms import (
     Client,
+    ReasoningEffort,
     StructuredOutputResponse,
+    create_client,
     system_message,
     user_message,
     Function,
@@ -13,8 +16,6 @@ from sik_llms.models_base import (
     FunctionCallResponse,
     FunctionCallResult,
     RegisteredClients,
-)
-from sik_llms.openai import (
     OpenAI,
     ChatChunkResponse,
     ChatResponseSummary,
@@ -24,6 +25,7 @@ from sik_llms.openai import (
 load_dotenv()
 
 OPENAI_TEST_MODEL = 'gpt-4o-mini'
+OPENAI_TEST_REASONING_MODEL = 'o3-mini'
 
 
 def test__registration__openai():
@@ -171,6 +173,34 @@ class TestOpenAI:
             )
         assert sum(passed_tests) / len(passed_tests) >= 0.9, f"Only {sum(passed_tests)} out of {len(passed_tests)} tests passed."  # noqa: E501
 
+    async def test_concurrent_performance(self):
+        # This test will use the actual API, so consider using it sparingly
+        client = OpenAI(model_name=OPENAI_TEST_MODEL)
+        num_requests = 20
+        messages = [{"role": "user", "content": "Say hello in one word."}]
+
+        async def execute_request(i: int):  # noqa: ANN202
+            start = time.time()
+            result = None
+            async for chunk in client.run_async(messages=messages):
+                if hasattr(chunk, 'content') and isinstance(chunk.content, str):
+                    result = chunk
+            end = time.time()
+            return {"index": i, "time": end - start, "result": result}
+
+        # Execute all requests asynchronously/concurrently
+        start_time = time.time()
+        tasks = [execute_request(i) for i in range(num_requests)]
+        results = await asyncio.gather(*tasks)
+        actual_time = time.time() - start_time
+
+        times = [r["time"] for r in results]
+        sequential_time = sum(times)
+
+        assert len(results) == num_requests
+        # The actual time should be significantly less than sequential execution
+        assert actual_time < (sequential_time / 4)
+
 
 @pytest.mark.asyncio
 class TestOpenAIStructuredOutputs:
@@ -182,14 +212,13 @@ class TestOpenAIStructuredOutputs:
             date: str
             participants: list[str]
 
-        # Create an instance of the wrapper
-        client = OpenAI(
+        client = create_client(
             model_name=OPENAI_TEST_MODEL,
             response_format=CalendarEvent,
         )
         messages=[
-            {"role": "system", "content": "Extract the event information."},
-            {"role": "user", "content": "Alice and Bob are going to a science fair on Friday."},
+            system_message("Extract the event information."),
+            user_message("Alice and Bob are going to a science fair on Friday."),
         ]
 
         response = client(messages=messages)
@@ -201,6 +230,25 @@ class TestOpenAIStructuredOutputs:
         assert response.content.parsed.participants
         assert 'Alice' in response.content.parsed.participants
         assert 'Bob' in response.content.parsed.participants
+
+
+@pytest.mark.asyncio
+class TestOpenAIReasoning:
+    """Test the OpenAI Reasoning / ReasoningEffort."""
+
+    async def test__openai__reasoning(self):
+        client = create_client(
+            model_name=OPENAI_TEST_REASONING_MODEL,
+            reasoning_effort=ReasoningEffort.LOW,
+        )
+        response = client(messages=[user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")])
+        assert isinstance(response, ChatResponseSummary)
+        assert '45' in response.content
+        assert response.total_input_tokens > 0
+        assert response.total_output_tokens > 0
+        assert response.total_input_cost > 0
+        assert response.total_output_cost > 0
+        assert response.duration_seconds > 0
 
 
 @pytest.mark.asyncio

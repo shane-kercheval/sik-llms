@@ -3,8 +3,11 @@ import asyncio
 import os
 import pytest
 from dotenv import load_dotenv
-from sik_llms.models_base import Client, system_message, user_message, RegisteredClients
-from sik_llms.anthropic import (
+from sik_llms import (
+    Client,
+    system_message,
+    user_message,
+    RegisteredClients,
     Anthropic,
     ChatChunkResponse,
     ChatResponseSummary,

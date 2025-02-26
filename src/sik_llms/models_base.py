@@ -18,6 +18,14 @@ class RegisteredClients(Enum):
     ANTHROPIC = 'Anthropic'
 
 
+class ReasoningEffort(Enum):
+    """Enum for reasoning effort levels."""
+
+    LOW = 'low'
+    MEDIUM = 'medium'
+    HIGH = 'high'
+
+
 def user_message(content: str) -> dict:
     """Returns a user message."""
     return {'role': 'user', 'content': content}
