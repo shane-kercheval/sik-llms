@@ -123,11 +123,23 @@ class Anthropic(Client):
                 'budget_tokens': thinking_budget,
             }
         elif thinking_budget_tokens:
+            if thinking_budget_tokens < 1024:
+                raise ValueError("thinking_budget_tokens must be at least 1024")
             max_tokens += thinking_budget_tokens
             thinking_config = {
                 'type': 'enabled',
                 'budget_tokens': thinking_budget_tokens,
             }
+
+        # From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications as
+        # well as forced tool use."
+        if thinking_config:
+            if 'temperature' in model_kwargs:
+                model_kwargs.pop('temperature')
+            if 'top_p' in model_kwargs:
+                model_kwargs.pop('top_p')
+            if 'top_k' in model_kwargs:
+                model_kwargs.pop('top_k')
 
         self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
         if thinking_config:

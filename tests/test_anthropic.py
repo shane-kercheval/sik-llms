@@ -210,6 +210,43 @@ async def test__Anthropic__with_thinking__thinking_budget_tokens():
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 @pytest.mark.asyncio
+async def test__Anthropic__with_thinking__temperature():
+    """
+    Test that the extended thinking works when temperature is set.
+
+    From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications as well
+    as forced tool use."
+
+    Make sure it doesn't crash.
+    """
+    model = Client.instantiate(
+        client_type=RegisteredClients.ANTHROPIC,
+        model_name=ANTRHOPIC_THINKING_MODEL,
+        reasoning_effort=ReasoningEffort.LOW,
+        temperature=0.5,
+    )
+    # Use a prompt that should trigger some thinking content
+    has_thinking_content = False
+    has_text_content = False
+
+    messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
+    async for response in model.run_async(messages=messages):
+        if isinstance(response, ChatChunkResponse):
+            if response.content_type == ContentType.THINKING:
+                has_thinking_content = True
+            if response.content_type == ContentType.TEXT:
+                has_text_content = True
+        if isinstance(response, ChatResponseSummary):
+            # Check that summary contains both thinking and answer
+            assert "45" in response.content
+
+    assert has_thinking_content, "No thinking content was generated"
+    assert has_text_content, "No text content was generated"
+
+
+
+@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
+@pytest.mark.asyncio
 async def test__Anthropic__with_thinking__test_redacted_thinking():
     """Test that the extended thinking chunks have the correct content types."""
     model = Client.instantiate(
