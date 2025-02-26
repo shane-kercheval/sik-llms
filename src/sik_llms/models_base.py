@@ -5,8 +5,8 @@ from pydantic import BaseModel
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from copy import deepcopy
-from enum import Enum
-from typing import Any, TypeVar
+from enum import Enum, auto
+from typing import TypeVar
 from sik_llms.utilities import Registry
 
 
@@ -24,6 +24,15 @@ class ReasoningEffort(Enum):
     LOW = 'low'
     MEDIUM = 'medium'
     HIGH = 'high'
+
+
+class ContentType(Enum):
+    """Enum for content chunk types."""
+
+    TEXT = auto()
+    THINKING = auto()
+    REDACTED_THINKING = auto()
+    ERROR = auto()
 
 
 def user_message(content: str) -> dict:
@@ -44,7 +53,8 @@ def system_message(content: str) -> dict:
 class ChatChunkResponse(BaseModel):
     """A chunk returned when streaming."""
 
-    content: str
+    content: str | object
+    content_type: ContentType = ContentType.TEXT
     logprob: float | None = None
 
 
@@ -165,9 +175,9 @@ class Client(ABC):
 
     def __call__(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[dict[str, object]],
         model_name: str | None = None,
-        **model_kwargs: dict[str, Any],
+        **model_kwargs: dict[str, object],
     ) -> ChatResponseSummary | FunctionCallResponse:
         """
         Invoke the model (e.g. chat).
@@ -210,9 +220,9 @@ class Client(ABC):
     @abstractmethod
     async def run_async(
         self,
-        messages: list[dict[str, Any]],
+        messages: list[dict[str, object]],
         model_name: str | None = None,
-        **model_kwargs: dict[str, Any],
+        **model_kwargs: dict[str, object],
     ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary, None] | FunctionCallResponse:
         """
         Run asynchronously.

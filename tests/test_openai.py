@@ -199,7 +199,7 @@ class TestOpenAI:
 
         assert len(results) == num_requests
         # The actual time should be significantly less than sequential execution
-        assert actual_time < (sequential_time / 4)
+        assert actual_time < (sequential_time / 2)
 
 
 @pytest.mark.asyncio

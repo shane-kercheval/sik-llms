@@ -7,7 +7,9 @@ from sik_llms.models_base import (
     Client,
     ChatChunkResponse,
     ChatResponseSummary,
+    ContentType,
     RegisteredClients,
+    ReasoningEffort,
 )
 
 
@@ -28,6 +30,13 @@ CHAT_MODEL_COST_PER_TOKEN_LATEST = {
     'claude-3-opus-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-opus-20240229'],
 }
 CHAT_MODEL_COST_PER_TOKEN.update(CHAT_MODEL_COST_PER_TOKEN_LATEST)
+
+# Default thinking budget tokens for each reasoning effort level
+REASONING_EFFORT_BUDGET = {
+    ReasoningEffort.LOW: 4_000,
+    ReasoningEffort.MEDIUM: 16_000,
+    ReasoningEffort.HIGH: 32_000,
+}
 
 
 
@@ -51,19 +60,33 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
 
 
 def _parse_completion_chunk(chunk) -> ChatChunkResponse | None:  # noqa: ANN001
-    """Parse a chunk from the Anthropic API."""
-    # Different chunk types in Anthropic's streaming response
-    if hasattr(chunk, 'type'):
-        if chunk.type == 'content_block_start':
-            return None
-        if chunk.type == 'content_block_delta':
-            return ChatChunkResponse(content=chunk.delta.text)
-        if chunk.type == 'message_start':
-            return None
-        if chunk.type == 'message_delta':
+    """Parse a chunk from the Anthropic API streaming response."""
+    # Process content block deltas
+    if chunk.type == 'content_block_start':  # noqa: SIM102
+        if chunk.content_block.type == 'redacted_thinking':
             return ChatChunkResponse(
-                content=chunk.delta.text if hasattr(chunk.delta, 'text') else "",
+                content=chunk.content_block.data,
+                content_type=ContentType.REDACTED_THINKING,
             )
+    if chunk.type == 'content_block_delta':
+        # Text delta
+        if chunk.delta.type == 'text_delta':
+            return ChatChunkResponse(
+                content=chunk.delta.text,
+                content_type=ContentType.TEXT,
+            )
+        # Thinking delta
+        if chunk.delta.type == 'thinking_delta':
+            return ChatChunkResponse(
+                content=chunk.delta.thinking,
+                content_type=ContentType.THINKING,
+            )
+    if chunk.type == 'error':
+        return ChatChunkResponse(
+            content=f"Error: type={chunk.error.type}, message={chunk.error.message}",
+            content_type=ContentType.ERROR,
+        )
+    # All other event types are ignored (content_block_start, message_start, message_delta, etc.)
     return None
 
 
@@ -78,6 +101,8 @@ class Anthropic(Client):
             self,
             model_name: str,
             max_tokens: int = 1_000,
+            reasoning_effort: ReasoningEffort | None = None,
+            thinking_budget_tokens: int | None = None,
             **model_kwargs: dict,
     ) -> None:
         api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -87,7 +112,27 @@ class Anthropic(Client):
         self.model = model_name
         if not max_tokens:
             max_tokens = 1_000
+
+        # Configure thinking based on reasoning_effort or thinking_budget_tokens
+        thinking_config = None
+        if reasoning_effort:
+            thinking_budget = REASONING_EFFORT_BUDGET[reasoning_effort]
+            max_tokens += thinking_budget
+            thinking_config = {
+                'type': 'enabled',
+                'budget_tokens': thinking_budget,
+            }
+        elif thinking_budget_tokens:
+            max_tokens += thinking_budget_tokens
+            thinking_config = {
+                'type': 'enabled',
+                'budget_tokens': thinking_budget_tokens,
+            }
+
         self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
+        if thinking_config:
+            self.model_parameters['thinking'] = thinking_config
+
         # remove any None values
         self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
 
@@ -104,10 +149,10 @@ class Anthropic(Client):
         return system_content, anthropic_messages
 
     async def run_async(
-        self,
-        messages: list[dict],
-        model_name: str | None = None,
-        **model_kwargs: dict,
+            self,
+            messages: list[dict],
+            model_name: str | None = None,
+            **model_kwargs: dict,
         ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary, None]:
         """
         Streams chat chunks and returns a final summary. Parameters passed here
@@ -141,8 +186,15 @@ class Anthropic(Client):
                 chunks.append(parsed_chunk)
         end_time = time.time()
 
+        # Process content for summary based on content types
+        processed_chunks = []
+        for chunk in chunks:
+            # Ignore REDACTED_THINKING chunks for the summary
+            if chunk.content_type in (ContentType.TEXT, ContentType.THINKING):
+                processed_chunks.append(chunk.content)
+
         yield ChatResponseSummary(
-            content=''.join([chunk.content for chunk in chunks]),
+            content=''.join(processed_chunks),
             total_input_tokens=input_tokens,
             total_output_tokens=output_tokens,
             total_input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[model_name]['input'],
