@@ -5,6 +5,7 @@ import os
 import time
 from collections.abc import AsyncGenerator
 from openai import AsyncOpenAI
+from pydantic import BaseModel
 import tiktoken
 from tiktoken import Encoding
 from sik_llms.models_base import (
@@ -14,8 +15,10 @@ from sik_llms.models_base import (
     Client,
     ChatChunkResponse,
     ChatResponseSummary,
+    ReasoningEffort,
     RegisteredClients,
     StructuredOutputResponse,
+    ToolChoice,
 )
 
 CHAT_MODEL_COST_PER_TOKEN = {
@@ -24,6 +27,8 @@ CHAT_MODEL_COST_PER_TOKEN = {
     'gpt-4o-2024-08-06': {'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000},
     'gpt-4o-2024-11-20': {'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000},
     'gpt-4o-mini-2024-07-18':  {'input': 0.15 / 1_000_000, 'output': 0.60 / 1_000_000},
+    'o1-2024-12-17': {'input': 15.00 / 1_000_000, 'output': 60.00 / 1_000_000},
+    'o3-mini-2025-01-31': {'input': 1.10 / 1_000_000, 'output': 4.40 / 1_000_000},
     # LEGACY MODELS
     'gpt-4-turbo': {'input': 10.00 / 1_000_000, 'output': 30.00 / 1_000_000},
     'gpt-4-turbo-2024-04-09': {'input': 10.00 / 1_000_000, 'output': 30.00 / 1_000_000},
@@ -35,6 +40,8 @@ CHAT_MODEL_COST_PER_TOKEN = {
 CHAT_MODEL_COST_PER_TOKEN_PRIMARY = {
     'gpt-4o-mini': CHAT_MODEL_COST_PER_TOKEN['gpt-4o-mini-2024-07-18'],
     'gpt-4o': CHAT_MODEL_COST_PER_TOKEN['gpt-4o-2024-11-20'],
+    'o1': CHAT_MODEL_COST_PER_TOKEN['o1-2024-12-17'],
+    'o3-mini': CHAT_MODEL_COST_PER_TOKEN['o3-mini-2025-01-31'],
 }
 CHAT_MODEL_COST_PER_TOKEN.update(CHAT_MODEL_COST_PER_TOKEN_PRIMARY)
 
@@ -74,36 +81,45 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
     Copied from https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
     Returns the number of tokens used by a list of messages.
     """
+    try:
+        encoding = _get_encoding_for_model(model_name)
+    except KeyError:
+        print("Warning: model not found. Using o200k_base encoding.")
+        encoding = tiktoken.get_encoding("o200k_base")
     if model_name in {
-        "gpt-3.5-turbo-0613",
-        "gpt-3.5-turbo-16k-0613",
+        "gpt-3.5-turbo-0125",
         "gpt-4-0314",
         "gpt-4-32k-0314",
         "gpt-4-0613",
         "gpt-4-32k-0613",
-        # todo: verify once .ipynb is updated
-        "gpt-4-1106-preview",
-        "gpt-3.5-turbo-1106",
+        "gpt-4o-mini-2024-07-18",
+        "gpt-4o-2024-08-06",
         }:
         tokens_per_message = 3
         tokens_per_name = 1
-    elif model_name == "gpt-3.5-turbo-0301":
-        tokens_per_message = 4  # every message follows <|start|>{role/name}\n{content}<|end|>\n
-        tokens_per_name = -1  # if there's a name, the role is omitted
     elif "gpt-3.5-turbo" in model_name:
-        # Warning: gpt-3.5-turbo may update over time.
-        # Returning num tokens assuming gpt-3.5-turbo-0613
-        return num_tokens_from_messages(model_name="gpt-3.5-turbo-0613", messages=messages)
+        print("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0125.")  # noqa: E501
+        return num_tokens_from_messages(messages=messages, model_name="gpt-3.5-turbo-0125")
+    elif "gpt-4o-mini" in model_name:
+        print("Warning: gpt-4o-mini may update over time. Returning num tokens assuming gpt-4o-mini-2024-07-18.")  # noqa: E501
+        return num_tokens_from_messages(messages=messages, model_name="gpt-4o-mini-2024-07-18")
+    elif "gpt-4o" in model_name:
+        print("Warning: gpt-4o and gpt-4o-mini may update over time. Returning num tokens assuming gpt-4o-2024-08-06.")  # noqa: E501
+        return num_tokens_from_messages(messages=messages, model_name="gpt-4o-2024-08-06")
     elif "gpt-4" in model_name:
-        # Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.
-        return num_tokens_from_messages(model_name="gpt-4-0613", messages=messages)
+        print("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
+        return num_tokens_from_messages(messages=messages, model_name="gpt-4-0613")
+    elif "o1" in model_name or "o3-mini" in model_name:
+        return num_tokens_from_messages(messages=messages, model_name="gpt-4o-2024-08-06")
     else:
-        raise NotImplementedError(f"""num_tokens_from_messages() is not implemented for model {model_name}. See https://github.com/openai/openai-python/blob/main/chatml.md for information on how messages are converted to tokens.""")  # noqa
+        raise NotImplementedError(
+            f"""num_tokens_from_messages() is not implemented for model {model_name}.""",
+        )
     num_tokens = 0
     for message in messages:
         num_tokens += tokens_per_message
         for key, value in message.items():
-            num_tokens += len(_get_encoding_for_model(model_name=model_name).encode(value))
+            num_tokens += len(encoding.encode(value))
             if key == "name":
                 num_tokens += tokens_per_name
     num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
@@ -136,6 +152,8 @@ class OpenAI(Client):
             self,
             model_name: str,
             server_url: str | None = None,
+            reasoning_effort: ReasoningEffort | None = None,
+            response_format: BaseModel | None = None,
             **model_kwargs: dict,
             ) -> None:
         """
@@ -148,6 +166,10 @@ class OpenAI(Client):
                 The model name to use for the API call (e.g. 'gpt-4o-mini').
             server_url:
                 The base URL for the API call. Required for the `openai-compatible-server` model.
+            reasoning_effort:
+                The reasoning effort to use for the API call (reasoning model required).
+            response_format:
+                Pydantic class defining structure of the response (i.e. structured output)
             **model_kwargs: Additional parameters to pass to the API call
         """
         if model_name == 'openai-compatible-server':
@@ -168,26 +190,31 @@ class OpenAI(Client):
         self.client = AsyncOpenAI(base_url=server_url, api_key=api_key)
         self.model = model_name
         self.model_parameters = model_kwargs or {}
+        self.reasoning_effort = reasoning_effort
+        self.response_format = response_format
+        if response_format:
+            self.model_parameters['response_format'] = response_format
+        if reasoning_effort:
+            if isinstance(reasoning_effort, ReasoningEffort):
+                self.model_parameters['reasoning_effort'] = reasoning_effort.value
+            else:
+                self.model_parameters['reasoning_effort'] = reasoning_effort
 
     async def run_async(
-        self,
-        messages: list[dict],
-        model_name: str | None = None,
-        **model_kwargs: dict,
-    ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary | None]:
+            self,
+            messages: list[dict],
+        ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary | None]:
         """
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
         """
-        model_name = model_name or self.model
-        model_parameters = {**self.model_parameters, **model_kwargs}
-
-        if 'response_format' in model_parameters:
+        if self.response_format:
             start_time = time.time()
             completion = await self.client.beta.chat.completions.parse(
-                model=model_name,
+                model=self.model,
                 messages=messages,
-                **model_parameters,
+                store=False,
+                **self.model_parameters,
             )
             end_time = time.time()
             yield ChatResponseSummary(
@@ -195,21 +222,22 @@ class OpenAI(Client):
                     parsed=completion.choices[0].message.parsed,
                     refusal=completion.choices[0].message.refusal,
                 ),
-                total_input_tokens=completion.usage.prompt_tokens,
-                total_output_tokens=completion.usage.completion_tokens,
-                total_input_cost=completion.usage.prompt_tokens * MODEL_COST_PER_TOKEN[model_name]['input'],  # noqa: E501
-                total_output_cost=completion.usage.completion_tokens * MODEL_COST_PER_TOKEN[model_name]['output'],  # noqa: E501
+                input_tokens=completion.usage.prompt_tokens,
+                output_tokens=completion.usage.completion_tokens,
+                input_cost=completion.usage.prompt_tokens * MODEL_COST_PER_TOKEN[self.model]['input'],  # noqa: E501
+                output_cost=completion.usage.completion_tokens * MODEL_COST_PER_TOKEN[self.model]['output'],  # noqa: E501
                 duration_seconds=end_time - start_time,
             )
         else:
             chunks = []
             start_time = time.time()
             response = await self.client.chat.completions.create(
-                model=model_name,
+                model=self.model,
                 messages=messages,
                 stream=True,
-                logprobs=True,
-                **model_parameters,
+                logprobs=bool(not self.reasoning_effort),  # logprobs not supported with reasoning
+                store=False,
+                **self.model_parameters,
             )
             async for chunk in response:
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -217,22 +245,22 @@ class OpenAI(Client):
                     yield parsed_chunk
                     chunks.append(parsed_chunk)
             end_time = time.time()
-            if model_name == 'openai-compatible-server':
+            if self.model == 'openai-compatible-server':
                 input_tokens = len(str(messages)) // 4
                 output_tokens = sum(len(chunk.content) for chunk in chunks) // 4
                 total_input_cost=0
                 total_output_cost=0
             else:
-                input_tokens = num_tokens_from_messages(model_name, messages)
-                output_tokens = sum(num_tokens(model_name, chunk.content) for chunk in chunks)
-                total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[model_name]['input']
-                total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[model_name]['output']
+                input_tokens = num_tokens_from_messages(self.model, messages)
+                output_tokens = sum(num_tokens(self.model, chunk.content) for chunk in chunks)
+                total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
+                total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
             yield ChatResponseSummary(
                 content=''.join([chunk.content for chunk in chunks]),
-                total_input_tokens=input_tokens,
-                total_output_tokens=output_tokens,
-                total_input_cost=total_input_cost,
-                total_output_cost=total_output_cost,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                input_cost=total_input_cost,
+                output_cost=total_output_cost,
                 duration_seconds=end_time - start_time,
             )
 
@@ -244,22 +272,23 @@ class OpenAIFunctions(Client):
     def __init__(
             self,
             model_name: str,
+            functions: list[Function],
+            tool_choice: ToolChoice = ToolChoice.REQUIRED,
             server_url: str | None = None,
-            functions: list[Function] | None = None,
             **model_kwargs: dict,
             ) -> None:
         """
         Initialize the wrapper.
 
         Args:
-            client:
-                An instance of the AsyncOpenAI client.
             model_name:
                 The model name to use for the API call (e.g. 'gpt-4').
-            server_url:
-                The base URL for the API call. Required for the `openai-compatible-server` model.
             functions:
                 List of Function objects defining available functions.
+            tool_choice:
+                Controls if tools are required or optional.
+            server_url:
+                The base URL for the API call. Required for the `openai-compatible-server` model.
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
@@ -275,20 +304,19 @@ class OpenAIFunctions(Client):
 
         self.client = AsyncOpenAI(base_url=server_url, api_key=api_key)
         self.model = model_name
-        self.functions = functions or []
         self.model_parameters = model_kwargs or {}
         if 'temperature' not in self.model_parameters:
             self.model_parameters['temperature'] = 0.2
 
+        if tool_choice == ToolChoice.REQUIRED:
+            self.model_parameters['tool_choice'] = 'required'
+        elif tool_choice == ToolChoice.AUTO:
+            self.model_parameters['tool_choice'] = 'auto'
+        else:
+            raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
+        self.model_parameters['tools'] = [func.to_openai() for func in functions]
 
-    async def run_async(
-            self,
-            messages: list[dict[str, str]],
-            functions: list[Function] | None = None,
-            tool_choice: str = 'required',
-            model_name: str | None = None,
-            **model_kwargs: dict[str, object],
-        ) -> FunctionCallResponse:
+    async def run_async(self, messages: list[dict[str, str]]) -> FunctionCallResponse:
         """
         Call the model with functions.
 
@@ -296,50 +324,42 @@ class OpenAIFunctions(Client):
             messages: List of messages to send to the model.
             model_name: Optional model override.
             functions: Optional functions override.
-            tool_choice:
-                Controls which (if any) tool is called by the model. `none` means the model will
-                not call any tool and instead generates a message. `auto` means the model can
-                pick between generating a message or calling one or more tools. `required` means
-                the model must call one or more tools. Specifying a particular tool via
-                `{"type": "function", "function": {"name": "my_function"}}` forces the model to
-                call that tool.
-
-                `none` is the default when no tools are present. `auto` is the default if tools
-                are present.
+            tool_choice: Controls if tools are required or optional.
             **model_kwargs: Additional parameters to override defaults.
         """
-        model_name = model_name or self.model
-        functions_list = functions or self.functions
-        merged_kwargs = {**self.model_parameters, **model_kwargs}
-        tools = [func.to_openai_schema() for func in functions_list]
-
+        start = time.time()
         completion = await self.client.chat.completions.create(
-            model=model_name,
+            model=self.model,
             messages=messages,
-            tools=tools,
-            tool_choice=tool_choice,
-            **merged_kwargs,
+            store=False,
+            **self.model_parameters,
         )
-
-        # Extract the function call details
-        tool_call = completion.choices[0].message.tool_calls[0]
-        function_call = FunctionCallResult(
-            name=tool_call.function.name,
-            arguments=json.loads(tool_call.function.arguments),
-            call_id=tool_call.id,
-        )
-
+        end = time.time()
         # Calculate costs
         input_tokens = completion.usage.prompt_tokens
         output_tokens = completion.usage.completion_tokens
 
-        input_cost = input_tokens * CHAT_MODEL_COST_PER_TOKEN[model_name]['input']
-        output_cost = output_tokens * CHAT_MODEL_COST_PER_TOKEN[model_name]['output']
+        input_cost = input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input']
+        output_cost = output_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['output']
+
+        if completion.choices[0].message.tool_calls:
+            message = None
+            tool_call = completion.choices[0].message.tool_calls[0]
+            function_call = FunctionCallResult(
+                name=tool_call.function.name,
+                arguments=json.loads(tool_call.function.arguments),
+                call_id=tool_call.id,
+            )
+        else:
+            message = completion.choices[0].message.content
+            function_call = None
 
         return FunctionCallResponse(
             function_call=function_call,
+            message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             input_cost=input_cost,
             output_cost=output_cost,
+            duration_seconds=end - start,
         )
