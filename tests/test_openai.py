@@ -21,6 +21,7 @@ from sik_llms import (
     ChatResponseSummary,
     OpenAIFunctions,
 )
+from sik_llms.models_base import ToolChoice
 
 load_dotenv()
 
@@ -165,10 +166,10 @@ class TestOpenAI:
             passed_tests.append(
                 'Paris' in response
                 and isinstance(summary, ChatResponseSummary)
-                and summary.total_input_tokens > 0
-                and summary.total_output_tokens > 0
-                and summary.total_input_cost > 0
-                and summary.total_output_cost > 0
+                and summary.input_tokens > 0
+                and summary.output_tokens > 0
+                and summary.input_cost > 0
+                and summary.output_cost > 0
                 and summary.duration_seconds > 0,
             )
         assert sum(passed_tests) / len(passed_tests) >= 0.9, f"Only {sum(passed_tests)} out of {len(passed_tests)} tests passed."  # noqa: E501
@@ -244,97 +245,16 @@ class TestOpenAIReasoning:
         response = client(messages=[user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")])
         assert isinstance(response, ChatResponseSummary)
         assert '45' in response.content
-        assert response.total_input_tokens > 0
-        assert response.total_output_tokens > 0
-        assert response.total_input_cost > 0
-        assert response.total_output_cost > 0
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.input_cost > 0
+        assert response.output_cost > 0
         assert response.duration_seconds > 0
 
 
 @pytest.mark.asyncio
 class TestOpenAIFunctions:
     """Test the OpenAI Function Wrapper."""
-
-    @pytest.fixture
-    def simple_weather_function(self):
-        """Create a simple weather function with one required parameter."""
-        return Function(
-            name="get_weather",
-            description="Get the weather for a location.",
-            parameters=[
-                Parameter(
-                    name="location",
-                    type="string",
-                    required=True,
-                    description="The city and country for weather info.",
-                ),
-            ],
-        )
-
-    @pytest.fixture
-    def complex_weather_function(self):
-        """Create a weather function with multiple parameters including an enum."""
-        return Function(
-            name="get_detailed_weather",
-            description="Get detailed weather information for a location.",
-            parameters=[
-                Parameter(
-                    name="location",
-                    type="string",
-                    required=True,
-                    description="The city and country",
-                ),
-                Parameter(
-                    name="unit",
-                    type="string",
-                    required=False,
-                    description="Temperature unit",
-                    enum=["celsius", "fahrenheit"],
-                ),
-                Parameter(
-                    name="include_forecast",
-                    type="boolean",
-                    required=False,
-                    description="Whether to include forecast data",
-                ),
-            ],
-        )
-
-    @pytest.fixture
-    def restaurant_function(self):
-        """Create a restaurant search function with multiple parameters."""
-        return Function(
-            name="search_restaurants",
-            description="Search for restaurants in a location.",
-            parameters=[
-                Parameter(
-                    name="location",
-                    type="string",
-                    required=True,
-                    description="The city to search in",
-                ),
-                Parameter(
-                    name="cuisine",
-                    type="string",
-                    required=False,
-                    description="Type of cuisine",
-                    enum=["italian", "chinese", "mexican", "indian"],
-                ),
-                Parameter(
-                    name="price_range",
-                    type="string",
-                    required=False,
-                    description="Price range",
-                    enum=["$", "$$", "$$$", "$$$$"],
-                ),
-                Parameter(
-                    name="open_now",
-                    type="boolean",
-                    required=False,
-                    description="Filter for currently open restaurants",
-                ),
-            ],
-        )
 
     @pytest.mark.parametrize('is_async', [True, False])
     async def test__single_function_single_parameter__instantiate(
@@ -365,6 +285,30 @@ class TestOpenAIFunctions:
         assert response.function_call.name == "get_weather"
         assert "location" in response.function_call.arguments
         assert "Paris" in response.function_call.arguments["location"]
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+
+    async def test__no_function_call(
+            self,
+            simple_weather_function: Function,
+        ):
+        """Test calling a simple function when no function is applicable."""
+        client = Client.instantiate(
+            client_type=RegisteredClients.OPENAI_FUNCTIONS,
+            model_name=OPENAI_TEST_MODEL,
+            functions=[simple_weather_function],
+            tool_choice=ToolChoice.AUTO,
+        )
+        response = await client.run_async(
+            messages=[
+                user_message("What's the stock price of Apple?"),
+            ],
+        )
+        assert isinstance(response, FunctionCallResponse)
+        assert response.function_call is None
+        assert response.message
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0
@@ -445,7 +389,6 @@ class TestOpenAIFunctions:
         assert args.get("cuisine") == "italian"
         assert args.get("price_range") in ["$$", "$$$", "$$$$"]
 
-
     @pytest.mark.parametrize('is_async', [True, False])
     async def test__enum_parameters(
             self,
@@ -503,37 +446,3 @@ class TestOpenAIFunctions:
             assert cities[i] in response.function_call.arguments["location"]
             assert response.input_tokens > 0
             assert response.output_tokens > 0
-
-    @pytest.mark.parametrize('is_async', [True, False])
-    async def test__function_override(
-            self,
-            simple_weather_function: Function,
-            complex_weather_function: Function,
-            is_async: bool,
-        ):
-        """Test overriding functions during the call."""
-        client = OpenAIFunctions(
-            model_name=OPENAI_TEST_MODEL,
-            functions=[simple_weather_function],
-        )
-
-        # Override with complex weather function
-        if is_async:
-            response = await client.run_async(
-                messages=[
-                    user_message("What's the weather like in Berlin in Fahrenheit?"),
-                ],
-                functions=[complex_weather_function],
-            )
-        else:
-            response = client(
-                messages=[
-                    user_message("What's the weather like in Berlin in Fahrenheit?"),
-                ],
-                functions=[complex_weather_function],
-            )
-
-        assert response.function_call.name == "get_detailed_weather"
-        args = response.function_call.arguments
-        assert "Berlin" in args["location"]
-        assert args.get("unit") in ["celsius", "fahrenheit"]

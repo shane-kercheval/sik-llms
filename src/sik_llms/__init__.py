@@ -12,6 +12,7 @@ from sik_llms.models_base import (
     Function,
     FunctionCallResult,
     FunctionCallResponse,
+    ToolChoice,
     StructuredOutputResponse,
     ReasoningEffort,
     ContentType,
@@ -23,6 +24,7 @@ from sik_llms.openai import (
 )
 from sik_llms.anthropic import (
     Anthropic,
+    AnthropicFunctions,
     CHAT_MODEL_COST_PER_TOKEN as ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN,
 )
 
@@ -74,10 +76,12 @@ __all__ = [  # noqa: RUF022
     'Function',
     'FunctionCallResult',
     'FunctionCallResponse',
+    'ToolChoice',
     'StructuredOutputResponse',
     'ReasoningEffort',
     'ContentType',
     'OpenAI',
     'OpenAIFunctions',
     'Anthropic',
+    'AnthropicFunctions',
 ]

@@ -7,7 +7,6 @@ from sik_llms import (
     ChatChunkResponse,
     ChatResponseSummary,
     Function,
-    Parameter,
     RegisteredClients,
     FunctionCallResponse,
     FunctionCallResult,
@@ -69,22 +68,6 @@ async def test__create_client__anthropic() -> None:
 class TestOpenAIFunctions:
     """Test the OpenAIFunctions class."""
 
-    @pytest.fixture
-    def simple_weather_function(self):
-        """Create a simple weather function with one required parameter."""
-        return Function(
-            name="get_weather",
-            description="Get the weather for a location.",
-            parameters=[
-                Parameter(
-                    name="location",
-                    type="string",
-                    required=True,
-                    description="The city and country for weather info.",
-                ),
-            ],
-        )
-
     @pytest.mark.parametrize('is_async', [True, False])
     async def test_single_function_single_parameter__instantiate(
             self,
@@ -95,6 +78,45 @@ class TestOpenAIFunctions:
         client = create_client(
             client_type=RegisteredClients.OPENAI_FUNCTIONS,
             model_name=OPENAI_TEST_MODEL,
+            functions=[simple_weather_function],
+        )
+        if is_async:
+            response = await client.run_async(
+                messages=[
+                    user_message("What's the weather like in Paris?"),
+                ],
+            )
+        else:
+            response = client(
+                messages=[
+                    user_message("What's the weather like in Paris?"),
+                ],
+            )
+        assert isinstance(response, FunctionCallResponse)
+        assert isinstance(response.function_call, FunctionCallResult)
+        assert response.function_call.name == "get_weather"
+        assert "location" in response.function_call.arguments
+        assert "Paris" in response.function_call.arguments["location"]
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+
+
+@pytest.mark.asyncio
+class TestAnthropicFunctions:
+    """Test the AnthropicFunctions class."""
+
+    @pytest.mark.parametrize('is_async', [True, False])
+    async def test_single_function_single_parameter__instantiate(
+            self,
+            simple_weather_function: Function,
+            is_async: bool,
+        ):
+        """Test calling a simple function with one required parameter."""
+        client = create_client(
+            client_type=RegisteredClients.ANTHROPIC_FUNCTIONS,
+            model_name=ANTHROPIC_TEST_MODEL,
             functions=[simple_weather_function],
         )
         if is_async:

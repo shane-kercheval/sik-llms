@@ -8,8 +8,12 @@ from sik_llms.models_base import (
     ChatChunkResponse,
     ChatResponseSummary,
     ContentType,
+    Function,
+    FunctionCallResponse,
+    FunctionCallResult,
     RegisteredClients,
     ReasoningEffort,
+    ToolChoice,
 )
 
 
@@ -113,11 +117,15 @@ class Anthropic(Client):
         if not max_tokens:
             max_tokens = 1_000
 
+        self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
+        # remove any None values
+        self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
+
         # Configure thinking based on reasoning_effort or thinking_budget_tokens
         thinking_config = None
         if reasoning_effort:
             thinking_budget = REASONING_EFFORT_BUDGET[reasoning_effort]
-            max_tokens += thinking_budget
+            self.model_parameters['max_tokens'] += thinking_budget
             thinking_config = {
                 'type': 'enabled',
                 'budget_tokens': thinking_budget,
@@ -125,28 +133,23 @@ class Anthropic(Client):
         elif thinking_budget_tokens:
             if thinking_budget_tokens < 1024:
                 raise ValueError("thinking_budget_tokens must be at least 1024")
-            max_tokens += thinking_budget_tokens
+            self.model_parameters['max_tokens'] += thinking_budget_tokens
             thinking_config = {
                 'type': 'enabled',
                 'budget_tokens': thinking_budget_tokens,
             }
 
-        # From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications as
-        # well as forced tool use."
-        if thinking_config:
-            if 'temperature' in model_kwargs:
-                model_kwargs.pop('temperature')
-            if 'top_p' in model_kwargs:
-                model_kwargs.pop('top_p')
-            if 'top_k' in model_kwargs:
-                model_kwargs.pop('top_k')
-
-        self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
         if thinking_config:
             self.model_parameters['thinking'] = thinking_config
+            # From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications
+            # as well as forced tool use."
+            if 'temperature' in self.model_parameters:
+                self.model_parameters.pop('temperature')
+            if 'top_p' in self.model_parameters:
+                self.model_parameters.pop('top_p')
+            if 'top_k' in self.model_parameters:
+                self.model_parameters.pop('top_k')
 
-        # remove any None values
-        self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
 
     def _convert_messages(self, messages: list[dict]) -> tuple[str, list[dict]]:
         """Convert OpenAI-style messages to Anthropic format."""
@@ -163,21 +166,17 @@ class Anthropic(Client):
     async def run_async(
             self,
             messages: list[dict],
-            model_name: str | None = None,
-            **model_kwargs: dict,
         ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary, None]:
         """
         Streams chat chunks and returns a final summary. Parameters passed here
         override those passed to the constructor.
         """
-        model_name = model_name or self.model
-        model_parameters = {**self.model_parameters, **model_kwargs}
         system_content, anthropic_messages = self._convert_messages(messages)
         api_params = {
-            'model': model_name,
+            'model': self.model,
             'messages': anthropic_messages,
             'stream': True,
-            **model_parameters,
+            **self.model_parameters,
         }
         if system_content:
             api_params['system'] = system_content
@@ -207,9 +206,113 @@ class Anthropic(Client):
 
         yield ChatResponseSummary(
             content=''.join(processed_chunks),
-            total_input_tokens=input_tokens,
-            total_output_tokens=output_tokens,
-            total_input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[model_name]['input'],
-            total_output_cost=output_tokens * CHAT_MODEL_COST_PER_TOKEN[model_name]['output'],
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input'],
+            output_cost=output_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['output'],
+            duration_seconds=end_time - start_time,
+        )
+
+
+@Client.register(RegisteredClients.ANTHROPIC_FUNCTIONS)
+class AnthropicFunctions(Client):
+    """Wrapper for Anthropic API which provides a simple interface for using functions."""
+
+    def __init__(
+            self,
+            model_name: str,
+            functions: list[Function],
+            tool_choice: ToolChoice = ToolChoice.REQUIRED,
+            max_tokens: int = 1_000,
+            **model_kwargs: dict,
+    ) -> None:
+        """
+        Initialize the AnthropicFunctions client.
+
+        Args:
+            model_name:
+                The model name to use for the API call (e.g. 'gpt-4').
+            functions:
+                List of Function objects defining available functions.
+            tool_choice:
+                Controls if tools are required or optional.
+            max_tokens:
+                The maximum number of tokens to generate in a single call.
+            **model_kwargs:
+                Additional parameters to pass to the API call
+        """
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY is not set")
+        self.client = AsyncAnthropic(api_key=api_key)
+        self.model = model_name
+        if not max_tokens:
+            max_tokens = 1_000
+
+        self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
+        # remove any None values
+        self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
+
+        tools = [func.to_anthropic() for func in functions]
+        if tool_choice == ToolChoice.REQUIRED:
+            tool_choice = 'any'
+        elif tool_choice == ToolChoice.AUTO:
+            tool_choice = 'auto'
+        else:
+            raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
+        self.model_parameters['tools'] = tools
+        self.model_parameters['tool_choice'] = {'type': tool_choice}
+
+    def _convert_messages(self, messages: list[dict]) -> tuple[str, list[dict]]:
+        """Convert OpenAI-style messages to Anthropic format."""
+        system_content = None
+        anthropic_messages = []
+
+        for msg in messages:
+            if msg['role'] == 'system':
+                system_content = msg['content']
+            else:
+                anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
+        return system_content, anthropic_messages
+
+    async def run_async(self, messages: list[dict]) -> FunctionCallResponse:
+        """Runs the function call and returns the response."""
+        system_content, anthropic_messages = self._convert_messages(messages)
+        api_params = {
+            'model': self.model,
+            'messages': anthropic_messages,
+            'stream': False,
+            **self.model_parameters,
+        }
+        if system_content:
+            api_params['system'] = system_content
+        start_time = time.time()
+        response = await self.client.messages.create(**api_params)
+        end_time = time.time()
+
+        function_call = None
+        message = None
+        if len(response.content) > 1:
+            raise ValueError(f"Unexpected multiple content items in response: {response.content}")
+        if response.content[0].type == 'tool_use':
+            function_call = FunctionCallResult(
+                name=response.content[0].name,
+                arguments=response.content[0].input,
+                call_id=response.content[0].id,
+            )
+        elif response.content[0].type == 'text':
+            message = response.content[0].text
+        else:
+            raise ValueError(f"Unexpected content type: {response.content[0].type}")
+
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        return FunctionCallResponse(
+            function_call=function_call,
+            message=message,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input'],
+            output_cost=output_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['output'],
             duration_seconds=end_time - start_time,
         )
