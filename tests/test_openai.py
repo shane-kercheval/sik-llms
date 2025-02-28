@@ -250,6 +250,26 @@ class TestOpenAIReasoning:
         assert response.input_cost > 0
         assert response.output_cost > 0
         assert response.duration_seconds > 0
+        response = client(messages=[user_message("What is the capital of France?")])
+        assert 'Paris' in response.content
+
+    async def test__openai__test_reasoning_model__without_reasonsing_effort_set(self):
+        """
+        Logprobs are not supported for reasoning models so let's test that we don't set it. In
+        general, let's test that the reasoning model works without setting reasonsing.
+        """
+        client = create_client(
+            model_name=OPENAI_TEST_REASONING_MODEL,
+            reasoning_effort=None,
+        )
+        response = client(messages=[user_message("What is the capital of France?")])
+        assert isinstance(response, ChatResponseSummary)
+        assert 'Paris' in response.content
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        assert response.duration_seconds > 0
 
 
 @pytest.mark.asyncio
