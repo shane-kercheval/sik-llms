@@ -199,6 +199,11 @@ class OpenAI(Client):
                 self.model_parameters['reasoning_effort'] = reasoning_effort.value
             else:
                 self.model_parameters['reasoning_effort'] = reasoning_effort
+        # log_probs are not supported with reasoning or reasoning models like o1 or o3-mini
+        if reasoning_effort or any(self.model.startswith(prefix) for prefix in ['o1', 'o3']):
+            self.log_probs = False
+        else:
+            self.log_probs = True
 
     async def run_async(
             self,
@@ -235,7 +240,7 @@ class OpenAI(Client):
                 model=self.model,
                 messages=messages,
                 stream=True,
-                logprobs=bool(not self.reasoning_effort),  # logprobs not supported with reasoning
+                logprobs=self.log_probs,
                 store=False,
                 **self.model_parameters,
             )
