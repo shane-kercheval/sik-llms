@@ -133,6 +133,48 @@ class TestOpenAIRegistration:
         assert client
 
 
+class TestReasoningModelsDoNotSetCertainParameters:
+    """When using reasoning models, certain parameters should not be set."""
+
+    def test__check_parameters_for_none_reasoning(self):
+        client = OpenAI(
+            model_name=OPENAI_TEST_MODEL,
+            reasoning_effort=None,
+            temperature=0.5,
+            top_p=0.9,
+        )
+        assert client.reasoning_effort is None
+        assert 'temperature' in client.model_parameters
+        assert 'top_p' in client.model_parameters
+        assert client.log_probs is True
+
+    def test__does_not_set_params__reasoning_model(self):
+        client = OpenAI(
+            model_name=OPENAI_TEST_REASONING_MODEL,
+            # reasoning model but no reasoning effort set
+            reasoning_effort=None,
+            temperature=0.5,
+            top_p=0.9,
+        )
+        assert client.reasoning_effort is None
+        assert 'temperature' not in client.model_parameters
+        assert 'top_p' not in client.model_parameters
+        assert client.log_probs is False
+
+    @pytest.mark.parametrize('reasoning_effort', [None, ReasoningEffort.LOW])
+    def test__does_not_set_params__reasoning_effort(self, reasoning_effort: ReasoningEffort | None):  # noqa: E501
+        client = OpenAI(
+            model_name=OPENAI_TEST_REASONING_MODEL if reasoning_effort else OPENAI_TEST_MODEL,
+            reasoning_effort=reasoning_effort,
+            temperature=0.5,
+            top_p=0.9,
+        )
+        assert client.reasoning_effort == reasoning_effort
+        assert 'temperature' not in client.model_parameters if reasoning_effort else 'temperature' in client.model_parameters  # noqa: E501
+        assert 'top_p' not in client.model_parameters if reasoning_effort else 'top_p' in client.model_parameters  # noqa: E501
+        assert client.log_probs if not reasoning_effort else not client.log_probs
+
+
 @pytest.mark.asyncio
 class TestOpenAI:
     """Test the OpenAI Completion Wrapper."""

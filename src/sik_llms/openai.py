@@ -199,9 +199,11 @@ class OpenAI(Client):
                 self.model_parameters['reasoning_effort'] = reasoning_effort.value
             else:
                 self.model_parameters['reasoning_effort'] = reasoning_effort
-        # log_probs are not supported with reasoning or reasoning models like o1 or o3-mini
+        # log_probs, temp, top_p are not supported with reasoning or reasoning models
         if reasoning_effort or any(self.model.startswith(prefix) for prefix in ['o1', 'o3']):
             self.log_probs = False
+            self.model_parameters.pop('temperature', None)
+            self.model_parameters.pop('top_p', None)
         else:
             self.log_probs = True
 
