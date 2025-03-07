@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from copy import deepcopy
 from enum import Enum, auto
-from typing import TypeVar
+from typing import Literal, TypeVar
 from sik_llms.utilities import Registry
 
 
@@ -93,25 +93,10 @@ class ResponseSummary(TokenSummary):
 
 
 class Parameter(BaseModel):
-    """
-    Represents a parameter property in a function's schema.
-
-    Supported types
-        The following types are supported for Structured Outputs:
-
-        String
-        Number
-        Boolean
-        Integer
-        Object
-        Array
-        Enum
-        anyOf
-
-    """
+    """Represents a parameter property in a function's schema."""
 
     name: str
-    type: str
+    type: Literal['string', 'number', 'boolean', 'integer', 'object', 'array', 'enum', 'anyOf']
     required: bool
     description: str | None = None
     enum: list[str] | None = None
@@ -129,22 +114,22 @@ class Function(BaseModel):
         properties = {}
         required = []
         for param in self.parameters:
-            param_dict = {"type": param.type}
+            param_dict = {'type': param.type}
             if param.description:
-                param_dict["description"] = param.description
+                param_dict['description'] = param.description
             if param.enum:
-                param_dict["enum"] = param.enum
+                param_dict['enum'] = param.enum
             properties[param.name] = param_dict
             if param.required:
                 required.append(param.name)
 
         parameters_dict = {
-            "type": "object",
-            "properties": properties,
+            'type': 'object',
+            'properties': properties,
         }
         if required:
-            parameters_dict["required"] = required
-        parameters_dict["additionalProperties"] = False
+            parameters_dict['required'] = required
+        parameters_dict['additionalProperties'] = False
 
         # If all properties are required we should use `strict` mode
         # However, "All fields in properties must be marked as required" (in order to use strict)
@@ -152,12 +137,12 @@ class Function(BaseModel):
         # so we should set `strict` to True only if all parameters are required
         strict = all(param.required for param in self.parameters or [])
         return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "strict": strict,
-                **({"description": self.description} if self.description else {}),
-                "parameters": parameters_dict,
+            'type': 'function',
+            'function': {
+                'name': self.name,
+                'strict': strict,
+                **({'description': self.description} if self.description else {}),
+                'parameters': parameters_dict,
             },
         }
 
@@ -166,26 +151,26 @@ class Function(BaseModel):
         properties = {}
         required = []
         for param in self.parameters:
-            param_dict = {"type": param.type}
+            param_dict = {'type': param.type}
             if param.description:
-                param_dict["description"] = param.description
+                param_dict['description'] = param.description
             if param.enum:
-                param_dict["enum"] = param.enum
+                param_dict['enum'] = param.enum
             properties[param.name] = param_dict
             if param.required:
                 required.append(param.name)
 
         parameters_dict = {
-            "type": "object",
-            "properties": properties,
+            'type': 'object',
+            'properties': properties,
         }
         if required:
-            parameters_dict["required"] = required
+            parameters_dict['required'] = required
 
         return {
-            "name": self.name,
-            **({"description": self.description} if self.description else {}),
-            "input_schema": parameters_dict,
+            'name': self.name,
+            **({'description': self.description} if self.description else {}),
+            'input_schema': parameters_dict,
         }
 
 
