@@ -51,7 +51,7 @@ def system_message(content: str) -> dict:
     return {'role': 'system', 'content': content}
 
 
-class ChatChunkResponse(BaseModel):
+class ResponseChunk(BaseModel):
     """A chunk returned when streaming."""
 
     content: str | object
@@ -86,7 +86,7 @@ class TokenSummary(BaseModel):
         return self.input_cost + self.output_cost
 
 
-class ChatResponseSummary(TokenSummary):
+class ResponseSummary(TokenSummary):
     """Summary of a chat response."""
 
     content: str | StructuredOutputResponse
@@ -222,13 +222,16 @@ class FunctionCallResponse(TokenSummary):
     Response containing just the essential function call information and usage stats.
 
     Content is filled if there is no function call.
+
+    If a function call is predicted, then function_call is filled and message is None.
+    If no function call is predicted, then function_call is None and message is filled.
     """
 
     function_call: FunctionCallResult | None
     message: str | None = None
 
 
-M = TypeVar('M', bound='Client')
+ClientType = TypeVar('ClientType', bound='Client')
 
 class Client(ABC):
     """Base class for model wrappers."""
@@ -238,7 +241,7 @@ class Client(ABC):
     def __call__(
             self,
             messages: list[dict[str, object]],
-        ) -> ChatResponseSummary | FunctionCallResponse:
+        ) -> ResponseSummary | FunctionCallResponse:
         """
         Invoke the model (e.g. chat).
 
@@ -250,7 +253,7 @@ class Client(ABC):
             **model_kwargs:
                 Additional parameters to pass to the API call (e.g. temperature, max_tokens).
         """
-        async def run() -> ChatResponseSummary:
+        async def run() -> ResponseSummary:
             # Check if the run_async method returns a generator or a direct value
             result = self.run_async(messages)
             # If it's an async generator, collect the last response
@@ -281,12 +284,12 @@ class Client(ABC):
     async def run_async(
         self,
         messages: list[dict[str, object]],
-    ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary, None] | FunctionCallResponse:
+    ) -> AsyncGenerator[ResponseChunk | ResponseSummary, None] | FunctionCallResponse:
         """
         Run asynchronously.
 
-        For chat models, this method should return an async generator that yields ChatChunkResponse
-        objects. The last response should be a ChatResponseSummary object.
+        For chat models, this method should return an async generator that yields ResponseChunk
+        objects. The last response should be a ResponseSummary object.
 
         For function models, this method should return a FunctionCallResponse object.
 
@@ -321,11 +324,11 @@ class Client(ABC):
 
     @classmethod
     def instantiate(
-        cls: type[M],
+        cls: type[ClientType],
         client_type: str | Enum,
         model_name: str,
         **model_kwargs: dict | None,
-    ) -> M | list[M]:
+    ) -> ClientType | list[ClientType]:
         """
         Creates a Model object.
 

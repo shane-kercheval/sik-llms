@@ -4,8 +4,8 @@ import pytest
 from sik_llms import (
     create_client,
     user_message,
-    ChatChunkResponse,
-    ChatResponseSummary,
+    ResponseChunk,
+    ResponseSummary,
     Function,
     RegisteredClients,
     FunctionCallResponse,
@@ -29,14 +29,14 @@ async def test__create_client__openai() -> None:
 
     responses = []
     async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             responses.append(response)
 
     assert len(responses) > 0
     assert 'Paris' in ''.join([response.content for response in responses])
 
     response = client(messages=[user_message("What is the capital of France?")])
-    assert isinstance(response, ChatResponseSummary)
+    assert isinstance(response, ResponseSummary)
     assert 'Paris' in response.content
 
 
@@ -53,14 +53,14 @@ async def test__create_client__anthropic() -> None:
 
     responses = []
     async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             responses.append(response)
 
     assert len(responses) > 0
     assert 'Paris' in ''.join([response.content for response in responses])
 
     response = client(messages=[user_message("What is the capital of France?")])
-    assert isinstance(response, ChatResponseSummary)
+    assert isinstance(response, ResponseSummary)
     assert 'Paris' in response.content
 
 

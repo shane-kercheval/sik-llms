@@ -13,8 +13,8 @@ from sik_llms.models_base import (
     FunctionCallResponse,
     FunctionCallResult,
     Client,
-    ChatChunkResponse,
-    ChatResponseSummary,
+    ResponseChunk,
+    ResponseSummary,
     ReasoningEffort,
     RegisteredClients,
     StructuredOutputResponse,
@@ -126,12 +126,12 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
     return num_tokens
 
 
-def _parse_completion_chunk(chunk) -> ChatChunkResponse:  # noqa: ANN001
+def _parse_completion_chunk(chunk) -> ResponseChunk:  # noqa: ANN001
     assert chunk.object == 'chat.completion.chunk'
     log_prob = None
     if chunk.choices[0].logprobs:
         log_prob = chunk.choices[0].logprobs.content[0].logprob
-    return ChatChunkResponse(
+    return ResponseChunk(
         content=chunk.choices[0].delta.content,
         logprob=log_prob,
     )
@@ -210,7 +210,7 @@ class OpenAI(Client):
     async def run_async(
             self,
             messages: list[dict],
-        ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary | None]:
+        ) -> AsyncGenerator[ResponseChunk | ResponseSummary | None]:
         """
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
@@ -224,7 +224,7 @@ class OpenAI(Client):
                 **self.model_parameters,
             )
             end_time = time.time()
-            yield ChatResponseSummary(
+            yield ResponseSummary(
                 content=StructuredOutputResponse(
                     parsed=completion.choices[0].message.parsed,
                     refusal=completion.choices[0].message.refusal,
@@ -262,7 +262,7 @@ class OpenAI(Client):
                 output_tokens = sum(num_tokens(self.model, chunk.content) for chunk in chunks)
                 total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
                 total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
-            yield ChatResponseSummary(
+            yield ResponseSummary(
                 content=''.join([chunk.content for chunk in chunks]),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,

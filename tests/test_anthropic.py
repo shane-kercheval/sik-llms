@@ -10,8 +10,8 @@ from sik_llms import (
     RegisteredClients,
     Anthropic,
     AnthropicFunctions,
-    ChatChunkResponse,
-    ChatResponseSummary,
+    ResponseChunk,
+    ResponseSummary,
     ContentType,
     ReasoningEffort,
     Function,
@@ -44,9 +44,9 @@ async def test__async_anthropic_completion_wrapper_call():
         summary = None
         try:
             async for response in client.run_async(messages=messages):
-                if isinstance(response, ChatChunkResponse):
+                if isinstance(response, ResponseChunk):
                     chunks.append(response)
-                elif isinstance(response, ChatResponseSummary):
+                elif isinstance(response, ResponseSummary):
                     summary = response
             return chunks, summary
         except Exception:
@@ -59,7 +59,7 @@ async def test__async_anthropic_completion_wrapper_call():
         response = ''.join([chunk.content for chunk in chunks])
         passed_tests.append(
             'Paris' in response
-            and isinstance(summary, ChatResponseSummary)
+            and isinstance(summary, ResponseSummary)
             and summary.input_tokens > 0
             and summary.output_tokens > 0
             and summary.input_cost > 0
@@ -98,7 +98,7 @@ async def test__Anthropic__instantiate__run_async():
     )
     responses = []
     async for response in model.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             responses.append(response)
 
     assert len(responses) > 0
@@ -169,12 +169,12 @@ async def test__Anthropic__with_thinking__reasoning_effort():
 
     messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.THINKING:
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             # Check that summary contains both thinking and answer
             assert "45" in response.content
 
@@ -198,12 +198,12 @@ async def test__Anthropic__with_thinking__thinking_budget_tokens():
 
     messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.THINKING:
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             # Check that summary contains both thinking and answer
             has_summary = True
             assert "45" in response.content
@@ -236,12 +236,12 @@ async def test__Anthropic__with_thinking__temperature():
 
     messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.THINKING:
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             # Check that summary contains both thinking and answer
             assert "45" in response.content
 
@@ -269,7 +269,7 @@ async def test__Anthropic__with_thinking__test_redacted_thinking():
     # https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#example-working-with-redacted-thinking-blocks
     messages = [user_message("ANTHROPIC_MAGIC_STRING_TRIGGER_REDACTED_THINKING_46C9A13E193C177646C7398A98432ECCCE4C1253D5E2D82641AC0E52CC2876CB")]  # noqa: E501
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.REDACTED_THINKING:
                 has_redacted_thinking_content = True
                 assert response.content
@@ -277,7 +277,7 @@ async def test__Anthropic__with_thinking__test_redacted_thinking():
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             has_summary = True
             assert response.content
 
@@ -302,12 +302,12 @@ async def test__Anthropic__without_thinking__verify_no_thinking_events():
 
     messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.THINKING:
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             # Check that summary contains both thinking and answer
             has_summary = True
 

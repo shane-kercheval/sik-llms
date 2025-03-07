@@ -3,7 +3,7 @@
 Easy llm interface. Sync and Async support.
 
 ```
-from sik_llms import create_client, user_message, ChatChunkResponse
+from sik_llms import create_client, user_message, ResponseChunk
 
 model = create_client(
     model_name='gpt-4o-mini',  # or e.g. 'claude-3-7-sonnet-latest'
@@ -18,7 +18,7 @@ response = model(messages=[message])
 responses = []
 summary = None
 async for response in model.run_async(messages=[message]):
-    if isinstance(response, ChatChunkResponse):
+    if isinstance(response, ResponseChunk):
         print(response.content, end="")
         responses.append(response)
     else:
