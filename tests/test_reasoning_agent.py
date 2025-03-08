@@ -115,7 +115,9 @@ async def test_reasoning_agent_with_calculator(calculator_tool, tool_executors):
         if r.iteration != iteration:
             iteration = r.iteration
             print(f"\n\n[ITERATION {iteration}]:\n\n")
-        print(r.content, end='')
+        print("Type:", r.content_type)
+        print(r)
+        print('--------')
     
     # Last result should be a ResponseSummary with the full response
     last_result = results[-1]
@@ -123,7 +125,7 @@ async def test_reasoning_agent_with_calculator(calculator_tool, tool_executors):
     assert re.search(r'65[,]?968', last_result.content) is not None, "Result should be 65968 or 65,968"
     
 
-    ResponseSummary
+    ReponseSummary
 
     # Check token accounting
     assert last_result.input_tokens > 0, "Should have input tokens"

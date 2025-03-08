@@ -36,9 +36,9 @@ class ContentType(Enum):
 
     TEXT = auto()
     THINKING = auto()
+    REDACTED_THINKING = auto()
     TOOL_PREDICTION = auto()
     TOOL_RESULT = auto()
-    REDACTED_THINKING = auto()
     ERROR = auto()
 
 
