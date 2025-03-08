@@ -20,6 +20,7 @@ class RegisteredClients(Enum):
     OPENAI_TOOLS = 'OpenAITools'
     ANTHROPIC = 'Anthropic'
     ANTHROPIC_TOOLS = 'AnthropicTools'
+    REASONING_AGENT = 'ReasoningAgent'
 
 
 class ReasoningEffort(Enum):
@@ -35,7 +36,7 @@ class ContentType(Enum):
 
     TEXT = auto()
     THINKING = auto()
-    TOOL_CALL = auto()
+    TOOL_PREDICTION = auto()
     TOOL_RESULT = auto()
     REDACTED_THINKING = auto()
     ERROR = auto()
@@ -62,6 +63,7 @@ class ResponseChunk(BaseModel):
     content: str | object
     content_type: ContentType = ContentType.TEXT
     logprob: float | None = None
+    iteration: int | None = None
 
 
 class StructuredOutputResponse(BaseModel):
@@ -346,7 +348,6 @@ class Client(ABC):
         raise ValueError(f"Unknown Model type `{client_type}`")
 
 
-
 def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
     """Convert a Pydantic model to a list of Parameter objects for function/tool calling."""
     parameters = []
@@ -435,7 +436,6 @@ def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
             description=full_description or None,
         ))
     return parameters
-
 
 
 def pydantic_model_to_tool(model_class: BaseModel) -> Tool:
