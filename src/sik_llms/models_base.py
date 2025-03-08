@@ -10,7 +10,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from copy import deepcopy
 from enum import Enum, auto
-from typing import Any, List, Literal, TypeVar, Union, get_args, get_origin  # noqa: UP035
+from typing import Any, Callable, List, Literal, TypeVar, Union, get_args, get_origin  # noqa: UP035
 from sik_llms.utilities import Registry, get_json_schema_type
 
 
@@ -162,6 +162,7 @@ class Tool(BaseModel):
     name: str
     parameters: list[Parameter]
     description: str | None = None
+    func: Callable | None = None
 
     def to_openai(self) -> dict[str, object]:
         """Convert the tool to the format expected by OpenAI API."""

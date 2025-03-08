@@ -1,13 +1,33 @@
+"""Tests for the ReasoningAgent class."""
 import re
 import pytest
-import asyncio
-from typing import Dict, Any, List
-
 from sik_llms.models_base import (
-    Tool, Parameter, ThinkingEvent, ToolPredictionEvent, 
-    ToolResultEvent, TextChunkEvent, ErrorEvent, ResponseSummary
+    Tool,
+    Parameter,
+    ThinkingEvent,
+    ToolPredictionEvent,
+    ToolResultEvent,
+    ResponseSummary,
 )
 from sik_llms.reasoning_agent import ReasoningAgent
+
+
+async def calculator(expression: str) -> str:
+        """Execute calculator tool."""
+        try:
+            # Only allow simple arithmetic for safety
+            allowed_chars = set("0123456789+-*/() .")
+            if not all(c in allowed_chars for c in expression):
+                return "Error: Invalid characters in expression"
+            return str(eval(expression))
+        except Exception as e:
+            return f"Error: {e!s}"
+
+
+async def weather(location: str) -> str:
+    """Mock weather tool - returns fake data."""
+    # Return mock weather data
+    return f"Weather for {location}: 72°F, Sunny with some clouds"
 
 
 @pytest.fixture
@@ -18,12 +38,13 @@ def calculator_tool():
         description="Perform mathematical calculations",
         parameters=[
             Parameter(
-                name="expression", 
-                type="string", 
-                required=True, 
-                description="The mathematical expression to evaluate (e.g., '2 + 2', '5 * 10')"
-            )
-        ]
+                name="expression",
+                type="string",
+                required=True,
+                description="The mathematical expression to evaluate (e.g., '2 + 2', '5 * 10')",
+            ),
+        ],
+        func=calculator,
     )
 
 
@@ -35,69 +56,43 @@ def weather_tool():
         description="Get the current weather for a location",
         parameters=[
             Parameter(
-                name="location", 
-                type="string", 
-                required=True, 
-                description="The city and state/country (e.g., 'San Francisco, CA')"
-            )
-        ]
+                name="location",
+                type="string",
+                required=True,
+                description="The city and state/country (e.g., 'San Francisco, CA')",
+            ),
+        ],
+        func=weather,
     )
 
 
-@pytest.fixture
-def tool_executors():
-    """Fixture for tool executors."""
-    
-    async def calculator_executor(expression: str) -> str:
-        """Execute calculator tool."""
-        try:
-            # Only allow simple arithmetic for safety
-            allowed_chars = set("0123456789+-*/() .")
-            if not all(c in allowed_chars for c in expression):
-                return "Error: Invalid characters in expression"
-            return str(eval(expression))
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-    async def weather_executor(location: str) -> str:
-        """Mock weather tool - returns fake data."""
-        # Return mock weather data
-        return f"Weather for {location}: 72°F, Sunny with some clouds"
-    
-    return {
-        "calculator": calculator_executor,
-        "get_weather": weather_executor
-    }
-
-
 @pytest.mark.asyncio
-async def test_reasoning_agent_with_calculator(calculator_tool, tool_executors):
+async def test_reasoning_agent_with_calculator(calculator_tool: Tool):
     """Test the ReasoningAgent with a calculator tool using GPT-4o-mini."""
     # Create the reasoning agent
     agent = ReasoningAgent(
         model_name="gpt-4o-mini",
         tools=[calculator_tool],
-        tool_executors=tool_executors,
         max_iterations=2,
-        temperature=0
+        temperature=0,
     )
-    
+
     # Test messages
     messages = [{"role": "user", "content": "What is 532 * 124?"}]
-    
+
     # Run the agent and collect the results
     results = []
     async for result in agent.run_async(messages):
         results.append(result)
-    
+
     # Check that we got the expected results
     thinking_events = [r for r in results if isinstance(r, ThinkingEvent)]
     assert len(thinking_events) > 0, "Should have thinking events"
-    
+
     tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
     assert len(tool_prediction_events) > 0, "Should have tool prediction events"
     assert tool_prediction_events[0].name == "calculator", "Should use calculator tool"
-    
+
     tool_result_events = [r for r in results if isinstance(r, ToolResultEvent)]
     assert len(tool_result_events) > 0, "Should have tool result events"
     assert "65968" in tool_result_events[0].result, "Result should be 65968"
@@ -105,8 +100,8 @@ async def test_reasoning_agent_with_calculator(calculator_tool, tool_executors):
     # Last result should be a ResponseSummary with the full response
     last_result = results[-1]
     assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
-    assert re.search(r'65[,]?968', last_result.response) is not None, "Final answer should contain 65968 or 65,968"
-    
+    assert re.search(r'65[,]?968', last_result.response) is not None, "Final answer should contain 65968 or 65,968"  # noqa: E501
+
     # Check token accounting
     assert last_result.input_tokens > 0, "Should have input tokens"
     assert last_result.output_tokens > 0, "Should have output tokens"
@@ -114,20 +109,18 @@ async def test_reasoning_agent_with_calculator(calculator_tool, tool_executors):
 
 
 @pytest.mark.asyncio
-async def test_reasoning_agent_with_multiple_tools(calculator_tool, weather_tool, tool_executors):
+async def test_reasoning_agent_with_multiple_tools(calculator_tool: Tool, weather_tool: Tool):
     """Test the ReasoningAgent with multiple tools."""
     # Create the reasoning agent
     agent = ReasoningAgent(
         model_name="gpt-4o-mini",
         tools=[calculator_tool, weather_tool],
-        tool_executors=tool_executors,
-        max_iterations=3,
-        temperature=0
+        temperature=0,
     )
-    
+
     # Test messages with a complex query requiring multiple tools
     messages = [{
-        "role": "user", 
+        "role": "user",
         "content": "I'm planning a trip to New York. What's the weather like there? Also, if the temperature in Celsius is 22, what is that in Fahrenheit?"
     }]
     

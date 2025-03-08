@@ -59,13 +59,12 @@ class ReasoningAgent(Client):
             model_name: str,
             tools: Optional[list[Tool]] = None,
             max_iterations: int = 5,
-            tool_executors: Optional[dict[str, Callable]] = None,
             reasoning_system_prompt: Optional[str] = None,
             **model_kwargs: dict,
         ):
         """
         Initialize the reasoning agent.
-        
+
         Args:
             model_name: The name of the model to use
             tools: Optional list of tools the agent can use
@@ -95,9 +94,9 @@ class ReasoningAgent(Client):
             response_format=ReasoningStep,
             **model_kwargs,
         )
-        # Configure tools and tool execution
+        if any(t.func is None for t in tools):
+            raise ValueError("All tools must have a callable function")
         self.tools = tools or []
-        self.tool_executors = tool_executors or {}
         self.max_iterations = max_iterations
         # Set up the system prompt for reasoning
         self.reasoning_system_prompt = reasoning_system_prompt or self._default_reasoning_prompt()
@@ -160,7 +159,7 @@ class ReasoningAgent(Client):
 
         Handles both synchronous and asynchronous tool executor functions.
         """
-        executor = self.tool_executors.get(tool_name)
+        executor = next((tool.func for tool in self.tools if tool.name == tool_name), None)
         if not executor:
             raise ValueError(f"No executor available for tool '{tool_name}'")
 
