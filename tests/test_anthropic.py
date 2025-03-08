@@ -1,23 +1,26 @@
 """Test the Anthropic Wrapper."""
 import asyncio
 import os
+from pydantic import BaseModel
 import pytest
 from dotenv import load_dotenv
 from sik_llms import (
     Client,
+    create_client,
     system_message,
     user_message,
     RegisteredClients,
     Anthropic,
     AnthropicFunctions,
-    ChatChunkResponse,
-    ChatResponseSummary,
+    ResponseChunk,
+    ResponseSummary,
     ContentType,
     ReasoningEffort,
     Function,
     FunctionCallResponse,
     FunctionCallResult,
     ToolChoice,
+    StructuredOutputResponse,
 )
 load_dotenv()
 
@@ -44,9 +47,9 @@ async def test__async_anthropic_completion_wrapper_call():
         summary = None
         try:
             async for response in client.run_async(messages=messages):
-                if isinstance(response, ChatChunkResponse):
+                if isinstance(response, ResponseChunk):
                     chunks.append(response)
-                elif isinstance(response, ChatResponseSummary):
+                elif isinstance(response, ResponseSummary):
                     summary = response
             return chunks, summary
         except Exception:
@@ -59,7 +62,7 @@ async def test__async_anthropic_completion_wrapper_call():
         response = ''.join([chunk.content for chunk in chunks])
         passed_tests.append(
             'Paris' in response
-            and isinstance(summary, ChatResponseSummary)
+            and isinstance(summary, ResponseSummary)
             and summary.input_tokens > 0
             and summary.output_tokens > 0
             and summary.input_cost > 0
@@ -98,7 +101,7 @@ async def test__Anthropic__instantiate__run_async():
     )
     responses = []
     async for response in model.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             responses.append(response)
 
     assert len(responses) > 0
@@ -169,12 +172,12 @@ async def test__Anthropic__with_thinking__reasoning_effort():
 
     messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.THINKING:
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             # Check that summary contains both thinking and answer
             assert "45" in response.content
 
@@ -198,12 +201,12 @@ async def test__Anthropic__with_thinking__thinking_budget_tokens():
 
     messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.THINKING:
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             # Check that summary contains both thinking and answer
             has_summary = True
             assert "45" in response.content
@@ -236,12 +239,12 @@ async def test__Anthropic__with_thinking__temperature():
 
     messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.THINKING:
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             # Check that summary contains both thinking and answer
             assert "45" in response.content
 
@@ -269,7 +272,7 @@ async def test__Anthropic__with_thinking__test_redacted_thinking():
     # https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#example-working-with-redacted-thinking-blocks
     messages = [user_message("ANTHROPIC_MAGIC_STRING_TRIGGER_REDACTED_THINKING_46C9A13E193C177646C7398A98432ECCCE4C1253D5E2D82641AC0E52CC2876CB")]  # noqa: E501
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.REDACTED_THINKING:
                 has_redacted_thinking_content = True
                 assert response.content
@@ -277,7 +280,7 @@ async def test__Anthropic__with_thinking__test_redacted_thinking():
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             has_summary = True
             assert response.content
 
@@ -302,12 +305,12 @@ async def test__Anthropic__without_thinking__verify_no_thinking_events():
 
     messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
     async for response in model.run_async(messages=messages):
-        if isinstance(response, ChatChunkResponse):
+        if isinstance(response, ResponseChunk):
             if response.content_type == ContentType.THINKING:
                 has_thinking_content = True
             if response.content_type == ContentType.TEXT:
                 has_text_content = True
-        if isinstance(response, ChatResponseSummary):
+        if isinstance(response, ResponseSummary):
             # Check that summary contains both thinking and answer
             has_summary = True
 
@@ -511,3 +514,71 @@ class TestAnthropicFunctions:
             assert cities[i] in response.function_call.arguments["location"]
             assert response.input_tokens > 0
             assert response.output_tokens > 0
+
+
+@pytest.mark.asyncio
+class TestAnthropicStructuredOutputs:
+    """Test the OpenAI Structured Output Wrapper."""
+
+    async def test__anthropic__structured_outputs(self):
+        class CalendarEvent(BaseModel):
+            name: str
+            date: str
+            participants: list[str]
+
+        client = create_client(
+            model_name=ANTHROPIC_TEST_MODEL,
+            response_format=CalendarEvent,
+        )
+        messages=[
+            system_message("Extract the event information."),
+            user_message("Alice and Bob are going to a science fair on Friday."),
+        ]
+
+        response = client(messages=messages)
+        assert isinstance(response, ResponseSummary)
+        assert isinstance(response.content, StructuredOutputResponse)
+        assert isinstance(response.content.parsed, CalendarEvent)
+        assert response.content.parsed.name
+        assert response.content.parsed.date
+        assert response.content.parsed.participants
+        assert 'Alice' in response.content.parsed.participants
+        assert 'Bob' in response.content.parsed.participants
+
+    async def test__anthropic__structured_outputs__nested(self):
+        class Address(BaseModel):
+            street: str
+            street_2: str | None = None
+            city: str
+            state: str
+            zip_code: str
+
+        class Contact(BaseModel):
+            first_name: str
+            last_name: str
+            phone: str | None = None
+            email: str | None = None
+            address: Address
+
+        client = create_client(
+            model_name=ANTHROPIC_TEST_MODEL,
+            response_format=Contact,
+        )
+        messages=[
+            system_message("Extract the information."),
+            user_message("Hey my name is Shane Kercheval. I live at 123 Main Street in Anytown, Washington in the USA. The zip code is 12345."),  # noqa: E501
+        ]
+
+        response = client(messages=messages)
+        assert isinstance(response, ResponseSummary)
+        assert isinstance(response.content, StructuredOutputResponse)
+        assert isinstance(response.content.parsed, Contact)
+        assert response.content.parsed.first_name == 'Shane'
+        assert response.content.parsed.last_name == 'Kercheval'
+        assert not response.content.parsed.phone
+        assert not response.content.parsed.email
+        assert response.content.parsed.address.street == '123 Main Street'
+        assert not response.content.parsed.address.street_2
+        assert response.content.parsed.address.city == 'Anytown'
+        assert response.content.parsed.address.state in ('Washington', 'WA')
+        assert response.content.parsed.address.zip_code == '12345'

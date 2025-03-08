@@ -1,13 +1,16 @@
 """Base classes and utilities for models."""
 import asyncio
+import inspect
+import json
+import types
 import nest_asyncio
 from pydantic import BaseModel
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from copy import deepcopy
 from enum import Enum, auto
-from typing import TypeVar
-from sik_llms.utilities import Registry
+from typing import List, Literal, TypeVar, Union, get_args, get_origin  # noqa: UP035
+from sik_llms.utilities import Registry, get_json_schema_type
 
 
 class RegisteredClients(Enum):
@@ -51,7 +54,7 @@ def system_message(content: str) -> dict:
     return {'role': 'system', 'content': content}
 
 
-class ChatChunkResponse(BaseModel):
+class ResponseChunk(BaseModel):
     """A chunk returned when streaming."""
 
     content: str | object
@@ -86,35 +89,20 @@ class TokenSummary(BaseModel):
         return self.input_cost + self.output_cost
 
 
-class ChatResponseSummary(TokenSummary):
+class ResponseSummary(TokenSummary):
     """Summary of a chat response."""
 
     content: str | StructuredOutputResponse
 
 
 class Parameter(BaseModel):
-    """
-    Represents a parameter property in a function's schema.
-
-    Supported types
-        The following types are supported for Structured Outputs:
-
-        String
-        Number
-        Boolean
-        Integer
-        Object
-        Array
-        Enum
-        anyOf
-
-    """
+    """Represents a parameter property in a function's schema."""
 
     name: str
-    type: str
+    type: Literal['string', 'number', 'boolean', 'integer', 'object', 'array', 'enum', 'anyOf']
     required: bool
     description: str | None = None
-    enum: list[str] | None = None
+    enum: list[str | int | float | bool] | None = None
 
 
 class Function(BaseModel):
@@ -129,22 +117,22 @@ class Function(BaseModel):
         properties = {}
         required = []
         for param in self.parameters:
-            param_dict = {"type": param.type}
+            param_dict = {'type': param.type}
             if param.description:
-                param_dict["description"] = param.description
+                param_dict['description'] = param.description
             if param.enum:
-                param_dict["enum"] = param.enum
+                param_dict['enum'] = param.enum
             properties[param.name] = param_dict
             if param.required:
                 required.append(param.name)
 
         parameters_dict = {
-            "type": "object",
-            "properties": properties,
+            'type': 'object',
+            'properties': properties,
         }
         if required:
-            parameters_dict["required"] = required
-        parameters_dict["additionalProperties"] = False
+            parameters_dict['required'] = required
+        parameters_dict['additionalProperties'] = False
 
         # If all properties are required we should use `strict` mode
         # However, "All fields in properties must be marked as required" (in order to use strict)
@@ -152,12 +140,12 @@ class Function(BaseModel):
         # so we should set `strict` to True only if all parameters are required
         strict = all(param.required for param in self.parameters or [])
         return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "strict": strict,
-                **({"description": self.description} if self.description else {}),
-                "parameters": parameters_dict,
+            'type': 'function',
+            'function': {
+                'name': self.name,
+                'strict': strict,
+                **({'description': self.description} if self.description else {}),
+                'parameters': parameters_dict,
             },
         }
 
@@ -166,26 +154,26 @@ class Function(BaseModel):
         properties = {}
         required = []
         for param in self.parameters:
-            param_dict = {"type": param.type}
+            param_dict = {'type': param.type}
             if param.description:
-                param_dict["description"] = param.description
+                param_dict['description'] = param.description
             if param.enum:
-                param_dict["enum"] = param.enum
+                param_dict['enum'] = param.enum
             properties[param.name] = param_dict
             if param.required:
                 required.append(param.name)
 
         parameters_dict = {
-            "type": "object",
-            "properties": properties,
+            'type': 'object',
+            'properties': properties,
         }
         if required:
-            parameters_dict["required"] = required
+            parameters_dict['required'] = required
 
         return {
-            "name": self.name,
-            **({"description": self.description} if self.description else {}),
-            "input_schema": parameters_dict,
+            'name': self.name,
+            **({'description': self.description} if self.description else {}),
+            'input_schema': parameters_dict,
         }
 
 
@@ -222,13 +210,16 @@ class FunctionCallResponse(TokenSummary):
     Response containing just the essential function call information and usage stats.
 
     Content is filled if there is no function call.
+
+    If a function call is predicted, then function_call is filled and message is None.
+    If no function call is predicted, then function_call is None and message is filled.
     """
 
     function_call: FunctionCallResult | None
     message: str | None = None
 
 
-M = TypeVar('M', bound='Client')
+ClientType = TypeVar('ClientType', bound='Client')
 
 class Client(ABC):
     """Base class for model wrappers."""
@@ -238,7 +229,7 @@ class Client(ABC):
     def __call__(
             self,
             messages: list[dict[str, object]],
-        ) -> ChatResponseSummary | FunctionCallResponse:
+        ) -> ResponseSummary | FunctionCallResponse:
         """
         Invoke the model (e.g. chat).
 
@@ -250,7 +241,7 @@ class Client(ABC):
             **model_kwargs:
                 Additional parameters to pass to the API call (e.g. temperature, max_tokens).
         """
-        async def run() -> ChatResponseSummary:
+        async def run() -> ResponseSummary:
             # Check if the run_async method returns a generator or a direct value
             result = self.run_async(messages)
             # If it's an async generator, collect the last response
@@ -281,12 +272,12 @@ class Client(ABC):
     async def run_async(
         self,
         messages: list[dict[str, object]],
-    ) -> AsyncGenerator[ChatChunkResponse | ChatResponseSummary, None] | FunctionCallResponse:
+    ) -> AsyncGenerator[ResponseChunk | ResponseSummary, None] | FunctionCallResponse:
         """
         Run asynchronously.
 
-        For chat models, this method should return an async generator that yields ChatChunkResponse
-        objects. The last response should be a ChatResponseSummary object.
+        For chat models, this method should return an async generator that yields ResponseChunk
+        objects. The last response should be a ResponseSummary object.
 
         For function models, this method should return a FunctionCallResponse object.
 
@@ -321,11 +312,11 @@ class Client(ABC):
 
     @classmethod
     def instantiate(
-        cls: type[M],
+        cls: type[ClientType],
         client_type: str | Enum,
         model_name: str,
         **model_kwargs: dict | None,
-    ) -> M | list[M]:
+    ) -> ClientType | list[ClientType]:
         """
         Creates a Model object.
 
@@ -351,3 +342,107 @@ class Client(ABC):
             model_kwargs['model_name'] = model_name
             return cls.registry.create_instance(type_name=client_type, **model_kwargs)
         raise ValueError(f"Unknown Model type `{client_type}`")
+
+
+
+def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
+    """Convert a Pydantic model to a list of Parameter objects for function calling."""
+    parameters = []
+
+    # Get model schema - this includes info about required fields
+    model_schema = model_class.model_json_schema()
+    required_fields = set(model_schema.get('required', []))
+    model_fields = model_class.model_fields
+
+    for field_name, field in model_fields.items():
+        # Start with default from schema
+        required = field_name in required_fields
+
+        # Get the field annotation for type analysis
+        annotation = field.annotation
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        # Special handling for Optional/Union with None
+        # In Pydantic v2, Optional fields may still be listed as required in the schema
+        # if they don't have default values, so we need to check the type directly
+        if origin in (Union, types.UnionType) and type(None) in args:
+            # Get the non-None type for schema generation
+            non_none_type = next(arg for arg in args if arg is not type(None))
+            annotation = non_none_type
+
+        # Get description from Field if available
+        description = field.description or None
+        # Handle Enum types specifically
+        if inspect.isclass(annotation) and issubclass(annotation, Enum):
+            parameters.append(Parameter(
+                name=field_name,
+                type="enum",
+                required=required,
+                description=description,
+                enum=[e.value for e in annotation],
+            ))
+            continue
+
+        # Handle List[Model] types
+        if origin in (list, List) and args and inspect.isclass(args[0]) and issubclass(args[0], BaseModel):  # noqa: E501, UP006
+            nested_model = args[0]
+            nested_schema = nested_model.model_json_schema()
+            model_desc = f"An array of {nested_model.__name__} objects with the following structure:\n{json.dumps(nested_schema, indent=2)}"  # noqa: E501
+
+            parameters.append(Parameter(
+                name=field_name,
+                type="array",
+                required=required,
+                description=model_desc,
+            ))
+            continue
+
+        # Handle nested Pydantic models
+        if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
+            # Include both the field description AND the model schema
+            nested_schema = annotation.model_json_schema()
+            model_desc = f"A {annotation.__name__} object with the following structure:\n{json.dumps(nested_schema, indent=2)}"  # noqa: E501
+
+            full_description = description or ""
+            if full_description:
+                full_description += "\n\n"
+            full_description += model_desc
+
+            parameters.append(Parameter(
+                name=field_name,
+                type="object",
+                required=required,
+                description=full_description,
+            ))
+            continue
+
+        # For regular types
+        json_type, extra_props = get_json_schema_type(annotation)
+
+        # Include both the field description AND any extra properties
+        full_description = description or ""
+        if extra_props and extra_props != {}:
+            if full_description:
+                full_description += "\n\n"
+            full_description += f"Additional schema properties: {json.dumps(extra_props, indent=2)}"  # noqa: E501
+
+        parameters.append(Parameter(
+            name=field_name,
+            type=json_type,
+            required=required,
+            description=full_description or None,
+        ))
+    return parameters
+
+
+
+def pydantic_model_to_function(model_class: BaseModel) -> Function:
+    """Convert a Pydantic model to a Function object for use with function calling APIs."""
+    parameters = pydantic_model_to_parameters(model_class)
+    function_name = model_class.__name__
+    description = f"Generate a response in the format specified by {function_name}"
+    return Function(
+        name=function_name,
+        parameters=parameters,
+        description=description,
+    )

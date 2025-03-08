@@ -17,8 +17,8 @@ from sik_llms import (
     FunctionCallResult,
     RegisteredClients,
     OpenAI,
-    ChatChunkResponse,
-    ChatResponseSummary,
+    ResponseChunk,
+    ResponseSummary,
     OpenAIFunctions,
 )
 from sik_llms.models_base import ToolChoice
@@ -56,7 +56,7 @@ class TestOpenAIRegistration:
         # call async/stream method
         responses = []
         async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-            if isinstance(response, ChatChunkResponse):
+            if isinstance(response, ResponseChunk):
                 responses.append(response)
 
         assert len(responses) > 0
@@ -64,7 +64,7 @@ class TestOpenAIRegistration:
 
         # call non-async method
         response = client(messages=[user_message("What is the capital of France?")])
-        assert isinstance(response, ChatResponseSummary)
+        assert isinstance(response, ResponseSummary)
         assert 'Paris' in response.content
 
     async def test__openai__compatible_server_instantiate___parameters__missing_server_url(self):
@@ -192,9 +192,9 @@ class TestOpenAI:
             summary = None
             try:
                 async for response in client.run_async(messages=messages):
-                    if isinstance(response, ChatChunkResponse):
+                    if isinstance(response, ResponseChunk):
                         chunks.append(response)
-                    elif isinstance(response, ChatResponseSummary):
+                    elif isinstance(response, ResponseSummary):
                         summary = response
                 return chunks, summary
             except Exception:
@@ -207,7 +207,7 @@ class TestOpenAI:
             response = ''.join([chunk.content for chunk in chunks])
             passed_tests.append(
                 'Paris' in response
-                and isinstance(summary, ChatResponseSummary)
+                and isinstance(summary, ResponseSummary)
                 and summary.input_tokens > 0
                 and summary.output_tokens > 0
                 and summary.input_cost > 0
@@ -265,7 +265,7 @@ class TestOpenAIStructuredOutputs:
         ]
 
         response = client(messages=messages)
-        assert isinstance(response, ChatResponseSummary)
+        assert isinstance(response, ResponseSummary)
         assert isinstance(response.content, StructuredOutputResponse)
         assert isinstance(response.content.parsed, CalendarEvent)
         assert response.content.parsed.name
@@ -285,7 +285,7 @@ class TestOpenAIReasoning:
             reasoning_effort=ReasoningEffort.LOW,
         )
         response = client(messages=[user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")])
-        assert isinstance(response, ChatResponseSummary)
+        assert isinstance(response, ResponseSummary)
         assert '45' in response.content
         assert response.input_tokens > 0
         assert response.output_tokens > 0
@@ -305,7 +305,7 @@ class TestOpenAIReasoning:
             reasoning_effort=None,
         )
         response = client(messages=[user_message("What is the capital of France?")])
-        assert isinstance(response, ChatResponseSummary)
+        assert isinstance(response, ResponseSummary)
         assert 'Paris' in response.content
         assert response.input_tokens > 0
         assert response.output_tokens > 0
