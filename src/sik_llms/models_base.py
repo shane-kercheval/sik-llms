@@ -344,7 +344,7 @@ class Client(ABC):
         pass
 
     @classmethod
-    def register(cls, client_type: str | Enum):
+    def register(cls, client_type: str | RegisteredClients):
         """Register a subclass of Model."""
 
         def decorator(subclass: type[Client]) -> type[Client]:
@@ -358,14 +358,14 @@ class Client(ABC):
         return decorator
 
     @classmethod
-    def is_registered(cls, client_type: str | Enum) -> bool:
+    def is_registered(cls, client_type: str | RegisteredClients) -> bool:
         """Check if a model type is registered."""
         return client_type in cls.registry
 
     @classmethod
     def instantiate(
         cls: type[ClientType],
-        client_type: str | Enum,
+        client_type: str | RegisteredClients,
         model_name: str,
         **model_kwargs: dict | None,
     ) -> ClientType | list[ClientType]:

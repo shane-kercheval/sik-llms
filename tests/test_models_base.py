@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Dict, Optional, Any  # noqa: UP035
 from pydantic import BaseModel, Field
 
-from sik_llms.models_base import pydantic_model_to_parameters
+from sik_llms.models_base import pydantic_model_to_parameters, Client, RegisteredClients
 
 
 class TestPydanticModelToParameters:
@@ -197,3 +197,73 @@ class TestPydanticModelToParameters:
         metadata_param = next(p for p in params if p.name == 'metadata')
         assert metadata_param.type == 'object'
         assert metadata_param.required is False
+
+
+class MockClient(Client):  # noqa: D101
+    def __init__(self, model_name: str, **kwargs):  # noqa: ANN003
+        self.model_name = model_name
+        self.kwargs = kwargs
+
+    async def run_async(self, messages):  # noqa: ANN001
+        # Simple implementation for testing
+        return messages
+
+
+@Client.register('MockClient')
+class RegisteredMockClient(MockClient):  # noqa: D101
+    pass
+
+
+def test_client_registration():
+    # Test registration with string
+    assert Client.is_registered('MockClient')
+    # Test registration with enum
+    assert Client.is_registered(RegisteredClients.OPENAI)
+    # Test unregistered client
+    assert not Client.is_registered('UnknownClient')
+
+
+def test_client_instantiation():
+    # Test instantiation with string registration
+    client = Client.instantiate(
+        'MockClient',
+        model_name='test-model',
+        temperature=0.7,
+    )
+    assert isinstance(client, RegisteredMockClient)
+    assert client.model_name == 'test-model'
+    assert client.kwargs['temperature'] == 0.7
+
+    # Test instantiation with enum registration
+    client = Client.instantiate(
+        RegisteredClients.OPENAI,
+        model_name='gpt-4o',
+        max_tokens=100,
+    )
+    assert client.model == 'gpt-4o'
+    assert client.model_parameters['max_tokens'] == 100
+
+
+def test_model_kwargs_not_modified():
+    original_kwargs = {'temperature': 0.7, 'max_tokens': 100}
+    kwargs_copy = original_kwargs.copy()
+
+    client = Client.instantiate(
+        'MockClient',
+        model_name='test-model',
+        **original_kwargs,
+    )
+
+    # Verify original kwargs weren't modified
+    assert original_kwargs == kwargs_copy
+
+    # Verify client has correct kwargs
+    assert client.kwargs['temperature'] == 0.7
+    assert client.kwargs['max_tokens'] == 100
+    assert client.model_name == 'test-model'
+
+    # Modify the original kwargs and verify client kwargs are unchanged
+    original_kwargs['temperature'] = 0.5
+    original_kwargs['max_tokens'] = 200
+    assert client.kwargs['temperature'] == 0.7
+    assert client.kwargs['max_tokens'] == 100

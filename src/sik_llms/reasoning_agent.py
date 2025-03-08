@@ -57,6 +57,7 @@ class ReasoningAgent(Client):
     def __init__(
             self,
             model_name: str,
+            client_type: str | RegisteredClients,
             tools: Optional[list[Tool]] = None,
             max_iterations: int = 5,
             reasoning_system_prompt: Optional[str] = None,
