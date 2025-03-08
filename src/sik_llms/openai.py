@@ -172,6 +172,8 @@ class OpenAI(Client):
                 Pydantic class defining structure of the response (i.e. structured output)
             **model_kwargs: Additional parameters to pass to the API call
         """
+        if server_url is None and model_name not in CHAT_MODEL_COST_PER_TOKEN:
+            raise ValueError(f"Model '{model_name}' is not supported.")
         if model_name == 'openai-compatible-server':
             if not server_url:
                 raise ValueError("Missing `server_url` for model `openai-compatible-server`")
@@ -290,6 +292,10 @@ class OpenAIFunctions(Client):
         Args:
             model_name:
                 The model name to use for the API call (e.g. 'gpt-4').
+
+                If the server_url is provided, the model name should be 'openai-compatible-server'.
+                (You can pass a keyword argument called `model` if you want to override the model
+                that is passed to the API call.)
             functions:
                 List of Function objects defining available functions.
             tool_choice:

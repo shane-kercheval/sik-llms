@@ -1,10 +1,12 @@
 """Test the Anthropic Wrapper."""
 import asyncio
 import os
+from pydantic import BaseModel
 import pytest
 from dotenv import load_dotenv
 from sik_llms import (
     Client,
+    create_client,
     system_message,
     user_message,
     RegisteredClients,
@@ -18,6 +20,7 @@ from sik_llms import (
     FunctionCallResponse,
     FunctionCallResult,
     ToolChoice,
+    StructuredOutputResponse,
 )
 load_dotenv()
 
@@ -511,3 +514,71 @@ class TestAnthropicFunctions:
             assert cities[i] in response.function_call.arguments["location"]
             assert response.input_tokens > 0
             assert response.output_tokens > 0
+
+
+@pytest.mark.asyncio
+class TestAnthropicStructuredOutputs:
+    """Test the OpenAI Structured Output Wrapper."""
+
+    async def test__anthropic__structured_outputs(self):
+        class CalendarEvent(BaseModel):
+            name: str
+            date: str
+            participants: list[str]
+
+        client = create_client(
+            model_name=ANTHROPIC_TEST_MODEL,
+            response_format=CalendarEvent,
+        )
+        messages=[
+            system_message("Extract the event information."),
+            user_message("Alice and Bob are going to a science fair on Friday."),
+        ]
+
+        response = client(messages=messages)
+        assert isinstance(response, ResponseSummary)
+        assert isinstance(response.content, StructuredOutputResponse)
+        assert isinstance(response.content.parsed, CalendarEvent)
+        assert response.content.parsed.name
+        assert response.content.parsed.date
+        assert response.content.parsed.participants
+        assert 'Alice' in response.content.parsed.participants
+        assert 'Bob' in response.content.parsed.participants
+
+    async def test__anthropic__structured_outputs__nested(self):
+        class Address(BaseModel):
+            street: str
+            street_2: str | None = None
+            city: str
+            state: str
+            zip_code: str
+
+        class Contact(BaseModel):
+            first_name: str
+            last_name: str
+            phone: str | None = None
+            email: str | None = None
+            address: Address
+
+        client = create_client(
+            model_name=ANTHROPIC_TEST_MODEL,
+            response_format=Contact,
+        )
+        messages=[
+            system_message("Extract the information."),
+            user_message("Hey my name is Shane Kercheval. I live at 123 Main Street in Anytown, Washington in the USA. The zip code is 12345."),  # noqa: E501
+        ]
+
+        response = client(messages=messages)
+        assert isinstance(response, ResponseSummary)
+        assert isinstance(response.content, StructuredOutputResponse)
+        assert isinstance(response.content.parsed, Contact)
+        assert response.content.parsed.first_name == 'Shane'
+        assert response.content.parsed.last_name == 'Kercheval'
+        assert not response.content.parsed.phone
+        assert not response.content.parsed.email
+        assert response.content.parsed.address.street == '123 Main Street'
+        assert not response.content.parsed.address.street_2
+        assert response.content.parsed.address.city == 'Anytown'
+        assert response.content.parsed.address.state in ('Washington', 'WA')
+        assert response.content.parsed.address.zip_code == '12345'

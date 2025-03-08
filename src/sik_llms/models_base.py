@@ -1,13 +1,16 @@
 """Base classes and utilities for models."""
 import asyncio
+import inspect
+import json
+import types
 import nest_asyncio
 from pydantic import BaseModel
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from copy import deepcopy
 from enum import Enum, auto
-from typing import Literal, TypeVar
-from sik_llms.utilities import Registry
+from typing import List, Literal, TypeVar, Union, get_args, get_origin  # noqa: UP035
+from sik_llms.utilities import Registry, get_json_schema_type
 
 
 class RegisteredClients(Enum):
@@ -99,7 +102,7 @@ class Parameter(BaseModel):
     type: Literal['string', 'number', 'boolean', 'integer', 'object', 'array', 'enum', 'anyOf']
     required: bool
     description: str | None = None
-    enum: list[str] | None = None
+    enum: list[str | int | float | bool] | None = None
 
 
 class Function(BaseModel):
@@ -339,3 +342,107 @@ class Client(ABC):
             model_kwargs['model_name'] = model_name
             return cls.registry.create_instance(type_name=client_type, **model_kwargs)
         raise ValueError(f"Unknown Model type `{client_type}`")
+
+
+
+def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
+    """Convert a Pydantic model to a list of Parameter objects for function calling."""
+    parameters = []
+
+    # Get model schema - this includes info about required fields
+    model_schema = model_class.model_json_schema()
+    required_fields = set(model_schema.get('required', []))
+    model_fields = model_class.model_fields
+
+    for field_name, field in model_fields.items():
+        # Start with default from schema
+        required = field_name in required_fields
+
+        # Get the field annotation for type analysis
+        annotation = field.annotation
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        # Special handling for Optional/Union with None
+        # In Pydantic v2, Optional fields may still be listed as required in the schema
+        # if they don't have default values, so we need to check the type directly
+        if origin in (Union, types.UnionType) and type(None) in args:
+            # Get the non-None type for schema generation
+            non_none_type = next(arg for arg in args if arg is not type(None))
+            annotation = non_none_type
+
+        # Get description from Field if available
+        description = field.description or None
+        # Handle Enum types specifically
+        if inspect.isclass(annotation) and issubclass(annotation, Enum):
+            parameters.append(Parameter(
+                name=field_name,
+                type="enum",
+                required=required,
+                description=description,
+                enum=[e.value for e in annotation],
+            ))
+            continue
+
+        # Handle List[Model] types
+        if origin in (list, List) and args and inspect.isclass(args[0]) and issubclass(args[0], BaseModel):  # noqa: E501, UP006
+            nested_model = args[0]
+            nested_schema = nested_model.model_json_schema()
+            model_desc = f"An array of {nested_model.__name__} objects with the following structure:\n{json.dumps(nested_schema, indent=2)}"  # noqa: E501
+
+            parameters.append(Parameter(
+                name=field_name,
+                type="array",
+                required=required,
+                description=model_desc,
+            ))
+            continue
+
+        # Handle nested Pydantic models
+        if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
+            # Include both the field description AND the model schema
+            nested_schema = annotation.model_json_schema()
+            model_desc = f"A {annotation.__name__} object with the following structure:\n{json.dumps(nested_schema, indent=2)}"  # noqa: E501
+
+            full_description = description or ""
+            if full_description:
+                full_description += "\n\n"
+            full_description += model_desc
+
+            parameters.append(Parameter(
+                name=field_name,
+                type="object",
+                required=required,
+                description=full_description,
+            ))
+            continue
+
+        # For regular types
+        json_type, extra_props = get_json_schema_type(annotation)
+
+        # Include both the field description AND any extra properties
+        full_description = description or ""
+        if extra_props and extra_props != {}:
+            if full_description:
+                full_description += "\n\n"
+            full_description += f"Additional schema properties: {json.dumps(extra_props, indent=2)}"  # noqa: E501
+
+        parameters.append(Parameter(
+            name=field_name,
+            type=json_type,
+            required=required,
+            description=full_description or None,
+        ))
+    return parameters
+
+
+
+def pydantic_model_to_function(model_class: BaseModel) -> Function:
+    """Convert a Pydantic model to a Function object for use with function calling APIs."""
+    parameters = pydantic_model_to_parameters(model_class)
+    function_name = model_class.__name__
+    description = f"Generate a response in the format specified by {function_name}"
+    return Function(
+        name=function_name,
+        parameters=parameters,
+        description=description,
+    )
