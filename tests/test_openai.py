@@ -17,7 +17,7 @@ from sik_llms import (
     ToolPrediction,
     RegisteredClients,
     OpenAI,
-    ResponseChunk,
+    TextChunkEvent,
     ResponseSummary,
     OpenAITools,
 )
@@ -56,7 +56,7 @@ class TestOpenAIRegistration:
         # call async/stream method
         responses = []
         async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-            if isinstance(response, ResponseChunk):
+            if isinstance(response, TextChunkEvent):
                 responses.append(response)
 
         assert len(responses) > 0
@@ -65,7 +65,7 @@ class TestOpenAIRegistration:
         # call non-async method
         response = client(messages=[user_message("What is the capital of France?")])
         assert isinstance(response, ResponseSummary)
-        assert 'Paris' in response.content
+        assert 'Paris' in response.response
 
     async def test__openai__compatible_server_instantiate___parameters__missing_server_url(self):
         # This base_url is required for openai-compatible-server
@@ -192,7 +192,7 @@ class TestOpenAI:
             summary = None
             try:
                 async for response in client.run_async(messages=messages):
-                    if isinstance(response, ResponseChunk):
+                    if isinstance(response, TextChunkEvent):
                         chunks.append(response)
                     elif isinstance(response, ResponseSummary):
                         summary = response
@@ -266,13 +266,13 @@ class TestOpenAIStructuredOutputs:
 
         response = client(messages=messages)
         assert isinstance(response, ResponseSummary)
-        assert isinstance(response.content, StructuredOutputResponse)
-        assert isinstance(response.content.parsed, CalendarEvent)
-        assert response.content.parsed.name
-        assert response.content.parsed.date
-        assert response.content.parsed.participants
-        assert 'Alice' in response.content.parsed.participants
-        assert 'Bob' in response.content.parsed.participants
+        assert isinstance(response.response, StructuredOutputResponse)
+        assert isinstance(response.response.parsed, CalendarEvent)
+        assert response.response.parsed.name
+        assert response.response.parsed.date
+        assert response.response.parsed.participants
+        assert 'Alice' in response.response.parsed.participants
+        assert 'Bob' in response.response.parsed.participants
 
 
 @pytest.mark.asyncio
@@ -286,14 +286,14 @@ class TestOpenAIReasoning:
         )
         response = client(messages=[user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")])
         assert isinstance(response, ResponseSummary)
-        assert '45' in response.content
+        assert '45' in response.response
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0
         assert response.output_cost > 0
         assert response.duration_seconds > 0
         response = client(messages=[user_message("What is the capital of France?")])
-        assert 'Paris' in response.content
+        assert 'Paris' in response.response
 
     async def test__openai__test_reasoning_model__without_reasonsing_effort_set(self):
         """
@@ -306,7 +306,7 @@ class TestOpenAIReasoning:
         )
         response = client(messages=[user_message("What is the capital of France?")])
         assert isinstance(response, ResponseSummary)
-        assert 'Paris' in response.content
+        assert 'Paris' in response.response
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0

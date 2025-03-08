@@ -6,9 +6,10 @@ from anthropic import AsyncAnthropic, Anthropic as SyncAnthropic
 from pydantic import BaseModel
 from sik_llms.models_base import (
     Client,
-    ResponseChunk,
+    ErrorEvent,
+    TextChunkEvent,
     ResponseSummary,
-    ContentType,
+    ThinkingChunkEvent,
     Tool,
     ToolPredictionResponse,
     ToolPrediction,
@@ -66,32 +67,34 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
     return response.tokens
 
 
-def _parse_completion_chunk(chunk) -> ResponseChunk | None:  # noqa: ANN001
+def _parse_completion_chunk(chunk) -> TextChunkEvent | None:  # noqa: ANN001
     """Parse a chunk from the Anthropic API streaming response."""
     # Process content block deltas
     if chunk.type == 'content_block_start':  # noqa: SIM102
         if chunk.content_block.type == 'redacted_thinking':
-            return ResponseChunk(
+            return ThinkingChunkEvent(
                 content=chunk.content_block.data,
-                content_type=ContentType.REDACTED_THINKING,
+                is_redacted=True,
             )
     if chunk.type == 'content_block_delta':
         # Text delta
         if chunk.delta.type == 'text_delta':
-            return ResponseChunk(
+            return TextChunkEvent(
                 content=chunk.delta.text,
-                content_type=ContentType.TEXT,
             )
         # Thinking delta
         if chunk.delta.type == 'thinking_delta':
-            return ResponseChunk(
+            return ThinkingChunkEvent(
                 content=chunk.delta.thinking,
-                content_type=ContentType.THINKING,
+                is_redacted=False,
             )
     if chunk.type == 'error':
-        return ResponseChunk(
+        return ErrorEvent(
             content=f"Error: type={chunk.error.type}, message={chunk.error.message}",
-            content_type=ContentType.ERROR,
+            metadata={
+                'type': chunk.error.type,
+                'message': chunk.error.message,
+            },
         )
     # All other event types are ignored (content_block_start, message_start, message_delta, etc.)
     return None
@@ -172,7 +175,7 @@ class Anthropic(Client):
     async def run_async(
             self,
             messages: list[dict],
-        ) -> AsyncGenerator[ResponseChunk | ResponseSummary, None]:
+        ) -> AsyncGenerator[TextChunkEvent | ResponseSummary, None]:
         """
         Streams chat chunks and returns a final summary. Parameters passed here
         override those passed to the constructor.
@@ -217,7 +220,7 @@ class Anthropic(Client):
 
                 # Yield the response
                 yield ResponseSummary(
-                    content=structured_output,
+                    response=structured_output,
                     input_tokens=response.input_tokens,
                     output_tokens=response.output_tokens,
                     input_cost=response.input_cost,
@@ -227,12 +230,12 @@ class Anthropic(Client):
                 return
             except Exception as e:
                 # Handle any other errors
-                yield ResponseChunk(
+                yield ErrorEvent(
                     content=f"Error: {e!s}",
-                    content_type=ContentType.ERROR,
+                    metadata={'error': e},
                 )
                 yield ResponseSummary(
-                    content=StructuredOutputResponse(
+                    response=StructuredOutputResponse(
                         parsed=None,
                         refusal=f"Function call error: {e!s}",
                     ),
@@ -274,11 +277,12 @@ class Anthropic(Client):
         processed_chunks = []
         for chunk in chunks:
             # Ignore REDACTED_THINKING chunks for the summary
-            if chunk.content_type in (ContentType.TEXT, ContentType.THINKING):
+            # if chunk.content_type in (ContentType.TEXT, ContentType.THINKING):
+            if isinstance(chunk, TextChunkEvent) or (isinstance(chunk, ThinkingChunkEvent) and not chunk.is_redacted):  # noqa: E501
                 processed_chunks.append(chunk.content)
 
         yield ResponseSummary(
-            content=''.join(processed_chunks),
+            response=''.join(processed_chunks),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input'],

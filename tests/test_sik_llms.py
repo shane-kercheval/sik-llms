@@ -4,7 +4,7 @@ import pytest
 from sik_llms import (
     create_client,
     user_message,
-    ResponseChunk,
+    TextChunkEvent,
     ResponseSummary,
     Tool,
     RegisteredClients,
@@ -29,7 +29,7 @@ async def test__create_client__openai() -> None:
 
     responses = []
     async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ResponseChunk):
+        if isinstance(response, TextChunkEvent):
             responses.append(response)
 
     assert len(responses) > 0
@@ -37,7 +37,7 @@ async def test__create_client__openai() -> None:
 
     response = client(messages=[user_message("What is the capital of France?")])
     assert isinstance(response, ResponseSummary)
-    assert 'Paris' in response.content
+    assert 'Paris' in response.response
 
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
@@ -53,7 +53,7 @@ async def test__create_client__anthropic() -> None:
 
     responses = []
     async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ResponseChunk):
+        if isinstance(response, TextChunkEvent):
             responses.append(response)
 
     assert len(responses) > 0
@@ -61,7 +61,7 @@ async def test__create_client__anthropic() -> None:
 
     response = client(messages=[user_message("What is the capital of France?")])
     assert isinstance(response, ResponseSummary)
-    assert 'Paris' in response.content
+    assert 'Paris' in response.response
 
 
 @pytest.mark.asyncio

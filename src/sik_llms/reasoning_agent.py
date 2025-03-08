@@ -2,15 +2,24 @@
 
 import asyncio
 import json
-from enum import Enum, auto
+from enum import Enum
 from textwrap import dedent
-from typing import AsyncGenerator, Callable, Dict, List, Literal, Optional, Union, Any
-
+from typing import AsyncGenerator, Callable, Dict, Optional, Any  # noqa: UP035
 from pydantic import BaseModel, Field
-
 from sik_llms.models_base import (
-    Client, RegisteredClients, ResponseChunk, ResponseSummary, Tool, ToolChoice,
-    ContentType, ToolPrediction, ToolPredictionResponse, BaseModel as SIKBaseModel, system_message
+    Client,
+    ErrorEvent,
+    RegisteredClients,
+    TextChunkEvent,
+    ResponseSummary,
+    ThinkingEvent,
+    Tool,
+    ToolChoice,
+    ToolPredictionEvent,
+    ToolResultEvent,
+    system_message,
+    assistant_message,
+    user_message,
 )
 from sik_llms.openai import (
     CHAT_MODEL_COST_PER_TOKEN as OPENAI_CHAT_MODEL_COST_PER_TOKEN,
@@ -22,31 +31,25 @@ from sik_llms.anthropic import (
 
 class ReasoningAction(str, Enum):
     """Possible actions the reasoning agent can take."""
-    CONTINUE_THINKING = "continue_thinking"
-    USE_TOOL = "use_tool"
-    PROVIDE_ANSWER = "provide_answer"
+
+    CONTINUE_THINKING = 'continue_thinking'
+    USE_TOOL = 'use_tool'
+    FINISHED = 'finished'
 
 
 class ReasoningStep(BaseModel):
     """Model for a single reasoning step."""
+
     thought: str = Field(description="Current reasoning/thinking about the problem")
-    is_complete: bool = Field(description="Whether the reasoning process is complete")
     next_action: ReasoningAction = Field(description="What action to take next")
     tool_name: str | None = Field(default=None, description="Name of the tool to use (if next_action is USE_TOOL)")
-
-
-class ReasoningState(Enum):
-    """Internal states for the reasoning agent."""
-    THINKING = auto()
-    USING_TOOL = auto()
-    COMPLETE = auto()
 
 
 @Client.register(RegisteredClients.REASONING_AGENT)
 class ReasoningAgent(Client):
     """
     A reasoning agent that can iteratively think and execute tools using structured output.
-    
+
     This implementation uses a Pydantic model for structured reasoning steps and 
     an event-driven approach to provide progress updates to the client.
     """
@@ -54,10 +57,10 @@ class ReasoningAgent(Client):
     def __init__(
             self,
             model_name: str,
-            tools: Optional[List[Tool]] = None,
+            tools: Optional[list[Tool]] = None,
             tool_choice: ToolChoice = ToolChoice.AUTO,
             max_iterations: int = 5,
-            tool_executors: Optional[Dict[str, Callable]] = None,
+            tool_executors: Optional[dict[str, Callable]] = None,
             reasoning_system_prompt: Optional[str] = None,
             **model_kwargs: dict,
         ):
@@ -129,25 +132,26 @@ class ReasoningAgent(Client):
 
         return dedent(f"""
         You are a reasoning agent that solves problems step-by-step.
-        
-        PROCESS:
+
+        [PROCESS]:
+
         1. Think carefully about the user's request or question
         2. Break down complex problems into smaller steps
-        3. When needed, use available tools to gather information or perform actions
+        3. When needed, use available tools (if available) to gather information or perform actions
         4. After each step, determine if you have enough information to provide a final answer
-        5. If you need more information, continue reasoning and using tools
-        6. When you have enough information, set is_complete to true
-        
+        5. Continue to reason and use tools (if available) until you can provide a complete answer.
+        6. When you have enough information, set `next_action` to `FINISHED`
+        7. If you need additional information from the user in order to answer the question, specify the information you need and set `next_action` to `FINISHED`. This will end the reasoning process so the user can provide the necessary information. This prevents hallucinations.
+
         {tools_description}
-        
+
         For each step, you must provide:
-        1. Your current thought process (thought)
-        2. Whether reasoning is complete (is_complete)
-        3. The next action to take (next_action): continue_thinking, use_tool, or provide_answer
-        4. If using a tool, provide ONLY the tool name - do not provide tool parameters
-        
+        1. Your current thought process (`thought`)
+        2. The next action to take (`next_action`): `CONTINUE_THINKING`, `USE_TOOL`, or `FINISHED`
+        3. If using a tool, provide ONLY the tool name and provide the EXACT name - DO NOT PROVIDE TOOL PARAMETERS
+
         Always take your time to think and reason through the problem carefully.
-        """).strip()
+        """).strip()  # noqa: E501
 
     def _get_tools_client(self, tool_name: str) -> Client:
         """Get or create a tools client for the given tool."""
@@ -160,7 +164,7 @@ class ReasoningAgent(Client):
             client_type=self.tools_client_type,
             model_name=self.model,
             tools=tools_to_use,
-            tool_choice=ToolChoice.REQUIRED if tool_name else self.tool_choice,
+            tool_choice=ToolChoice.REQUIRED,
             **self.model_kwargs,
         )
 
@@ -183,246 +187,250 @@ class ReasoningAgent(Client):
                 None, lambda: executor(**args)
             )
 
-    async def run_async(
+    async def run_async(  # noqa: PLR0912, PLR0915
             self,
-            messages: List[Dict[str, Any]],
-        ) -> AsyncGenerator[ResponseChunk | ResponseSummary, None]:
+            messages: list[dict[str, Any]],
+        ) -> AsyncGenerator[
+            TextChunkEvent | ThinkingEvent | ToolPredictionEvent | ToolResultEvent
+            | ErrorEvent | ResponseSummary,
+        ]:
         """
         Run the reasoning agent on the given messages.
 
         This method implements an iterative reasoning process using structured output.
         """
         self.start_time = asyncio.get_event_loop().time()
-        # Add the system message for reasoning
+        # Get the last message from the user; treat the previous messages as text/context
+        messages = messages.copy()
+        last_message = messages.pop()
+        # reasoning_messages will be used to send to the various models/agents
         reasoning_messages = [
+            # Add the system message for reasoning
             system_message(self.reasoning_system_prompt),
-            *messages.copy(),
+            user_message(f"Here are the previous messages for context:\n\n```\n{json.dumps(messages)}\n```\n"),  # noqa: E501
+            last_message,
         ]
-        # Keep track of all reasoning steps and tool calls
-        reasoning_history = []
-        final_reasoning = []
+        # reasoning_history will be used to store the reasoning steps so that we can summarize them
+        # later for the final response
+        reasoning_history: list[dict] = []
         iteration = 0
-        state = ReasoningState.THINKING
+        reasoning_step: ReasoningStep | None = None
 
-        yield ResponseChunk(
+        # let's the user know that the agent has started thinking
+        yield ThinkingEvent(
             content='',
-            content_type=ContentType.THINKING,
             iteration=iteration,
         )
 
-        while iteration < self.max_iterations and state != ReasoningState.COMPLETE:
+        while iteration < self.max_iterations:
             iteration += 1
-            if state == ReasoningState.THINKING:
-                # Get structured reasoning step
-                response = self.reasoning_model(reasoning_messages)
-                # Update token usage
-                self.total_input_tokens += response.input_tokens
-                self.total_output_tokens += response.output_tokens
-                self.total_input_cost += response.input_cost
-                self.total_output_cost += response.output_cost
+            # Get structured reasoning step
 
-                # Parse the reasoning step
-                reasoning_step = response.content.parsed
+            response: ResponseSummary = self.reasoning_model(reasoning_messages)
+            # Update token usage
+            self.total_input_tokens += response.input_tokens
+            self.total_output_tokens += response.output_tokens
+            self.total_input_cost += response.input_cost
+            self.total_output_cost += response.output_cost
 
-                if not reasoning_step:
-                    # Handle parsing failure
-                    yield ResponseChunk(
-                        content=f"Error: Failed to parse reasoning step. Response: {response.content.refusal}",  # noqa: E501
-                        content_type=ContentType.ERROR,
-                        iteration=iteration,
-                    )
-                    break
+            # Parse the reasoning step
+            reasoning_step: ReasoningStep = response.response.parsed
 
-                # Emit thinking event
-                yield ResponseChunk(
-                    content=reasoning_step.thought,
-                    content_type=ContentType.THINKING,
-                    iteration=iteration,
-                )
-
-                # Record the reasoning step
+            # check if the structured response was successfully parsed/created
+            if reasoning_step:
+                reasoning_messages.append(assistant_message(reasoning_step.thought))
                 reasoning_history.append({
                     'iteration': iteration,
                     'reasoning_step': reasoning_step.model_dump(),
                 })
-                final_reasoning.append(reasoning_step.thought)
-                
-                # Determine next state based on the reasoning step
-                if reasoning_step.is_complete:
-                    state = ReasoningState.COMPLETE
-                    # yield ResponseChunk(
-                    #     content="Reasoning complete. Generating final answer...",
-                    #     content_type=ContentType.INFO,
-                    #     iteration=iteration,
-                    # )
-                elif reasoning_step.next_action == ReasoningAction.USE_TOOL and self.tools:
-                    # Validate tool selection
-                    if not reasoning_step.tool_name:
-                        yield ResponseChunk(
-                            content="Error: Tool name is missing",
-                            content_type=ContentType.ERROR,
-                            iteration=iteration
-                        )
-                        continue
-                    
-                    # Move to tool use state
-                    state = ReasoningState.USING_TOOL
-                    tool_name = reasoning_step.tool_name
-                    
-                    # Use the tools client to predict the tool inputs
-                    try:
-                        # Create messages for tool prediction
-                        tool_messages = reasoning_messages.copy()
-                        tool_messages.append({
-                            'role': 'assistant', 
-                            'content': reasoning_step.thought
-                        })
-                        
-                        # Get the tools client for this specific tool
-                        tools_client = self._get_tools_client(tool_name)
-                        tool_response = tools_client(tool_messages)
-                        
-                        # Update token usage
-                        self.total_input_tokens += tool_response.input_tokens
-                        self.total_output_tokens += tool_response.output_tokens
-                        self.total_input_cost += tool_response.input_cost
-                        self.total_output_cost += tool_response.output_cost
-                        
-                        if tool_response.tool_prediction:
-                            # Use the tool name and arguments from the prediction
-                            predicted_tool_name = tool_response.tool_prediction.name
-                            tool_input = tool_response.tool_prediction.arguments
-                            
-                            # Verify the predicted tool matches the requested tool
-                            if predicted_tool_name != tool_name:
-                                yield ResponseChunk(
-                                    content=f"Warning: Tool prediction changed from {tool_name} to {predicted_tool_name}",
-                                    content_type=ContentType.TEXT,
-                                    iteration=iteration
-                                )
-                                tool_name = predicted_tool_name
-                        else:
-                            # No tool prediction was made
-                            yield ResponseChunk(
-                                content=f"Error: Failed to get tool inputs for {tool_name}",
-                                content_type=ContentType.ERROR,
-                                iteration=iteration
+            else:
+                # Handle parsing failure
+                error_message = f"Error: Failed to parse reasoning step. Response: {response.response.refusal}"  # noqa: E501
+                yield ErrorEvent(
+                    content=error_message,
+                    metadata={
+                        'response': response,
+                        'iteration': iteration,
+                    },
+                )
+                reasoning_messages.extend([
+                    assistant_message(error_message),
+                    user_message("Try again and adjust your thinking or response based on the error message."),  # noqa: E501
+                ])
+                continue
+
+            # Emit thinking event
+            yield ThinkingEvent(
+                content=reasoning_step.thought,
+                iteration=iteration,
+            )
+
+            # Determine next step based on the reasoning step
+            if reasoning_step.next_action == ReasoningAction.FINISHED:
+                # Finish the reasoning process
+                break
+            # Continue thinking
+            elif reasoning_step.next_action == ReasoningAction.CONTINUE_THINKING:
+                # TODO perhaps add a user message to encourage the model to continue thinking?
+                continue
+            # Use a tool
+            elif reasoning_step.next_action == ReasoningAction.USE_TOOL:
+                if not self.tools:
+                    yield ErrorEvent(
+                        content="Error: Agent chose to use tools but no tools are available.",
+                        metadata={
+                            'reasoning_step': reasoning_step,
+                            'iteration': iteration,
+                        },
+                    )
+                    reasoning_messages.extend([
+                        assistant_message("I chose to use a tool but no tools are available."),
+                        user_message("Continue your reasoning without using tools."),
+                    ])
+                    continue
+                # Validate tool selection
+                if not reasoning_step.tool_name:
+                    yield ErrorEvent(
+                        content="Error: Tool name is missing",
+                        metadata={
+                            'reasoning_step': reasoning_step,
+                            'iteration': iteration,
+                        },
+                    )
+                    reasoning_messages.extend([
+                        assistant_message("Error: I chose to use a tool but didn't provide the tool name."),  # noqa: E501
+                        user_message("Adjust your response and use the correct tools available if they are needed to answer the question."),  # noqa: E501
+                    ])
+                    continue
+
+                tool_name = reasoning_step.tool_name
+
+                # Use the tools client to predict the tool inputs
+                try:
+                    # Create messages for tool prediction
+                    tool_messages = reasoning_messages.copy()
+                    # Get the tools client for this specific tool
+                    tools_client = self._get_tools_client(tool_name)
+                    tool_response = tools_client(tool_messages)
+                    reasoning_history.append({
+                        'iteration': iteration,
+                        'tool_prediction': tool_response.model_dump(),
+                    })
+                    # Update token usage
+                    self.total_input_tokens += tool_response.input_tokens
+                    self.total_output_tokens += tool_response.output_tokens
+                    self.total_input_cost += tool_response.input_cost
+                    self.total_output_cost += tool_response.output_cost
+
+                    if tool_response.tool_prediction:
+                        # Use the tool name and arguments from the prediction
+                        predicted_tool_name = tool_response.tool_prediction.name
+                        predicted_tool_args = tool_response.tool_prediction.arguments
+
+                        # Verify the predicted tool matches the requested tool
+                        if predicted_tool_name != tool_name:
+                            yield ErrorEvent(
+                                content=f"Warning: Tool prediction changed from `{tool_name}` to `{predicted_tool_name}`",  # noqa: E501
+                                metadata={
+                                    'tool_name': tool_name,
+                                    'predicted_tool_name': predicted_tool_name,
+                                    'tool_input': predicted_tool_args,
+                                    'iteration': iteration,
+                                },
                             )
-                            # Fall back to thinking state
-                            state = ReasoningState.THINKING
-                            continue
-                        
+                            tool_name = predicted_tool_name
+
                         # Yield tool prediction event
-                        yield ResponseChunk(
-                            content=f"Using tool: {tool_name} with parameters: {json.dumps(tool_input, indent=2)}",
-                            content_type=ContentType.TOOL_PREDICTION,
-                            iteration=iteration
+                        yield ToolPredictionEvent(
+                            name=predicted_tool_name,
+                            arguments=predicted_tool_args,
+                            iteration=iteration,
                         )
-                        
+
                         # Execute the tool
                         try:
-                            tool_result = await self._execute_tool(tool_name, tool_input)
-                            
+                            tool_result = await self._execute_tool(predicted_tool_name, predicted_tool_args)  # noqa: E501
                             # Yield tool result event
-                            yield ResponseChunk(
-                                content=f"Tool result: {tool_result}",
-                                content_type=ContentType.TOOL_RESULT,
-                                iteration=iteration
+                            yield ToolResultEvent(
+                                name=predicted_tool_name,
+                                arguments=predicted_tool_args,
+                                result=tool_result,
+                                iteration=iteration,
                             )
-                            
                             # Add tool use to the messages
-                            reasoning_messages.append({
-                                'role': 'assistant',
-                                'content': reasoning_step.thought
-                            })
-                            reasoning_messages.append({
-                                'role': 'user',
-                                'content': f"Tool: {tool_name}\nParameters: {json.dumps(tool_input)}\nResult: {tool_result}\n\nContinue your reasoning based on this tool result."
-                            })
-                            
+                            reasoning_messages.extend([
+                                assistant_message(f"Tool Used: `{tool_name}`\n\nParameters: `{json.dumps(predicted_tool_args)}`\n\nResult:\n\n```\n{tool_result!s}\n```\n"),  # noqa: E501
+                                user_message("Continue your reasoning based on the tool result."),
+                            ])
                             # Record the tool use
                             reasoning_history.append({
                                 'iteration': iteration,
                                 'tool_use': {
                                     'name': tool_name,
-                                    'input': tool_input,
-                                    'result': tool_result
-                                }
+                                    'input': predicted_tool_args,
+                                    'result': str(tool_result),
+                                },
                             })
-                            
-                            # Return to thinking state
-                            state = ReasoningState.THINKING
                         except Exception as e:
                             # Handle tool execution errors
-                            error_message = f"Error executing tool {tool_name}: {str(e)}"
-                            yield ResponseChunk(
+                            error_message = f"Error executing tool {tool_name}: {e!s}"
+                            yield ErrorEvent(
                                 content=error_message,
-                                content_type=ContentType.ERROR,
-                                iteration=iteration
+                                metadata={
+                                    'tool_name': tool_name,
+                                    'tool_input': predicted_tool_args,
+                                    'error': str(e),
+                                    'iteration': iteration,
+                                },
                             )
-                            
-                            # Add error to messages
-                            reasoning_messages.append({
-                                'role': 'assistant',
-                                'content': reasoning_step.thought
-                            })
-                            reasoning_messages.append({
-                                'role': 'user',
-                                'content': f"{error_message}\n\nContinue your reasoning without using this tool."
-                            })
-                            
-                            # Return to thinking state
-                            state = ReasoningState.THINKING
-                    except Exception as e:
-                        # Handle errors in tool prediction
-                        error_message = f"Error predicting tool inputs for {tool_name}: {str(e)}"
-                        yield ResponseChunk(
+                            reasoning_messages.extend([
+                                assistant_message(error_message),
+                                user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),  # noqa: E501
+                            ])
+                    else:
+                        # No tool prediction was made
+                        response_message = tool_response.message
+                        # No tool prediction was made
+                        error_message = f"Error: Failed to get tool prediction for {tool_name}; message=`{response_message}`"  # noqa: E501
+                        yield ErrorEvent(
                             content=error_message,
-                            content_type=ContentType.ERROR,
-                            iteration=iteration
+                            metadata={
+                                'tool_name': tool_name,
+                                'message': response_message,
+                                'iteration': iteration,
+                            },
                         )
-                        
-                        # Add error to messages and continue reasoning
-                        reasoning_messages.append({
-                            'role': 'assistant',
-                            'content': reasoning_step.thought
-                        })
-                        reasoning_messages.append({
-                            'role': 'user',
-                            'content': f"{error_message}\n\nContinue your reasoning without using this tool."
-                        })
-                        
-                        # Return to thinking state
-                        state = ReasoningState.THINKING
-                
-                # Continue thinking
-                elif reasoning_step.next_action == ReasoningAction.CONTINUE_THINKING:
-                    reasoning_messages.append({
-                        'role': 'assistant',
-                        'content': reasoning_step.thought
-                    })
-                    reasoning_messages.append({
-                        'role': 'user',
-                        'content': "Continue your reasoning."
-                    })
-                
-                # Provide answer
-                elif reasoning_step.next_action == ReasoningAction.PROVIDE_ANSWER:
-                    state = ReasoningState.COMPLETE
-                    yield ResponseChunk(
-                        content="Reasoning complete. Generating final answer...",
-                        content_type=ContentType.TEXT,
-                        iteration=iteration
+                        reasoning_messages.extend([
+                            assistant_message(error_message),
+                            user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),  # noqa: E501
+                        ])
+                        continue
+
+                except Exception as e:
+                    # Handle errors in tool prediction
+                    error_message = f"Error predicting tool inputs for {tool_name}: {e!s}"
+                    yield ErrorEvent(
+                        content=error_message,
+                        metadata={
+                            'tool_name': tool_name,
+                            'error': str(e),
+                            'iteration': iteration,
+                        },
                     )
-        
-        # Check if we hit max iterations
-        if iteration >= self.max_iterations and state != ReasoningState.COMPLETE:
-            yield ResponseChunk(
-                content=f"Maximum iterations ({self.max_iterations}) reached. Generating best answer with current information.",
-                content_type=ContentType.ERROR,
-                iteration=iteration,
+                    reasoning_messages.append([
+                        assistant_message(error_message),
+                        user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),  # noqa: E501
+                    ])
+
+        if iteration >= self.max_iterations and (not reasoning_step or reasoning_step.next_action != ReasoningAction.FINISHED):  # noqa: E501
+            yield ErrorEvent(
+                content=f"Maximum iterations ({self.max_iterations}) reached. Generating best answer with current information.",  # noqa: E501
+                metadata={
+                    'max_iterations': self.max_iterations,
+                    'iteration': iteration,
+                },
             )
-        
+
         # Generate the final streaming response using the regular model (not structured output)
         # Create a new model instance without structured output for streaming
         final_model = Client.instantiate(
@@ -430,67 +438,34 @@ class ReasoningAgent(Client):
             model_name=self.model,
             **self.model_kwargs,
         )
-        
         # Prepare the final prompt with all the reasoning history
-        final_messages = messages.copy()
-        
-        # Add a system message with the reasoning history
-        reasoning_summary = "\n\n".join([
-            f"Step {i+1}: {reasoning}" for i, reasoning in enumerate(final_reasoning)
-        ])
-        
-        tool_summary = ""
-        if any("tool_use" in step for step in reasoning_history):
-            tool_uses = [step["tool_use"] for step in reasoning_history if "tool_use" in step]
-            tool_summary = "\n\n".join([
-                f"Tool: {tool['name']}\nParameters: {json.dumps(tool['input'])}\nResult: {tool['result']}"
-                for tool in tool_uses
-            ])
-        
-        final_system_message = {
-            'role': 'system',
-            'content': dedent(f"""
-            You are providing a final answer based on a reasoning process.
-            
-            Reasoning process:
-
-            {reasoning_summary}
-            
-            {f"Tool usage:\n{tool_summary}" if tool_summary else ""}
-            
-            Use this information to provide a final answer to the user's question. The answer should be complete and accurate and summarize how the conclusion was made.
-            """).strip()
-        }
-        
+        summary_messages = [
+            system_message("Your job is to review the reasoning process and provide a final answer. Please provide a brief explanation how the final answer was reached. Format the answer appropriately."),  # noqa: E501
+            assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),  # noqa: E501
+            assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
+        ]
         final_answer = ""
-        async for chunk in final_model.run_async([*messages, final_system_message]):
-            if isinstance(chunk, ResponseChunk):
-                if chunk.content:
-                    final_answer += chunk.content
-                    yield ResponseChunk(
-                        content=chunk.content,
-                        content_type=ContentType.TEXT
-                    )
+        async for chunk in final_model.run_async(summary_messages):
+            if isinstance(chunk, TextChunkEvent):
+                final_answer += chunk.content
+                yield chunk
             elif isinstance(chunk, ResponseSummary):
                 # Update token usage stats
                 self.total_input_tokens += chunk.input_tokens
                 self.total_output_tokens += chunk.output_tokens
                 self.total_input_cost += chunk.input_cost
                 self.total_output_cost += chunk.output_cost
-        
+
         # Calculate total duration
         end_time = asyncio.get_event_loop().time()
         duration = end_time - self.start_time
-        
-        # Build the full response
-        complete_response = final_answer
-        
+
         # Yield the final summary
         yield ResponseSummary(
-            content=complete_response,
+            response=final_answer,
             input_tokens=self.total_input_tokens,
             output_tokens=self.total_output_tokens,
             input_cost=self.total_input_cost,
             output_cost=self.total_output_cost,
-            duration_seconds=duration
+            duration_seconds=duration,
         )

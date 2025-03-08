@@ -12,9 +12,8 @@ from sik_llms import (
     RegisteredClients,
     Anthropic,
     AnthropicTools,
-    ResponseChunk,
+    TextChunkEvent,
     ResponseSummary,
-    ContentType,
     ReasoningEffort,
     Tool,
     ToolPredictionResponse,
@@ -22,6 +21,7 @@ from sik_llms import (
     ToolChoice,
     StructuredOutputResponse,
 )
+from sik_llms.models_base import ThinkingChunkEvent
 load_dotenv()
 
 ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku-latest'
@@ -47,7 +47,7 @@ async def test__async_anthropic_completion_wrapper_call():
         summary = None
         try:
             async for response in client.run_async(messages=messages):
-                if isinstance(response, ResponseChunk):
+                if isinstance(response, TextChunkEvent):
                     chunks.append(response)
                 elif isinstance(response, ResponseSummary):
                     summary = response
@@ -101,7 +101,7 @@ async def test__Anthropic__instantiate__run_async():
     )
     responses = []
     async for response in model.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ResponseChunk):
+        if isinstance(response, TextChunkEvent):
             responses.append(response)
 
     assert len(responses) > 0
@@ -123,200 +123,193 @@ def test__Anthropic_instantiate___parameters():
     assert model.model_parameters['max_tokens'] == 100
 
 
-@pytest.mark.parametrize(
-    "reasoning_effort",
-    [ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH],
-)
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-def test__Anthropic_instantiate__with_reasoning_effort(reasoning_effort: ReasoningEffort):
-    model = Client.instantiate(
-        client_type=RegisteredClients.ANTHROPIC,
-        model_name=ANTHROPIC_TEST_MODEL,
-        reasoning_effort=reasoning_effort,
-        max_tokens=4000,
+class TestAnthropicReasoning:
+    """Test the Anthropic Wrapper with Reasoning."""
+
+    @pytest.mark.parametrize(
+        "reasoning_effort",
+        [ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH],
     )
-    assert isinstance(model, Anthropic)
-    assert model.model_parameters.get('thinking') is not None
-    assert model.model_parameters['thinking']['type'] == 'enabled'
-    assert model.model_parameters['thinking']['budget_tokens']
-    assert model.model_parameters['max_tokens'] > model.model_parameters['thinking']['budget_tokens']  # noqa: E501
+    def test__Anthropic_instantiate__with_reasoning_effort(self, reasoning_effort: ReasoningEffort):  # noqa: E501
+        model = Client.instantiate(
+            client_type=RegisteredClients.ANTHROPIC,
+            model_name=ANTHROPIC_TEST_MODEL,
+            reasoning_effort=reasoning_effort,
+            max_tokens=4000,
+        )
+        assert isinstance(model, Anthropic)
+        assert model.model_parameters.get('thinking') is not None
+        assert model.model_parameters['thinking']['type'] == 'enabled'
+        assert model.model_parameters['thinking']['budget_tokens']
+        assert model.model_parameters['max_tokens'] > model.model_parameters['thinking']['budget_tokens']  # noqa: E501
 
 
-@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-def test__Anthropic_instantiate__with_thinking_budget():
-    model = Client.instantiate(
-        client_type=RegisteredClients.ANTHROPIC,
-        model_name=ANTHROPIC_TEST_MODEL,
-        thinking_budget_tokens=12000,
-        max_tokens=4000,
-    )
-    assert isinstance(model, Anthropic)
-    assert model.model_parameters.get('thinking') is not None
-    assert model.model_parameters['thinking']['type'] == 'enabled'
-    assert model.model_parameters['thinking']['budget_tokens'] == 12000
-    assert model.model_parameters['max_tokens'] > model.model_parameters['thinking']['budget_tokens']  # noqa: E501
+    def test__Anthropic_instantiate__with_thinking_budget(self):
+        model = Client.instantiate(
+            client_type=RegisteredClients.ANTHROPIC,
+            model_name=ANTHROPIC_TEST_MODEL,
+            thinking_budget_tokens=12000,
+            max_tokens=4000,
+        )
+        assert isinstance(model, Anthropic)
+        assert model.model_parameters.get('thinking') is not None
+        assert model.model_parameters['thinking']['type'] == 'enabled'
+        assert model.model_parameters['thinking']['budget_tokens'] == 12000
+        assert model.model_parameters['max_tokens'] > model.model_parameters['thinking']['budget_tokens']  # noqa: E501
 
 
-@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-@pytest.mark.asyncio
-async def test__Anthropic__with_thinking__reasoning_effort():
-    """Test that the extended thinking chunks have the correct content types."""
-    model = Client.instantiate(
-        client_type=RegisteredClients.ANTHROPIC,
-        model_name=ANTRHOPIC_THINKING_MODEL,
-        reasoning_effort=ReasoningEffort.LOW,
-    )
-    # Use a prompt that should trigger some thinking content
-    has_thinking_content = False
-    has_text_content = False
+    @pytest.mark.asyncio
+    async def test__Anthropic__with_thinking__reasoning_effort(self):
+        """Test that the extended thinking chunks have the correct content types."""
+        model = Client.instantiate(
+            client_type=RegisteredClients.ANTHROPIC,
+            model_name=ANTRHOPIC_THINKING_MODEL,
+            reasoning_effort=ReasoningEffort.LOW,
+        )
+        # Use a prompt that should trigger some thinking content
+        has_thinking_content = False
+        has_text_content = False
 
-    messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
-    async for response in model.run_async(messages=messages):
-        if isinstance(response, ResponseChunk):
-            if response.content_type == ContentType.THINKING:
-                has_thinking_content = True
-            if response.content_type == ContentType.TEXT:
+        messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
+        async for response in model.run_async(messages=messages):
+            if isinstance(response, TextChunkEvent):
                 has_text_content = True
-        if isinstance(response, ResponseSummary):
-            # Check that summary contains both thinking and answer
-            assert "45" in response.content
-
-    assert has_thinking_content, "No thinking content was generated"
-    assert has_text_content, "No text content was generated"
-
-
-@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-@pytest.mark.asyncio
-async def test__Anthropic__with_thinking__thinking_budget_tokens():
-    """Test that the extended thinking chunks have the correct content types."""
-    model = Client.instantiate(
-        client_type=RegisteredClients.ANTHROPIC,
-        model_name=ANTRHOPIC_THINKING_MODEL,
-        thinking_budget_tokens=2000,
-    )
-    # Use a prompt that should trigger some thinking content
-    has_thinking_content = False
-    has_text_content = False
-    has_summary = False
-
-    messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
-    async for response in model.run_async(messages=messages):
-        if isinstance(response, ResponseChunk):
-            if response.content_type == ContentType.THINKING:
+            elif isinstance(response, ThinkingChunkEvent):
                 has_thinking_content = True
-            if response.content_type == ContentType.TEXT:
+            elif isinstance(response, ResponseSummary):
+                # Check that summary contains both thinking and answer
+                assert "45" in response.response
+
+        assert has_thinking_content, "No thinking content was generated"
+        assert has_text_content, "No text content was generated"
+
+
+    @pytest.mark.asyncio
+    async def test__Anthropic__with_thinking__thinking_budget_tokens(self):
+        """Test that the extended thinking chunks have the correct content types."""
+        model = Client.instantiate(
+            client_type=RegisteredClients.ANTHROPIC,
+            model_name=ANTRHOPIC_THINKING_MODEL,
+            thinking_budget_tokens=2000,
+        )
+        # Use a prompt that should trigger some thinking content
+        has_thinking_content = False
+        has_text_content = False
+        has_summary = False
+
+        messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
+        async for response in model.run_async(messages=messages):
+            if isinstance(response, TextChunkEvent):
                 has_text_content = True
-        if isinstance(response, ResponseSummary):
-            # Check that summary contains both thinking and answer
-            has_summary = True
-            assert "45" in response.content
-
-    assert has_thinking_content, "No thinking content was generated"
-    assert has_text_content, "No text content was generated"
-    assert has_summary, "No summary was generated"
-
-
-@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-@pytest.mark.asyncio
-async def test__Anthropic__with_thinking__temperature():
-    """
-    Test that the extended thinking works when temperature is set.
-
-    From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications as well
-    as forced tool use."
-
-    Make sure it doesn't crash.
-    """
-    model = Client.instantiate(
-        client_type=RegisteredClients.ANTHROPIC,
-        model_name=ANTRHOPIC_THINKING_MODEL,
-        reasoning_effort=ReasoningEffort.LOW,
-        temperature=0.5,
-    )
-    # Use a prompt that should trigger some thinking content
-    has_thinking_content = False
-    has_text_content = False
-
-    messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
-    async for response in model.run_async(messages=messages):
-        if isinstance(response, ResponseChunk):
-            if response.content_type == ContentType.THINKING:
+            elif isinstance(response, ThinkingChunkEvent):
                 has_thinking_content = True
-            if response.content_type == ContentType.TEXT:
+            elif isinstance(response, ResponseSummary):
+                # Check that summary contains both thinking and answer
+                has_summary = True
+                assert "45" in response.response
+
+        assert has_thinking_content, "No thinking content was generated"
+        assert has_text_content, "No text content was generated"
+        assert has_summary, "No summary was generated"
+
+
+    @pytest.mark.asyncio
+    async def test__Anthropic__with_thinking__temperature(self):
+        """
+        Test that the extended thinking works when temperature is set.
+
+        From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications as well
+        as forced tool use."
+
+        Make sure it doesn't crash.
+        """
+        model = Client.instantiate(
+            client_type=RegisteredClients.ANTHROPIC,
+            model_name=ANTRHOPIC_THINKING_MODEL,
+            reasoning_effort=ReasoningEffort.LOW,
+            temperature=0.5,
+        )
+        # Use a prompt that should trigger some thinking content
+        has_thinking_content = False
+        has_text_content = False
+
+        messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
+        async for response in model.run_async(messages=messages):
+            if isinstance(response, TextChunkEvent):
                 has_text_content = True
-        if isinstance(response, ResponseSummary):
-            # Check that summary contains both thinking and answer
-            assert "45" in response.content
-
-    assert has_thinking_content, "No thinking content was generated"
-    assert has_text_content, "No text content was generated"
-
-
-
-@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-@pytest.mark.asyncio
-async def test__Anthropic__with_thinking__test_redacted_thinking():
-    """Test that the extended thinking chunks have the correct content types."""
-    model = Client.instantiate(
-        client_type=RegisteredClients.ANTHROPIC,
-        model_name=ANTRHOPIC_THINKING_MODEL,
-        thinking_budget_tokens=2000,
-    )
-    # Use a prompt that should trigger some thinking content
-    has_redacted_thinking_content = False
-    has_thinking_content = False
-    has_text_content = False
-    has_summary = False
-
-    # test redacted thinking:
-    # https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#example-working-with-redacted-thinking-blocks
-    messages = [user_message("ANTHROPIC_MAGIC_STRING_TRIGGER_REDACTED_THINKING_46C9A13E193C177646C7398A98432ECCCE4C1253D5E2D82641AC0E52CC2876CB")]  # noqa: E501
-    async for response in model.run_async(messages=messages):
-        if isinstance(response, ResponseChunk):
-            if response.content_type == ContentType.REDACTED_THINKING:
-                has_redacted_thinking_content = True
-                assert response.content
-            if response.content_type == ContentType.THINKING:
+            elif isinstance(response, ThinkingChunkEvent):
                 has_thinking_content = True
-            if response.content_type == ContentType.TEXT:
+            elif isinstance(response, ResponseSummary):
+                # Check that summary contains both thinking and answer
+                assert "45" in response.response
+
+        assert has_thinking_content, "No thinking content was generated"
+        assert has_text_content, "No text content was generated"
+
+
+
+    @pytest.mark.asyncio
+    async def test__Anthropic__with_thinking__test_redacted_thinking(self):
+        """Test that the extended thinking chunks have the correct content types."""
+        model = Client.instantiate(
+            client_type=RegisteredClients.ANTHROPIC,
+            model_name=ANTRHOPIC_THINKING_MODEL,
+            thinking_budget_tokens=2000,
+        )
+        # Use a prompt that should trigger some thinking content
+        has_redacted_thinking_content = False
+        has_thinking_content = False
+        has_text_content = False
+        has_summary = False
+
+        # test redacted thinking:
+        # https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#example-working-with-redacted-thinking-blocks
+        messages = [user_message("ANTHROPIC_MAGIC_STRING_TRIGGER_REDACTED_THINKING_46C9A13E193C177646C7398A98432ECCCE4C1253D5E2D82641AC0E52CC2876CB")]  # noqa: E501
+        async for response in model.run_async(messages=messages):
+            if isinstance(response, TextChunkEvent):
                 has_text_content = True
-        if isinstance(response, ResponseSummary):
-            has_summary = True
-            assert response.content
+            elif isinstance(response, ThinkingChunkEvent):
+                if response.is_redacted:
+                    has_redacted_thinking_content = True
+                    assert response.content
+                else:
+                    has_thinking_content = True
+            elif isinstance(response, ResponseSummary):
+                has_summary = True
+                assert response.response
 
-    assert has_redacted_thinking_content, "No redacted thinking content was generated"
-    assert not has_thinking_content, "Thinking content was generated"
-    assert has_text_content, "No text content was generated"
-    assert has_summary, "No summary was generated"
+        assert has_redacted_thinking_content, "No redacted thinking content was generated"
+        assert not has_thinking_content, "Thinking content was generated"
+        assert has_text_content, "No text content was generated"
+        assert has_summary, "No summary was generated"
 
 
-@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
-@pytest.mark.asyncio
-async def test__Anthropic__without_thinking__verify_no_thinking_events():
-    """Test that the extended thinking chunks have the correct content types."""
-    model = Client.instantiate(
-        client_type=RegisteredClients.ANTHROPIC,
-        model_name=ANTRHOPIC_THINKING_MODEL,
-    )
-    # Use a prompt that should trigger some thinking content
-    has_thinking_content = False
-    has_text_content = False
-    has_summary = False
+    @pytest.mark.asyncio
+    async def test__Anthropic__without_thinking__verify_no_thinking_events(self):
+        """Test that the extended thinking chunks have the correct content types."""
+        model = Client.instantiate(
+            client_type=RegisteredClients.ANTHROPIC,
+            model_name=ANTRHOPIC_THINKING_MODEL,
+        )
+        # Use a prompt that should trigger some thinking content
+        has_thinking_content = False
+        has_text_content = False
+        has_summary = False
 
-    messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
-    async for response in model.run_async(messages=messages):
-        if isinstance(response, ResponseChunk):
-            if response.content_type == ContentType.THINKING:
+        messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
+        async for response in model.run_async(messages=messages):
+            if isinstance(response, TextChunkEvent):
+                has_text_content = True
+            elif isinstance(response, ThinkingChunkEvent):
                 has_thinking_content = True
-            if response.content_type == ContentType.TEXT:
-                has_text_content = True
-        if isinstance(response, ResponseSummary):
-            # Check that summary contains both thinking and answer
-            has_summary = True
+            elif isinstance(response, ResponseSummary):
+                # Check that summary contains both thinking and answer
+                has_summary = True
 
-    assert not has_thinking_content, "Thinking content was generated"
-    assert has_text_content, "No text content was generated"
-    assert has_summary, "No summary was generated"
+        assert not has_thinking_content, "Thinking content was generated"
+        assert has_text_content, "No text content was generated"
+        assert has_summary, "No summary was generated"
 
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
@@ -538,13 +531,13 @@ class TestAnthropicStructuredOutputs:
 
         response = client(messages=messages)
         assert isinstance(response, ResponseSummary)
-        assert isinstance(response.content, StructuredOutputResponse)
-        assert isinstance(response.content.parsed, CalendarEvent)
-        assert response.content.parsed.name
-        assert response.content.parsed.date
-        assert response.content.parsed.participants
-        assert 'Alice' in response.content.parsed.participants
-        assert 'Bob' in response.content.parsed.participants
+        assert isinstance(response.response, StructuredOutputResponse)
+        assert isinstance(response.response.parsed, CalendarEvent)
+        assert response.response.parsed.name
+        assert response.response.parsed.date
+        assert response.response.parsed.participants
+        assert 'Alice' in response.response.parsed.participants
+        assert 'Bob' in response.response.parsed.participants
 
     async def test__anthropic__structured_outputs__nested(self):
         class Address(BaseModel):
@@ -572,14 +565,14 @@ class TestAnthropicStructuredOutputs:
 
         response = client(messages=messages)
         assert isinstance(response, ResponseSummary)
-        assert isinstance(response.content, StructuredOutputResponse)
-        assert isinstance(response.content.parsed, Contact)
-        assert response.content.parsed.first_name == 'Shane'
-        assert response.content.parsed.last_name == 'Kercheval'
-        assert not response.content.parsed.phone
-        assert not response.content.parsed.email
-        assert response.content.parsed.address.street == '123 Main Street'
-        assert not response.content.parsed.address.street_2
-        assert response.content.parsed.address.city == 'Anytown'
-        assert response.content.parsed.address.state in ('Washington', 'WA')
-        assert response.content.parsed.address.zip_code == '12345'
+        assert isinstance(response.response, StructuredOutputResponse)
+        assert isinstance(response.response.parsed, Contact)
+        assert response.response.parsed.first_name == 'Shane'
+        assert response.response.parsed.last_name == 'Kercheval'
+        assert not response.response.parsed.phone
+        assert not response.response.parsed.email
+        assert response.response.parsed.address.street == '123 Main Street'
+        assert not response.response.parsed.address.street_2
+        assert response.response.parsed.address.city == 'Anytown'
+        assert response.response.parsed.address.state in ('Washington', 'WA')
+        assert response.response.parsed.address.zip_code == '12345'

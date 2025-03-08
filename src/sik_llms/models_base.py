@@ -2,14 +2,15 @@
 import asyncio
 import inspect
 import json
+import time
 import types
 import nest_asyncio
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from copy import deepcopy
 from enum import Enum, auto
-from typing import List, Literal, TypeVar, Union, get_args, get_origin  # noqa: UP035
+from typing import Any, List, Literal, TypeVar, Union, get_args, get_origin  # noqa: UP035
 from sik_llms.utilities import Registry, get_json_schema_type
 
 
@@ -31,15 +32,15 @@ class ReasoningEffort(Enum):
     HIGH = 'high'
 
 
-class ContentType(Enum):
-    """Enum for content chunk types."""
+# class ContentType(Enum):
+#     """Enum for content chunk types."""
 
-    TEXT = auto()
-    THINKING = auto()
-    REDACTED_THINKING = auto()
-    TOOL_PREDICTION = auto()
-    TOOL_RESULT = auto()
-    ERROR = auto()
+#     TEXT = auto()
+#     THINKING = auto()
+#     REDACTED_THINKING = auto()
+#     TOOL_PREDICTION = auto()
+#     TOOL_RESULT = auto()
+#     ERROR = auto()
 
 
 def user_message(content: str) -> dict:
@@ -57,13 +58,59 @@ def system_message(content: str) -> dict:
     return {'role': 'system', 'content': content}
 
 
-class ResponseChunk(BaseModel):
+class TextChunkEvent(BaseModel):
     """A chunk returned when streaming."""
 
     content: str | object
-    content_type: ContentType = ContentType.TEXT
     logprob: float | None = None
-    iteration: int | None = None
+
+
+class ErrorEvent(BaseModel):
+    """A chunk returned when an error occurs."""
+
+    content: str
+    metadata: dict | None = None
+
+
+class InfoEvent(BaseModel):
+    """Event for general information."""
+
+    content: str
+    metadata: dict | None = None
+
+
+class AgentEvent(BaseModel):
+    """Base class for all agent events."""
+
+    iteration: int = Field(default=0, description="Current iteration number")
+
+
+class ThinkingEvent(AgentEvent):
+    """Event emitted during agent thinking."""
+
+    content: str
+    is_redacted: bool = False
+
+class ThinkingChunkEvent(AgentEvent):
+    """Event emitted during agent thinking."""
+
+    content: str
+    is_redacted: bool = False
+
+
+class ToolPredictionEvent(AgentEvent):
+    """Event emitted when predicting tool usage."""
+
+    name: str
+    arguments: dict[str, Any]
+
+
+class ToolResultEvent(AgentEvent):
+    """Event emitted after tool execution."""
+
+    name: str
+    arguments: dict[str, Any]
+    result: object
 
 
 class StructuredOutputResponse(BaseModel):
@@ -96,7 +143,7 @@ class TokenSummary(BaseModel):
 class ResponseSummary(TokenSummary):
     """Summary of a chat response."""
 
-    content: str | StructuredOutputResponse
+    response: str | StructuredOutputResponse
 
 
 class Parameter(BaseModel):
@@ -276,7 +323,7 @@ class Client(ABC):
     async def run_async(
         self,
         messages: list[dict[str, object]],
-    ) -> AsyncGenerator[ResponseChunk | ResponseSummary, None] | ToolPredictionResponse:
+    ) -> AsyncGenerator[TextChunkEvent | ResponseSummary, None] | ToolPredictionResponse:
         """
         Run asynchronously.
 

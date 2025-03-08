@@ -4,7 +4,8 @@ import asyncio
 from typing import Dict, Any, List
 
 from sik_llms.models_base import (
-    Tool, Parameter, ResponseChunk, ResponseSummary, ContentType
+    Tool, Parameter, ThinkingEvent, ToolPredictionEvent, 
+    ToolResultEvent, TextChunkEvent, ErrorEvent, ResponseSummary
 )
 from sik_llms.reasoning_agent import ReasoningAgent
 
@@ -90,43 +91,33 @@ async def test_reasoning_agent_with_calculator(calculator_tool, tool_executors):
         results.append(result)
     
     # Check that we got the expected results
-    thinking_chunks = [
-        r for r in results 
-        if isinstance(r, ResponseChunk) and r.content_type == ContentType.THINKING
-    ]
-    assert len(thinking_chunks) > 0, "Should have thinking chunks"
+    thinking_events = [r for r in results if isinstance(r, ThinkingEvent)]
+    assert len(thinking_events) > 0, "Should have thinking events"
     
-    tool_predictions = [
-        r for r in results 
-        if isinstance(r, ResponseChunk) and r.content_type == ContentType.TOOL_PREDICTION
-    ]
-    assert len(tool_predictions) > 0, "Should have tool prediction chunks"
-    assert "calculator" in tool_predictions[0].content, "Should use calculator tool"
+    tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
+    assert len(tool_prediction_events) > 0, "Should have tool prediction events"
+    assert tool_prediction_events[0].name == "calculator", "Should use calculator tool"
     
-    tool_results = [
-        r for r in results 
-        if isinstance(r, ResponseChunk) and r.content_type == ContentType.TOOL_RESULT
-    ]
-    assert len(tool_results) > 0, "Should have tool result chunks"
-    assert "65968" in tool_results[0].content, "Result should be 65968"
+    tool_result_events = [r for r in results if isinstance(r, ToolResultEvent)]
+    assert len(tool_result_events) > 0, "Should have tool result events"
+    assert "65968" in tool_result_events[0].result, "Result should be 65968"
 
+    # Print all events for debugging
     iteration = 0
     for r in results[0:-1]:
-        if r.iteration != iteration:
+        event_type = type(r).__name__
+        if hasattr(r, 'iteration') and r.iteration != iteration:
             iteration = r.iteration
             print(f"\n\n[ITERATION {iteration}]:\n\n")
-        print("Type:", r.content_type)
+        print(f"Event: {event_type}")
         print(r)
         print('--------')
     
     # Last result should be a ResponseSummary with the full response
     last_result = results[-1]
     assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
-    assert re.search(r'65[,]?968', last_result.content) is not None, "Result should be 65968 or 65,968"
+    assert re.search(r'65[,]?968', last_result.response) is not None, "Final answer should contain 65968 or 65,968"
     
-
-    ReponseSummary
-
     # Check token accounting
     assert last_result.input_tokens > 0, "Should have input tokens"
     assert last_result.output_tokens > 0, "Should have output tokens"
@@ -135,7 +126,7 @@ async def test_reasoning_agent_with_calculator(calculator_tool, tool_executors):
 
 @pytest.mark.asyncio
 async def test_reasoning_agent_with_multiple_tools(calculator_tool, weather_tool, tool_executors):
-    """Test the ReasoningAgent with multiple tools using GPT-4o-mini."""
+    """Test the ReasoningAgent with multiple tools."""
     # Create the reasoning agent
     agent = ReasoningAgent(
         model_name="gpt-4o-mini",
@@ -156,24 +147,20 @@ async def test_reasoning_agent_with_multiple_tools(calculator_tool, weather_tool
     async for result in agent.run_async(messages):
         results.append(result)
     
-    # Check that both tools were used
-    tool_predictions = [
-        r for r in results 
-        if isinstance(r, ResponseChunk) and r.content_type == ContentType.TOOL_PREDICTION
-    ]
+    # Check that tools were used
+    tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
     
-    tool_names = [p.content for p in tool_predictions]
-    tool_names_str = " ".join(tool_names)
+    tool_names = [event.name for event in tool_prediction_events]
     
     # At least one of the tools should be used
-    assert "calculator" in tool_names_str or "get_weather" in tool_names_str, "Should use at least one tool"
+    assert any(name in ["calculator", "get_weather"] for name in tool_names), "Should use at least one tool"
     
     # Last result should be a ResponseSummary with a complete answer
     last_result = results[-1]
     assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
     
     # The answer should mention weather and temperature conversion
-    final_answer = last_result.content
+    final_answer = last_result.response
     assert "New York" in final_answer, "Answer should mention New York"
     assert "Fahrenheit" in final_answer, "Answer should mention Fahrenheit"
     
@@ -183,13 +170,12 @@ async def test_reasoning_agent_with_multiple_tools(calculator_tool, weather_tool
 
 
 @pytest.mark.asyncio
-async def test_reasoning_agent_no_tools_needed(tool_executors):
+async def test_reasoning_agent_no_tools_needed():
     """Test the ReasoningAgent with a question that doesn't need tools."""
     # Create the reasoning agent
     agent = ReasoningAgent(
         model_name="gpt-4o-mini",
         tools=[],  # No tools
-        tool_executors=tool_executors,
         max_iterations=2,
         temperature=0
     )
@@ -206,24 +192,18 @@ async def test_reasoning_agent_no_tools_needed(tool_executors):
         results.append(result)
     
     # Check thinking occurred
-    thinking_chunks = [
-        r for r in results 
-        if isinstance(r, ResponseChunk) and r.content_type == ContentType.THINKING
-    ]
-    assert len(thinking_chunks) > 0, "Should have thinking chunks"
+    thinking_events = [r for r in results if isinstance(r, ThinkingEvent)]
+    assert len(thinking_events) > 0, "Should have thinking events"
     
     # Last result should be a ResponseSummary with a complete answer
     last_result = results[-1]
     assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
     
     # The answer should mention benefits of exercise
-    final_answer = last_result.content
+    final_answer = last_result.response
     exercise_terms = ["exercise", "health", "fitness", "cardiovascular", "strength", "mental"]
     assert any(term in final_answer.lower() for term in exercise_terms), "Answer should discuss exercise benefits"
     
     # There should be no tool predictions
-    tool_predictions = [
-        r for r in results 
-        if isinstance(r, ResponseChunk) and r.content_type == ContentType.TOOL_PREDICTION
-    ]
-    assert len(tool_predictions) == 0, "Should not have tool predictions"
+    tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
+    assert len(tool_prediction_events) == 0, "Should not have tool predictions"
