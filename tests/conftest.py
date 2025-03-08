@@ -1,12 +1,12 @@
 """Fixtures for testing the sik_llms module."""
 import pytest
-from sik_llms import Function, Parameter
+from sik_llms import Tool, Parameter
 
 
 @pytest.fixture
-def simple_weather_function() -> Function:
-    """Create a simple weather function with one required parameter."""
-    return Function(
+def simple_weather_tool() -> Tool:
+    """Create a simple weather tool with one required parameter."""
+    return Tool(
         name="get_weather",
         description="Get the weather for a location.",
         parameters=[
@@ -20,9 +20,9 @@ def simple_weather_function() -> Function:
     )
 
 @pytest.fixture
-def complex_weather_function() -> Function:
-    """Create a weather function with multiple parameters including an enum."""
-    return Function(
+def complex_weather_tool() -> Tool:
+    """Create a weather tool with multiple parameters including an enum."""
+    return Tool(
         name="get_detailed_weather",
         description="Get detailed weather information for a location.",
         parameters=[
@@ -49,9 +49,9 @@ def complex_weather_function() -> Function:
     )
 
 @pytest.fixture
-def restaurant_function() -> Function:
-    """Create a restaurant search function with multiple parameters."""
-    return Function(
+def restaurant_tool() -> Tool:
+    """Create a restaurant search tool with multiple parameters."""
+    return Tool(
         name="search_restaurants",
         description="Search for restaurants in a location.",
         parameters=[

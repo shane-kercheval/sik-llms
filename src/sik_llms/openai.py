@@ -9,9 +9,9 @@ from pydantic import BaseModel
 import tiktoken
 from tiktoken import Encoding
 from sik_llms.models_base import (
-    Function,
-    FunctionCallResponse,
-    FunctionCallResult,
+    Tool,
+    ToolPredictionResponse,
+    ToolPrediction,
     Client,
     ResponseChunk,
     ResponseSummary,
@@ -274,14 +274,14 @@ class OpenAI(Client):
             )
 
 
-@Client.register(RegisteredClients.OPENAI_FUNCTIONS)
-class OpenAIFunctions(Client):
-    """Wrapper for OpenAI API function calling."""
+@Client.register(RegisteredClients.OPENAI_TOOLS)
+class OpenAITools(Client):
+    """Wrapper for OpenAI API function/tool calling."""
 
     def __init__(
             self,
             model_name: str,
-            functions: list[Function],
+            tools: list[Tool],
             tool_choice: ToolChoice = ToolChoice.REQUIRED,
             server_url: str | None = None,
             **model_kwargs: dict,
@@ -296,8 +296,8 @@ class OpenAIFunctions(Client):
                 If the server_url is provided, the model name should be 'openai-compatible-server'.
                 (You can pass a keyword argument called `model` if you want to override the model
                 that is passed to the API call.)
-            functions:
-                List of Function objects defining available functions.
+            tools:
+                List of Tool objects defining available tools.
             tool_choice:
                 Controls if tools are required or optional.
             server_url:
@@ -327,18 +327,14 @@ class OpenAIFunctions(Client):
             self.model_parameters['tool_choice'] = 'auto'
         else:
             raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
-        self.model_parameters['tools'] = [func.to_openai() for func in functions]
+        self.model_parameters['tools'] = [func.to_openai() for func in tools]
 
-    async def run_async(self, messages: list[dict[str, str]]) -> FunctionCallResponse:
+    async def run_async(self, messages: list[dict[str, str]]) -> ToolPredictionResponse:
         """
-        Call the model with functions.
+        Call the model with tools.
 
         Args:
             messages: List of messages to send to the model.
-            model_name: Optional model override.
-            functions: Optional functions override.
-            tool_choice: Controls if tools are required or optional.
-            **model_kwargs: Additional parameters to override defaults.
         """
         start = time.time()
         completion = await self.client.chat.completions.create(
@@ -358,17 +354,17 @@ class OpenAIFunctions(Client):
         if completion.choices[0].message.tool_calls:
             message = None
             tool_call = completion.choices[0].message.tool_calls[0]
-            function_call = FunctionCallResult(
+            tool_prediction = ToolPrediction(
                 name=tool_call.function.name,
                 arguments=json.loads(tool_call.function.arguments),
                 call_id=tool_call.id,
             )
         else:
             message = completion.choices[0].message.content
-            function_call = None
+            tool_prediction = None
 
-        return FunctionCallResponse(
-            function_call=function_call,
+        return ToolPredictionResponse(
+            tool_prediction=tool_prediction,
             message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

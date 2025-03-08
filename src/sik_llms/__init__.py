@@ -9,9 +9,9 @@ from sik_llms.models_base import (
     ResponseChunk,
     ResponseSummary,
     Parameter,
-    Function,
-    FunctionCallResult,
-    FunctionCallResponse,
+    Tool,
+    ToolPrediction,
+    ToolPredictionResponse,
     ToolChoice,
     StructuredOutputResponse,
     ReasoningEffort,
@@ -19,12 +19,12 @@ from sik_llms.models_base import (
 )
 from sik_llms.openai import (
     OpenAI,
-    OpenAIFunctions,
+    OpenAITools,
     CHAT_MODEL_COST_PER_TOKEN as OPENAI_CHAT_MODEL_COST_PER_TOKEN,
 )
 from sik_llms.anthropic import (
     Anthropic,
-    AnthropicFunctions,
+    AnthropicTools,
     CHAT_MODEL_COST_PER_TOKEN as ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN,
 )
 
@@ -73,15 +73,15 @@ __all__ = [  # noqa: RUF022
     'ResponseChunk',
     'ResponseSummary',
     'Parameter',
-    'Function',
-    'FunctionCallResult',
-    'FunctionCallResponse',
+    'Tool',
+    'ToolPrediction',
+    'ToolPredictionResponse',
     'ToolChoice',
     'StructuredOutputResponse',
     'ReasoningEffort',
     'ContentType',
     'OpenAI',
-    'OpenAIFunctions',
+    'OpenAITools',
     'Anthropic',
-    'AnthropicFunctions',
+    'AnthropicTools',
 ]

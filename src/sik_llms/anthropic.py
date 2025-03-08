@@ -9,14 +9,14 @@ from sik_llms.models_base import (
     ResponseChunk,
     ResponseSummary,
     ContentType,
-    Function,
-    FunctionCallResponse,
-    FunctionCallResult,
+    Tool,
+    ToolPredictionResponse,
+    ToolPrediction,
     RegisteredClients,
     ReasoningEffort,
     StructuredOutputResponse,
     ToolChoice,
-    pydantic_model_to_function,
+    pydantic_model_to_tool,
 )
 
 
@@ -179,11 +179,11 @@ class Anthropic(Client):
         """
         if self.response_format:
             # Convert Pydantic model to Function
-            function = pydantic_model_to_function(self.response_format)
+            function = pydantic_model_to_tool(self.response_format)
             # Create AnthropicFunctions client
-            functions_client = AnthropicFunctions(
+            functions_client = AnthropicTools(
                 model_name=self.model,
-                functions=[function],
+                tools=[function],
                 tool_choice=ToolChoice.REQUIRED,
                 max_tokens=self.model_parameters.get('max_tokens', 5000),
                 temperature=0.2,
@@ -194,10 +194,10 @@ class Anthropic(Client):
                 response = await functions_client.run_async(messages)
 
                 # Extract function call result and convert to Pydantic model
-                if response.function_call:
+                if response.tool_prediction:
                     try:
                         # Create instance of Pydantic model from arguments
-                        parsed_model = self.response_format(**response.function_call.arguments)
+                        parsed_model = self.response_format(**response.tool_prediction.arguments)
                         structured_output = StructuredOutputResponse(
                             parsed=parsed_model,
                             refusal=None,
@@ -287,14 +287,14 @@ class Anthropic(Client):
         )
 
 
-@Client.register(RegisteredClients.ANTHROPIC_FUNCTIONS)
-class AnthropicFunctions(Client):
+@Client.register(RegisteredClients.ANTHROPIC_TOOLS)
+class AnthropicTools(Client):
     """Wrapper for Anthropic API which provides a simple interface for using functions."""
 
     def __init__(
             self,
             model_name: str,
-            functions: list[Function],
+            tools: list[Tool],
             tool_choice: ToolChoice = ToolChoice.REQUIRED,
             max_tokens: int = 1_000,
             **model_kwargs: dict,
@@ -305,8 +305,8 @@ class AnthropicFunctions(Client):
         Args:
             model_name:
                 The model name to use for the API call (e.g. 'gpt-4').
-            functions:
-                List of Function objects defining available functions.
+            tools:
+                List of Tool objects defining available tool.
             tool_choice:
                 Controls if tools are required or optional.
             max_tokens:
@@ -326,7 +326,7 @@ class AnthropicFunctions(Client):
         # remove any None values
         self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
 
-        tools = [func.to_anthropic() for func in functions]
+        tools = [t.to_anthropic() for t in tools]
         if tool_choice == ToolChoice.REQUIRED:
             tool_choice = 'any'
         elif tool_choice == ToolChoice.AUTO:
@@ -351,8 +351,8 @@ class AnthropicFunctions(Client):
                 })
         return system_content, anthropic_messages
 
-    async def run_async(self, messages: list[dict]) -> FunctionCallResponse:
-        """Runs the function call and returns the response."""
+    async def run_async(self, messages: list[dict]) -> ToolPredictionResponse:
+        """Runs the tool prediction and returns the response."""
         system_content, anthropic_messages = self._convert_messages(messages)
         api_params = {
             'model': self.model,
@@ -366,12 +366,12 @@ class AnthropicFunctions(Client):
         response = await self.client.messages.create(**api_params)
         end_time = time.time()
 
-        function_call = None
+        tool_prediction = None
         message = None
         if len(response.content) > 1:
             raise ValueError(f"Unexpected multiple content items in response: {response.content}")
         if response.content[0].type == 'tool_use':
-            function_call = FunctionCallResult(
+            tool_prediction = ToolPrediction(
                 name=response.content[0].name,
                 arguments=response.content[0].input,
                 call_id=response.content[0].id,
@@ -383,8 +383,8 @@ class AnthropicFunctions(Client):
 
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
-        return FunctionCallResponse(
-            function_call=function_call,
+        return ToolPredictionResponse(
+            tool_prediction=tool_prediction,
             message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

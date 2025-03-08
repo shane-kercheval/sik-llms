@@ -11,14 +11,14 @@ from sik_llms import (
     user_message,
     RegisteredClients,
     Anthropic,
-    AnthropicFunctions,
+    AnthropicTools,
     ResponseChunk,
     ResponseSummary,
     ContentType,
     ReasoningEffort,
-    Function,
-    FunctionCallResponse,
-    FunctionCallResult,
+    Tool,
+    ToolPredictionResponse,
+    ToolPrediction,
     ToolChoice,
     StructuredOutputResponse,
 )
@@ -321,20 +321,20 @@ async def test__Anthropic__without_thinking__verify_no_thinking_events():
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 @pytest.mark.asyncio
-class TestAnthropicFunctions:
-    """Test the OpenAI Function Wrapper."""
+class TestAnthropicTools:
+    """Test the OpenAITools Wrapper."""
 
     @pytest.mark.parametrize('is_async', [True, False])
-    async def test__single_function_single_parameter__instantiate(
+    async def test__single_tool_single_parameter__instantiate(
             self,
-            simple_weather_function: Function,
+            simple_weather_tool: Tool,
             is_async: bool,
         ):
-        """Test calling a simple function with one required parameter."""
+        """Test calling a simple tool with one required parameter."""
         client = Client.instantiate(
-            client_type=RegisteredClients.ANTHROPIC_FUNCTIONS,
+            client_type=RegisteredClients.ANTHROPIC_TOOLS,
             model_name=ANTHROPIC_TEST_MODEL,
-            functions=[simple_weather_function],
+            tools=[simple_weather_tool],
         )
         if is_async:
             response = await client.run_async(
@@ -348,25 +348,25 @@ class TestAnthropicFunctions:
                     user_message("What's the weather like in Paris?"),
                 ],
             )
-        assert isinstance(response, FunctionCallResponse)
-        assert isinstance(response.function_call, FunctionCallResult)
-        assert response.function_call.name == "get_weather"
-        assert "location" in response.function_call.arguments
-        assert "Paris" in response.function_call.arguments["location"]
+        assert isinstance(response, ToolPredictionResponse)
+        assert isinstance(response.tool_prediction, ToolPrediction)
+        assert response.tool_prediction.name == "get_weather"
+        assert "location" in response.tool_prediction.arguments
+        assert "Paris" in response.tool_prediction.arguments["location"]
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0
         assert response.output_cost > 0
 
-    async def test__no_function_call(
+    async def test__no_tool_call(
             self,
-            simple_weather_function: Function,
+            simple_weather_tool: Tool,
         ):
-        """Test calling a simple function when no function is applicable."""
+        """Test calling a simple tool when no tool is applicable."""
         client = Client.instantiate(
-            client_type=RegisteredClients.ANTHROPIC_FUNCTIONS,
+            client_type=RegisteredClients.ANTHROPIC_TOOLS,
             model_name=ANTHROPIC_TEST_MODEL,
-            functions=[simple_weather_function],
+            tools=[simple_weather_tool],
             tool_choice=ToolChoice.AUTO,
         )
         response = await client.run_async(
@@ -374,8 +374,8 @@ class TestAnthropicFunctions:
                 user_message("What's the stock price of Apple?"),
             ],
         )
-        assert isinstance(response, FunctionCallResponse)
-        assert response.function_call is None
+        assert isinstance(response, ToolPredictionResponse)
+        assert response.tool_prediction is None
         assert response.message
         assert response.input_tokens > 0
         assert response.output_tokens > 0
@@ -383,15 +383,15 @@ class TestAnthropicFunctions:
         assert response.output_cost > 0
 
     @pytest.mark.parametrize('is_async', [True, False])
-    async def test__single_function_multiple_parameters(
+    async def test__single_tool_multiple_parameters(
             self,
-            complex_weather_function: Function,
+            complex_weather_tool: Tool,
             is_async: bool,
         ):
-        """Test calling a function with multiple parameters including optional ones."""
-        client = AnthropicFunctions(
+        """Test calling a tool with multiple parameters including optional ones."""
+        client = AnthropicTools(
             model_name=ANTHROPIC_TEST_MODEL,
-            functions=[complex_weather_function],
+            tools=[complex_weather_tool],
         )
         if is_async:
             response = await client.run_async(
@@ -405,23 +405,23 @@ class TestAnthropicFunctions:
                     user_message("What's the weather like in Tokyo in Celsius with forecast?"),
                 ],
             )
-        assert response.function_call.name == "get_detailed_weather"
-        args = response.function_call.arguments
+        assert response.tool_prediction.name == "get_detailed_weather"
+        args = response.tool_prediction.arguments
         assert "Tokyo" in args["location"]
         assert args.get("unit") in ["celsius", "fahrenheit"]
         assert args.get("include_forecast") is not None
 
     @pytest.mark.parametrize('is_async', [True, False])
-    async def test__multiple_functions(
+    async def test__multiple_tools(
             self,
-            simple_weather_function: Function,
-            restaurant_function: Function,
+            simple_weather_tool: Tool,
+            restaurant_tool: Tool,
             is_async: bool,
         ):
-        """Test providing multiple functions to the model."""
-        client = AnthropicFunctions(
+        """Test providing multiple tools to the model."""
+        client = AnthropicTools(
             model_name=ANTHROPIC_TEST_MODEL,
-            functions=[simple_weather_function, restaurant_function],
+            tools=[simple_weather_tool, restaurant_tool],
         )
         # Weather query
         if is_async:
@@ -436,8 +436,8 @@ class TestAnthropicFunctions:
                     user_message("What's the weather like in London?"),
                 ],
             )
-        assert weather_response.function_call.name == "get_weather"
-        assert "London" in weather_response.function_call.arguments["location"]
+        assert weather_response.tool_prediction.name == "get_weather"
+        assert "London" in weather_response.tool_prediction.arguments["location"]
         # Restaurant query
         if is_async:
             restaurant_response = await client.run_async(
@@ -451,8 +451,8 @@ class TestAnthropicFunctions:
                     user_message("Find me an expensive Italian restaurant in New York"),
                 ],
             )
-        assert restaurant_response.function_call.name == "search_restaurants"
-        args = restaurant_response.function_call.arguments
+        assert restaurant_response.tool_prediction.name == "search_restaurants"
+        args = restaurant_response.tool_prediction.arguments
         assert "New York" in args["location"]
         assert args.get("cuisine") == "italian"
         assert args.get("price_range") in ["$$", "$$$", "$$$$"]
@@ -460,13 +460,13 @@ class TestAnthropicFunctions:
     @pytest.mark.parametrize('is_async', [True, False])
     async def test__enum_parameters(
             self,
-            restaurant_function: Function,
+            restaurant_tool: Tool,
             is_async: bool,
         ):
         """Test handling of enum parameters."""
-        client = AnthropicFunctions(
+        client = AnthropicTools(
             model_name=ANTHROPIC_TEST_MODEL,
-            functions=[restaurant_function],
+            tools=[restaurant_tool],
         )
         test_cases = [
             (
@@ -488,15 +488,15 @@ class TestAnthropicFunctions:
                 response = await client.run_async(messages=[user_message(prompt)])
             else:
                 response = client(messages=[user_message(prompt)])
-            args = response.function_call.arguments
+            args = response.tool_prediction.arguments
             for key, value in expected_args.items():
                 assert args.get(key) == value
 
-    async def test__concurrent_function_calls(self, simple_weather_function: Function):
-        """Test multiple concurrent function calls."""
-        client = AnthropicFunctions(
+    async def test__concurrent_tool_calls(self, simple_weather_tool: Tool):
+        """Test multiple concurrent tool calls."""
+        client = AnthropicTools(
             model_name=ANTHROPIC_TEST_MODEL,
-            functions=[simple_weather_function],
+            tools=[simple_weather_tool],
         )
 
         cities = ["Paris", "London", "Tokyo", "New York", "Sydney"]
@@ -510,8 +510,8 @@ class TestAnthropicFunctions:
         ))
 
         for i, response in enumerate(responses):
-            assert response.function_call.name == "get_weather"
-            assert cities[i] in response.function_call.arguments["location"]
+            assert response.tool_prediction.name == "get_weather"
+            assert cities[i] in response.tool_prediction.arguments["location"]
             assert response.input_tokens > 0
             assert response.output_tokens > 0
 

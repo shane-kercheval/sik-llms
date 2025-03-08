@@ -17,9 +17,9 @@ class RegisteredClients(Enum):
     """Enum for model types."""
 
     OPENAI = 'OpenAI'
-    OPENAI_FUNCTIONS = 'OpenAIFunctions'
+    OPENAI_TOOLS = 'OpenAITools'
     ANTHROPIC = 'Anthropic'
-    ANTHROPIC_FUNCTIONS = 'AnthropicFunctions'
+    ANTHROPIC_TOOLS = 'AnthropicTools'
 
 
 class ReasoningEffort(Enum):
@@ -35,6 +35,8 @@ class ContentType(Enum):
 
     TEXT = auto()
     THINKING = auto()
+    TOOL_CALL = auto()
+    TOOL_RESULT = auto()
     REDACTED_THINKING = auto()
     ERROR = auto()
 
@@ -96,7 +98,7 @@ class ResponseSummary(TokenSummary):
 
 
 class Parameter(BaseModel):
-    """Represents a parameter property in a function's schema."""
+    """Represents a parameter property in a Tools's schema."""
 
     name: str
     type: Literal['string', 'number', 'boolean', 'integer', 'object', 'array', 'enum', 'anyOf']
@@ -105,15 +107,15 @@ class Parameter(BaseModel):
     enum: list[str | int | float | bool] | None = None
 
 
-class Function(BaseModel):
-    """Represents a function that can be called by the model."""
+class Tool(BaseModel):
+    """Represents a function/tool that can be called by the model."""
 
     name: str
     parameters: list[Parameter]
     description: str | None = None
 
     def to_openai(self) -> dict[str, object]:
-        """Convert the function to the format expected by OpenAI API."""
+        """Convert the tool to the format expected by OpenAI API."""
         properties = {}
         required = []
         for param in self.parameters:
@@ -150,7 +152,7 @@ class Function(BaseModel):
         }
 
     def to_anthropic(self) -> dict[str, object]:
-        """Convert the function to the format expected by OpenAI API."""
+        """Convert the tool to the format expected by OpenAI API."""
         properties = {}
         required = []
         for param in self.parameters:
@@ -197,25 +199,25 @@ class ToolChoice(Enum):
     AUTO = auto()
 
 
-class FunctionCallResult(BaseModel):
-    """The function call details extracted from the model's response."""
+class ToolPrediction(BaseModel):
+    """The tool call details extracted from the model's response."""
 
     name: str
     arguments: dict[str, object]
     call_id: str
 
 
-class FunctionCallResponse(TokenSummary):
+class ToolPredictionResponse(TokenSummary):
     """
-    Response containing just the essential function call information and usage stats.
+    Response containing just the essential function/tool call information and usage stats.
 
-    Content is filled if there is no function call.
+    Content is filled if there is no function/call.
 
-    If a function call is predicted, then function_call is filled and message is None.
-    If no function call is predicted, then function_call is None and message is filled.
+    If a tool call is predicted, then tool_call is filled and message is None.
+    If no tool call is predicted, then tool_call is None and message is filled.
     """
 
-    function_call: FunctionCallResult | None
+    tool_prediction: ToolPrediction | None
     message: str | None = None
 
 
@@ -229,7 +231,7 @@ class Client(ABC):
     def __call__(
             self,
             messages: list[dict[str, object]],
-        ) -> ResponseSummary | FunctionCallResponse:
+        ) -> ResponseSummary | ToolPredictionResponse:
         """
         Invoke the model (e.g. chat).
 
@@ -272,14 +274,14 @@ class Client(ABC):
     async def run_async(
         self,
         messages: list[dict[str, object]],
-    ) -> AsyncGenerator[ResponseChunk | ResponseSummary, None] | FunctionCallResponse:
+    ) -> AsyncGenerator[ResponseChunk | ResponseSummary, None] | ToolPredictionResponse:
         """
         Run asynchronously.
 
         For chat models, this method should return an async generator that yields ResponseChunk
         objects. The last response should be a ResponseSummary object.
 
-        For function models, this method should return a FunctionCallResponse object.
+        For tools models, this method should return a ToolPredictionResponse object.
 
         Args:
             messages:
@@ -346,7 +348,7 @@ class Client(ABC):
 
 
 def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
-    """Convert a Pydantic model to a list of Parameter objects for function calling."""
+    """Convert a Pydantic model to a list of Parameter objects for function/tool calling."""
     parameters = []
 
     # Get model schema - this includes info about required fields
@@ -436,13 +438,13 @@ def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
 
 
 
-def pydantic_model_to_function(model_class: BaseModel) -> Function:
-    """Convert a Pydantic model to a Function object for use with function calling APIs."""
+def pydantic_model_to_tool(model_class: BaseModel) -> Tool:
+    """Convert a Pydantic model to a Tool object for use with function/tool calling APIs."""
     parameters = pydantic_model_to_parameters(model_class)
-    function_name = model_class.__name__
-    description = f"Generate a response in the format specified by {function_name}"
-    return Function(
-        name=function_name,
+    tool_name = model_class.__name__
+    description = f"Generate a response in the format specified by {tool_name}"
+    return Tool(
+        name=tool_name,
         parameters=parameters,
         description=description,
     )

@@ -6,10 +6,10 @@ from sik_llms import (
     user_message,
     ResponseChunk,
     ResponseSummary,
-    Function,
+    Tool,
     RegisteredClients,
-    FunctionCallResponse,
-    FunctionCallResult,
+    ToolPredictionResponse,
+    ToolPrediction,
 )
 
 
@@ -71,14 +71,14 @@ class TestOpenAIFunctions:
     @pytest.mark.parametrize('is_async', [True, False])
     async def test_single_function_single_parameter__instantiate(
             self,
-            simple_weather_function: Function,
+            simple_weather_function: Tool,
             is_async: bool,
         ):
         """Test calling a simple function with one required parameter."""
         client = create_client(
-            client_type=RegisteredClients.OPENAI_FUNCTIONS,
+            client_type=RegisteredClients.OPENAI_TOOLS,
             model_name=OPENAI_TEST_MODEL,
-            functions=[simple_weather_function],
+            tools=[simple_weather_function],
         )
         if is_async:
             response = await client.run_async(
@@ -92,11 +92,11 @@ class TestOpenAIFunctions:
                     user_message("What's the weather like in Paris?"),
                 ],
             )
-        assert isinstance(response, FunctionCallResponse)
-        assert isinstance(response.function_call, FunctionCallResult)
-        assert response.function_call.name == "get_weather"
-        assert "location" in response.function_call.arguments
-        assert "Paris" in response.function_call.arguments["location"]
+        assert isinstance(response, ToolPredictionResponse)
+        assert isinstance(response.tool_prediction, ToolPrediction)
+        assert response.tool_prediction.name == "get_weather"
+        assert "location" in response.tool_prediction.arguments
+        assert "Paris" in response.tool_prediction.arguments["location"]
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0
@@ -111,14 +111,14 @@ class TestAnthropicFunctions:
     @pytest.mark.parametrize('is_async', [True, False])
     async def test_single_function_single_parameter__instantiate(
             self,
-            simple_weather_function: Function,
+            simple_weather_function: Tool,
             is_async: bool,
         ):
         """Test calling a simple function with one required parameter."""
         client = create_client(
-            client_type=RegisteredClients.ANTHROPIC_FUNCTIONS,
+            client_type=RegisteredClients.ANTHROPIC_TOOLS,
             model_name=ANTHROPIC_TEST_MODEL,
-            functions=[simple_weather_function],
+            tools=[simple_weather_function],
         )
         if is_async:
             response = await client.run_async(
@@ -132,11 +132,11 @@ class TestAnthropicFunctions:
                     user_message("What's the weather like in Paris?"),
                 ],
             )
-        assert isinstance(response, FunctionCallResponse)
-        assert isinstance(response.function_call, FunctionCallResult)
-        assert response.function_call.name == "get_weather"
-        assert "location" in response.function_call.arguments
-        assert "Paris" in response.function_call.arguments["location"]
+        assert isinstance(response, ToolPredictionResponse)
+        assert isinstance(response.tool_prediction, ToolPrediction)
+        assert response.tool_prediction.name == "get_weather"
+        assert "location" in response.tool_prediction.arguments
+        assert "Paris" in response.tool_prediction.arguments["location"]
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0
