@@ -58,7 +58,7 @@ def tool_executors():
             return str(eval(expression))
         except Exception as e:
             return f"Error: {str(e)}"
-    
+
     async def weather_executor(location: str) -> str:
         """Mock weather tool - returns fake data."""
         # Return mock weather data
@@ -102,17 +102,6 @@ async def test_reasoning_agent_with_calculator(calculator_tool, tool_executors):
     assert len(tool_result_events) > 0, "Should have tool result events"
     assert "65968" in tool_result_events[0].result, "Result should be 65968"
 
-    # Print all events for debugging
-    iteration = 0
-    for r in results[0:-1]:
-        event_type = type(r).__name__
-        if hasattr(r, 'iteration') and r.iteration != iteration:
-            iteration = r.iteration
-            print(f"\n\n[ITERATION {iteration}]:\n\n")
-        print(f"Event: {event_type}")
-        print(r)
-        print('--------')
-    
     # Last result should be a ResponseSummary with the full response
     last_result = results[-1]
     assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"

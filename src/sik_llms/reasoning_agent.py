@@ -42,7 +42,7 @@ class ReasoningStep(BaseModel):
 
     thought: str = Field(description="Current reasoning/thinking about the problem")
     next_action: ReasoningAction = Field(description="What action to take next")
-    tool_name: str | None = Field(default=None, description="Name of the tool to use (if next_action is USE_TOOL)")
+    tool_name: str | None = Field(default=None, description="Name of the tool to use (if next_action is USE_TOOL)")  # noqa: E501
 
 
 @Client.register(RegisteredClients.REASONING_AGENT)
@@ -58,7 +58,6 @@ class ReasoningAgent(Client):
             self,
             model_name: str,
             tools: Optional[list[Tool]] = None,
-            tool_choice: ToolChoice = ToolChoice.AUTO,
             max_iterations: int = 5,
             tool_executors: Optional[dict[str, Callable]] = None,
             reasoning_system_prompt: Optional[str] = None,
@@ -89,7 +88,6 @@ class ReasoningAgent(Client):
         # Initialize the thinking model
         self.model = model_name
         self.model_kwargs = model_kwargs.copy()
-        
         # Create the reasoning model with structured output
         self.reasoning_model = Client.instantiate(
             client_type=self.client_type,
@@ -97,25 +95,13 @@ class ReasoningAgent(Client):
             response_format=ReasoningStep,
             **model_kwargs,
         )
-        
         # Configure tools and tool execution
         self.tools = tools or []
-        self.tool_choice = tool_choice
         self.tool_executors = tool_executors or {}
         self.max_iterations = max_iterations
-        
-        # Cache for tool clients
-        self.tools_clients = {}
-        
         # Set up the system prompt for reasoning
         self.reasoning_system_prompt = reasoning_system_prompt or self._default_reasoning_prompt()
 
-        # Track the total usage stats
-        self.total_input_tokens = 0
-        self.total_output_tokens = 0
-        self.total_input_cost = 0
-        self.total_output_cost = 0
-        self.start_time = None
 
     def _default_reasoning_prompt(self) -> str:
         """Default system prompt for reasoning."""
@@ -171,21 +157,21 @@ class ReasoningAgent(Client):
     async def _execute_tool(self, tool_name: str, args: Dict[str, Any]) -> str:
         """
         Execute a tool with the given arguments.
-        
+
         Handles both synchronous and asynchronous tool executor functions.
         """
         executor = self.tool_executors.get(tool_name)
         if not executor:
             raise ValueError(f"No executor available for tool '{tool_name}'")
-        
+
         # Check if the executor is a coroutine function
         if asyncio.iscoroutinefunction(executor):
             return await executor(**args)
-        else:
-            # Run synchronous functions in a thread pool to avoid blocking
-            return await asyncio.get_event_loop().run_in_executor(
-                None, lambda: executor(**args)
-            )
+
+        # Run synchronous functions in a thread pool to avoid blocking
+        return await asyncio.get_event_loop().run_in_executor(
+            None, lambda: executor(**args)
+        )
 
     async def run_async(  # noqa: PLR0912, PLR0915
             self,
@@ -199,17 +185,27 @@ class ReasoningAgent(Client):
 
         This method implements an iterative reasoning process using structured output.
         """
-        self.start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_event_loop().time()
+        # Track the total usage stats
+        total_input_tokens = 0
+        total_output_tokens = 0
+        total_input_cost = 0
+        total_output_cost = 0
         # Get the last message from the user; treat the previous messages as text/context
+        if len(messages) == 0:
+            raise ValueError("No messages provided.")
+
         messages = messages.copy()
         last_message = messages.pop()
         # reasoning_messages will be used to send to the various models/agents
         reasoning_messages = [
             # Add the system message for reasoning
             system_message(self.reasoning_system_prompt),
-            user_message(f"Here are the previous messages for context:\n\n```\n{json.dumps(messages)}\n```\n"),  # noqa: E501
-            last_message,
         ]
+        if messages:
+            # if there were more than one message, add them to the reasoning messages
+            reasoning_messages.append(user_message(f"Here are the previous messages for context:\n\n```\n{json.dumps(messages)}\n```\n"))  # noqa: E501
+        reasoning_messages.append(last_message)
         # reasoning_history will be used to store the reasoning steps so that we can summarize them
         # later for the final response
         reasoning_history: list[dict] = []
@@ -228,10 +224,10 @@ class ReasoningAgent(Client):
 
             response: ResponseSummary = self.reasoning_model(reasoning_messages)
             # Update token usage
-            self.total_input_tokens += response.input_tokens
-            self.total_output_tokens += response.output_tokens
-            self.total_input_cost += response.input_cost
-            self.total_output_cost += response.output_cost
+            total_input_tokens += response.input_tokens
+            total_output_tokens += response.output_tokens
+            total_input_cost += response.input_cost
+            total_output_cost += response.output_cost
 
             # Parse the reasoning step
             reasoning_step: ReasoningStep = response.response.parsed
@@ -309,18 +305,18 @@ class ReasoningAgent(Client):
                 try:
                     # Create messages for tool prediction
                     tool_messages = reasoning_messages.copy()
+                    # remove initial system message that is specific to the reasoning agent
+                    tool_messages.pop(0)
+                    tool_messages[-1]['content'] += f"\n\nI will use the `{tool_name}` tool to help solve the problem."  # noqa: E501
+
                     # Get the tools client for this specific tool
                     tools_client = self._get_tools_client(tool_name)
                     tool_response = tools_client(tool_messages)
-                    reasoning_history.append({
-                        'iteration': iteration,
-                        'tool_prediction': tool_response.model_dump(),
-                    })
                     # Update token usage
-                    self.total_input_tokens += tool_response.input_tokens
-                    self.total_output_tokens += tool_response.output_tokens
-                    self.total_input_cost += tool_response.input_cost
-                    self.total_output_cost += tool_response.output_cost
+                    total_input_tokens += tool_response.input_tokens
+                    total_output_tokens += tool_response.output_tokens
+                    total_input_cost += tool_response.input_cost
+                    total_output_cost += tool_response.output_cost
 
                     if tool_response.tool_prediction:
                         # Use the tool name and arguments from the prediction
@@ -440,7 +436,7 @@ class ReasoningAgent(Client):
         )
         # Prepare the final prompt with all the reasoning history
         summary_messages = [
-            system_message("Your job is to review the reasoning process and provide a final answer. Please provide a brief explanation how the final answer was reached. Format the answer appropriately."),  # noqa: E501
+            system_message("Your job is to review the reasoning process and provide a final answer. Please provide the answer along with the appropriate explanation, if you deem it necessary."),  # noqa: E501
             assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),  # noqa: E501
             assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
         ]
@@ -451,21 +447,21 @@ class ReasoningAgent(Client):
                 yield chunk
             elif isinstance(chunk, ResponseSummary):
                 # Update token usage stats
-                self.total_input_tokens += chunk.input_tokens
-                self.total_output_tokens += chunk.output_tokens
-                self.total_input_cost += chunk.input_cost
-                self.total_output_cost += chunk.output_cost
+                total_input_tokens += chunk.input_tokens
+                total_output_tokens += chunk.output_tokens
+                total_input_cost += chunk.input_cost
+                total_output_cost += chunk.output_cost
 
         # Calculate total duration
         end_time = asyncio.get_event_loop().time()
-        duration = end_time - self.start_time
+        duration = end_time - start_time
 
         # Yield the final summary
         yield ResponseSummary(
             response=final_answer,
-            input_tokens=self.total_input_tokens,
-            output_tokens=self.total_output_tokens,
-            input_cost=self.total_input_cost,
-            output_cost=self.total_output_cost,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            input_cost=total_input_cost,
+            output_cost=total_output_cost,
             duration_seconds=duration,
         )
