@@ -7,7 +7,10 @@ from sik_llms.models_base import RegisteredClients
 
 
 OPENAI_TEST_MODEL = 'gpt-4o-mini'
+OPENAI_TEST_REASONING_MODEL = 'o3-mini'
+
 ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku-latest'
+ANTRHOPIC_THINKING_MODEL = 'claude-3-7-sonnet-latest'
 
 
 @dataclass

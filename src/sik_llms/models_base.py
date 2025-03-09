@@ -44,17 +44,17 @@ class ReasoningEffort(Enum):
 
 def user_message(content: str) -> dict:
     """Returns a user message."""
-    return {'role': 'user', 'content': content}
+    return {'role': 'user', 'content': content.strip()}
 
 
 def assistant_message(content: str) -> dict:
     """Returns an assistant message."""
-    return {'role': 'assistant', 'content': content}
+    return {'role': 'assistant', 'content': content.strip()}
 
 
 def system_message(content: str) -> dict:
     """Returns a system message."""
-    return {'role': 'system', 'content': content}
+    return {'role': 'system', 'content': content.strip()}
 
 
 class TextChunkEvent(BaseModel):

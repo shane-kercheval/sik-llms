@@ -1,32 +1,25 @@
 """Test the OpenAI Wrapper."""
 import asyncio
 import time
-from pydantic import BaseModel
 import pytest
 from dotenv import load_dotenv
 from sik_llms import (
     Client,
     ReasoningEffort,
-    StructuredOutputResponse,
     create_client,
     system_message,
     user_message,
     Tool,
     Parameter,
-    ToolPredictionResponse,
-    ToolPrediction,
     RegisteredClients,
     OpenAI,
     TextChunkEvent,
     ResponseSummary,
     OpenAITools,
 )
-from sik_llms.models_base import ToolChoice
+from tests.conftest import OPENAI_TEST_MODEL, OPENAI_TEST_REASONING_MODEL
 
 load_dotenv()
-
-OPENAI_TEST_MODEL = 'gpt-4o-mini'
-OPENAI_TEST_REASONING_MODEL = 'o3-mini'
 
 
 def test__registration__openai():
@@ -243,36 +236,6 @@ class TestOpenAI:
         assert len(results) == num_requests
         # The actual time should be significantly less than sequential execution
         assert actual_time < (sequential_time / 2)
-
-
-@pytest.mark.asyncio
-class TestOpenAIStructuredOutputs:
-    """Test the OpenAI Structured Output Wrapper."""
-
-    async def test__openai__structured_outputs(self):
-        class CalendarEvent(BaseModel):
-            name: str
-            date: str
-            participants: list[str]
-
-        client = create_client(
-            model_name=OPENAI_TEST_MODEL,
-            response_format=CalendarEvent,
-        )
-        messages=[
-            system_message("Extract the event information."),
-            user_message("Alice and Bob are going to a science fair on Friday."),
-        ]
-
-        response = client(messages=messages)
-        assert isinstance(response, ResponseSummary)
-        assert isinstance(response.response, StructuredOutputResponse)
-        assert isinstance(response.response.parsed, CalendarEvent)
-        assert response.response.parsed.name
-        assert response.response.parsed.date
-        assert response.response.parsed.participants
-        assert 'Alice' in response.response.parsed.participants
-        assert 'Bob' in response.response.parsed.participants
 
 
 @pytest.mark.asyncio

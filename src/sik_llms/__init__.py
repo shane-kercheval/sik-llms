@@ -33,6 +33,7 @@ from sik_llms.anthropic import (
     AnthropicTools,
     CHAT_MODEL_COST_PER_TOKEN as ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN,
 )
+from sik_llms.reasoning_agent import ReasoningAgent
 
 def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
     if client_type:
@@ -94,6 +95,7 @@ __all__ = [  # noqa: RUF022
     'ToolChoice',
     'StructuredOutputResponse',
     'ReasoningEffort',
+    'ReasoningAgent',
     'OpenAI',
     'OpenAITools',
     'Anthropic',

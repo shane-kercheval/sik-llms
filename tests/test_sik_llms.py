@@ -11,10 +11,7 @@ from sik_llms import (
     ToolPredictionResponse,
     ToolPrediction,
 )
-
-
-OPENAI_TEST_MODEL = 'gpt-4o-mini'
-ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku-latest'
+from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
 
 
 @pytest.mark.asyncio

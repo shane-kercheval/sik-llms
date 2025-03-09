@@ -1,7 +1,9 @@
 """Tests for the ReasoningAgent class."""
+import os
 import re
 import pytest
-from sik_llms.models_base import (
+from sik_llms import (
+    user_message,
     ErrorEvent,
     Tool,
     Parameter,
@@ -9,9 +11,9 @@ from sik_llms.models_base import (
     ToolPredictionEvent,
     ToolResultEvent,
     ResponseSummary,
-    user_message,
+    ReasoningAgent,
 )
-from sik_llms.reasoning_agent import ReasoningAgent
+from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
 
 
 async def calculator_async(expression: str) -> str:
@@ -41,7 +43,7 @@ def calculator_tool():
         parameters=[
             Parameter(
                 name='expression',
-                param_type='string',
+                param_type=str,
                 required=True,
                 description="The mathematical expression to evaluate (e.g., '2 + 2', '5 * 10')",
             ),
@@ -59,7 +61,7 @@ def weather_tool():
         parameters=[
             Parameter(
                 name='location',
-                param_type='string',
+                param_type=str,
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
             ),
@@ -68,9 +70,23 @@ def weather_tool():
     )
 
 
-def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str):
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str, model_name: str):
     agent = ReasoningAgent(
-        model_name='gpt-4o-mini',
+        model_name=model_name,
         tools=[calculator_tool],
     )
     prompt = agent._create_reasoning_prompt()
@@ -82,20 +98,38 @@ def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str):
     assert 'expression' in prompt
 
 
-def test__create_reasoning_prompt__multiple_tools(calculator_tool: Tool, test_files_path: str):
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+def test__create_reasoning_prompt__multiple_tools(
+        calculator_tool: Tool,
+        test_files_path: str,
+        model_name: str,
+    ):
     weather_multi_param_tool = Tool(
         name='get_weather',
         description="Get the current weather for a location",
         parameters=[
             Parameter(
                 name='location',
-                param_type='string',
+                param_type=str,
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
             ),
             Parameter(
                 name='units',
-                param_type='enum',
+                param_type=str,
                 required=True,
                 description="Temperature units",
                 enum=['°F', '°C'],
@@ -104,7 +138,7 @@ def test__create_reasoning_prompt__multiple_tools(calculator_tool: Tool, test_fi
         func=lambda location, units: f"Weather for {location}: 70{units}, Sunny with some clouds",
     )
     agent = ReasoningAgent(
-        model_name='gpt-4o-mini',
+        model_name=model_name,
         tools=[calculator_tool, weather_multi_param_tool],
     )
     prompt = agent._create_reasoning_prompt()
@@ -120,9 +154,23 @@ def test__create_reasoning_prompt__multiple_tools(calculator_tool: Tool, test_fi
     assert 'location' in prompt
 
 
-def test__create_reasoning_prompt__no_tools(test_files_path: str):
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+def test__create_reasoning_prompt__no_tools(test_files_path: str, model_name: str):
     agent = ReasoningAgent(
-        model_name='gpt-4o-mini',
+        model_name=model_name,
         tools=[],
     )
     # check that the prompt signals that there are no tools
@@ -133,9 +181,23 @@ def test__create_reasoning_prompt__no_tools(test_files_path: str):
 
 
 @pytest.mark.asyncio
-async def test__execute_tool__async(calculator_tool: Tool):
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+async def test__execute_tool__async(calculator_tool: Tool, model_name: str):
     agent = ReasoningAgent(
-        model_name='gpt-4o-mini',
+        model_name=model_name,
         tools=[calculator_tool],
     )
     # check that the tool is executed successfully
@@ -144,7 +206,21 @@ async def test__execute_tool__async(calculator_tool: Tool):
 
 
 @pytest.mark.asyncio
-async def test__execute_tool__sync():
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+async def test__execute_tool__sync(model_name: str):
     def weather_sync(location: str) -> str:
         """Mock weather tool - returns fake data."""
         # Return mock weather data
@@ -156,7 +232,7 @@ async def test__execute_tool__sync():
         parameters=[
             Parameter(
                 name='location',
-                param_type='string',
+                param_type=str,
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
             ),
@@ -164,7 +240,7 @@ async def test__execute_tool__sync():
         func=weather_sync,
     )
     agent = ReasoningAgent(
-        model_name='gpt-4o-mini',
+        model_name=model_name,
         tools=[tool],
     )
     # check that the tool is executed successfully
@@ -173,22 +249,32 @@ async def test__execute_tool__sync():
 
 
 @pytest.mark.asyncio
-async def test_reasoning_agent_with_calculator(calculator_tool: Tool):
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+async def test_reasoning_agent_with_calculator(calculator_tool: Tool, model_name: str):
     """Test the ReasoningAgent with a calculator tool using GPT-4o-mini."""
     # Create the reasoning agent
     agent = ReasoningAgent(
-        model_name="gpt-4o-mini",
+        model_name=model_name,
         tools=[calculator_tool],
         max_iterations=2,
         temperature=0,
     )
 
-    # Test messages
-    messages = [{"role": "user", "content": "What is 532 * 124?"}]
-
-    # Run the agent and collect the results
     results = []
-    async for result in agent.run_async(messages):
+    async for result in agent.run_async([user_message("What is 532 * 124?")]):
         results.append(result)
 
     # Check that we got the expected results
@@ -218,7 +304,31 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool):
 
 
 @pytest.mark.asyncio
-async def test_reasoning_agent__with_non_string_tool_return_values():
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+@pytest.mark.parametrize('location', [
+    pytest.param(
+        "New York",
+        id="New York",
+    ),
+    pytest.param(
+        "London",
+        id="London - Returns None",
+    ),
+])
+async def test_reasoning_agent__with_non_string_tool_return_values(model_name: str, location: str):
 
     # this function returns a dict if the location is found, otherwise None
     async def weather(location: str, units: str) -> str:
@@ -245,13 +355,13 @@ async def test_reasoning_agent__with_non_string_tool_return_values():
         parameters=[
             Parameter(
                 name="location",
-                param_type="string",
+                param_type=str,
                 required=True,
                 description="The name of the city (e.g., 'San Francisco', 'New York', 'London')",
             ),
             Parameter(
                 name='units',
-                param_type='string',
+                param_type=str,
                 required=True,
                 description="The units for temperature",
                 enum=['F', 'C'],
@@ -261,43 +371,60 @@ async def test_reasoning_agent__with_non_string_tool_return_values():
     )
 
     agent = ReasoningAgent(
-        model_name='gpt-4o-mini',
+        model_name=model_name,
         tools=[weather_tool],
     )
-    messages = [user_message("What's the weather like in London?")]
+    messages = [user_message(f"What's the weather like in {location}?")]
     results = []
     async for result in agent.run_async(messages):
         results.append(result)
     last_result = results[-1]
 
-    # tool event
     tool_result_events = [r for r in results if isinstance(r, ToolResultEvent)]
-    assert len(tool_result_events) > 0, "Should have tool result events"
-    assert 'London' in tool_result_events[0].result
+    assert len(tool_result_events) == 1
+    if location == "London":
+        # Londone is not in the weather data, so the tool should return None
+        # and the reasoning agent should not crash
+        assert tool_result_events[0].result is None
+    else:
+        assert location in tool_result_events[0].result
 
     assert isinstance(last_result, ResponseSummary)
-    assert 'London' in last_result.response
-    assert '°C' in last_result.response
-
+    if location == "London":
+        assert last_result.response
+    else:
+        assert location in last_result.response
+        assert '°F' in last_result.response
 
 
 @pytest.mark.asyncio
-async def test_reasoning_agent_with_multiple_tools(calculator_tool: Tool, weather_tool: Tool):
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+async def test_reasoning_agent_with_multiple_tools(
+        calculator_tool: Tool,
+        weather_tool: Tool,
+        model_name: str,
+    ):
     """Test the ReasoningAgent with multiple tools."""
     # Create the reasoning agent
     agent = ReasoningAgent(
-        model_name="gpt-4o-mini",
+        model_name=model_name,
         tools=[calculator_tool, weather_tool],
         temperature=0,
     )
-
-    # Test messages with a complex query requiring multiple tools
-    messages = [{
-        "role": "user",
-        "content": "I'm planning a trip to New York. What's the weather like there? Also, if the temperature in Celsius is 22, what is that in Fahrenheit?",  # noqa: E501
-    }]
-
-    # Run the agent and collect the results
+    messages = [user_message("I'm planning a trip to New York. What's the weather like there? Also, if the temperature in Celsius is 22, what is that in Fahrenheit?")]  # noqa: E501
     results = []
     async for result in agent.run_async(messages):
         results.append(result)
@@ -321,7 +448,7 @@ async def test_reasoning_agent_with_multiple_tools(calculator_tool: Tool, weathe
     # The answer should mention weather and temperature conversion
     final_answer = last_result.response
     assert "New York" in final_answer, "Answer should mention New York"
-    assert "Fahrenheit" in final_answer, "Answer should mention Fahrenheit"
+    assert "°F" in final_answer, "Answer should mention °F"
 
     # Check token accounting
     assert last_result.input_tokens > 0, "Should have input tokens"
@@ -329,25 +456,31 @@ async def test_reasoning_agent_with_multiple_tools(calculator_tool: Tool, weathe
 
 
 @pytest.mark.asyncio
-async def test_reasoning_agent_no_tools_needed():
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+async def test_reasoning_agent_no_tools_needed(model_name: str):
     """Test the ReasoningAgent with a question that doesn't need tools."""
     # Create the reasoning agent
     agent = ReasoningAgent(
-        model_name="gpt-4o-mini",
+        model_name=model_name,
         tools=[],  # No tools
         max_iterations=2,
         temperature=0,
     )
-
-    # Test messages with a question that doesn't need tools
-    messages = [{
-        "role": "user",
-        "content": "What are three benefits of regular exercise?",
-    }]
-
-    # Run the agent and collect the results
     results = []
-    async for result in agent.run_async(messages):
+    async for result in agent.run_async([user_message("Write a very short haiku.")]):
         results.append(result)
 
     # Check thinking occurred
@@ -369,14 +502,28 @@ async def test_reasoning_agent_no_tools_needed():
 
 
 @pytest.mark.asyncio
-async def test_reasoning_agent_with_lambda_function():
+@pytest.mark.parametrize('model_name', [
+    pytest.param(
+        OPENAI_TEST_MODEL,
+        id="OpenAI",
+    ),
+    pytest.param(
+        ANTHROPIC_TEST_MODEL,
+        id="Anthropic",
+        marks=pytest.mark.skipif(
+            os.getenv('ANTHROPIC_API_KEY') is None,
+            reason="ANTHROPIC_API_KEY is not set",
+        ),
+    ),
+])
+async def test_reasoning_agent_with_lambda_function(model_name: str):
     weather_tool = Tool(
         name='get_weather',
         description="Get the current weather for a location",
         parameters=[
             Parameter(
                 name='location',
-                param_type='string',
+                param_type=str,
                 required=True,
                 description="The city (e.g., 'San Francisco')",
             ),
@@ -384,16 +531,12 @@ async def test_reasoning_agent_with_lambda_function():
         func=lambda location: f"Weather for {location}: 72°F, Sunny with some clouds",
     )
     agent = ReasoningAgent(
-        model_name="gpt-4o-mini",
+        model_name=model_name,
         tools=[weather_tool],
         temperature=0,
     )
-    messages = [{
-        "role": "user",
-        "content": "What's the weather like in New York?",
-    }]
     results = []
-    async for result in agent.run_async(messages):
+    async for result in agent.run_async([user_message("What's the weather like in New York?")]):
         results.append(result)
     last_result = results[-1]
     assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
