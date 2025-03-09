@@ -132,14 +132,17 @@ class ReasoningAgent(Client):
     def _create_reasoning_prompt(self) -> str:
         """Default system prompt for reasoning."""
         if self.tools:
-            tools_description = "Available tools:\n"
+            tools_description = "Here are the available tools:\n\n"
             for tool in self.tools:
-                tools_description += f"- {tool.name}: {tool.description or 'No description provided'}\n"  # noqa: E501
+                tools_description += f"- `{tool.name}`:\n"
+                if tool.description:
+                    tools_description += f"  - Description: {tool.description}\n"
                 if tool.parameters:
-                    tools_description += "  Parameters:\n"
+                    tools_description += "  - Parameters:\n"
                     for param in tool.parameters:
                         required_str = "(required)" if param.required else "(optional)"
-                        tools_description += f"  - {param.name} {required_str}: {param.description or 'No description'}\n"  # noqa: E501
+                        param_description = f": {param.description}" or ''
+                        tools_description += f"    - `{param.name}` {required_str}{param_description}\n"  # noqa: E501
         else:
             tools_description = "No tools available."
 
