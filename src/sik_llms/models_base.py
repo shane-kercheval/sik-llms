@@ -297,7 +297,7 @@ class Tool(BaseModel):
     def to_openai(self) -> dict[str, object]:
         """
         Convert the tool to the format expected by OpenAI API.
-        
+
         OpenAI's function calling API has specific requirements for JSON Schema:
         - No default values are allowed anywhere in the schema
         - Nested objects require all properties to be listed as required
@@ -305,7 +305,7 @@ class Tool(BaseModel):
         """
         properties = {}
         required = []
-        
+
         for param in self.parameters:
             # Handle union types (any_of) by creating multiple schema options
             if param.any_of:
@@ -324,15 +324,15 @@ class Tool(BaseModel):
                 if 'default' in extra_props:
                     del extra_props['default']
                 param_dict = {"type": json_type, **extra_props}
-                
+
             # Add description to improve usability for the LLM
             if param.description:
                 param_dict["description"] = param.description
-                
+
             # Add enum/valid_values to constrain possible inputs
             if param.valid_values:
                 param_dict["enum"] = param.valid_values
-                
+
             # Special handling for object types:
             # 1. OpenAI requires additionalProperties: false
             # 2. For nested objects, all properties must be listed as required
@@ -342,9 +342,9 @@ class Tool(BaseModel):
                 # OpenAI requires all properties of nested objects to be listed as required
                 if param_dict['properties']:
                     param_dict['required'] = list(param_dict['properties'].keys())
-                
+
             properties[param.name] = param_dict
-            
+
             # Only add genuinely required parameters to the top-level required list
             # This preserves the semantic meaning of "required" while maintaining compatibility
             if param.required:
@@ -363,7 +363,7 @@ class Tool(BaseModel):
         # "strict" mode enforces all required parameters must be provided
         # Only enable it if all properties are required to avoid unnecessary constraints
         strict = all(param.required for param in self.parameters or [])
-        
+
         # Assemble the complete function schema
         result = {
             'type': 'function',
@@ -374,17 +374,17 @@ class Tool(BaseModel):
                 'parameters': parameters_dict,
             },
         }
-        
+
         # Remove any remaining default values that might be nested deeply in the schema
         # This ensures complete compatibility with OpenAI's requirements
         self._remove_defaults_recursively(result)
-        
+
         return result
 
-    def _remove_defaults_recursively(self, obj):
+    def _remove_defaults_recursively(self, obj) -> None:  # noqa: ANN001
         """
         Remove default values recursively from a schema object.
-        
+
         This is necessary because:
         1. OpenAI's API rejects schemas containing default values anywhere
         2. Pydantic models generate default values at various nesting levels
@@ -394,16 +394,16 @@ class Tool(BaseModel):
             # Remove default property if present - required by OpenAI API
             if 'default' in obj:
                 del obj['default']
-                
+
             # Process all nested dictionary values to handle deeply nested objects
-            for key, value in list(obj.items()):
+            for _, value in list(obj.items()):
                 if isinstance(value, (dict, list)):
                     self._remove_defaults_recursively(value)
-                    
+
             # Ensure all object types have additionalProperties: false (OpenAI requirement)
             if obj.get('type') == 'object' and 'properties' in obj:
                 obj['additionalProperties'] = False
-                    
+
         elif isinstance(obj, list):
             # Process all list items to handle arrays of objects or schemas
             for item in obj:
