@@ -74,11 +74,12 @@ class TestPydanticModelToParameters:
         class Address(BaseModel):
             street: str
             city: str
-            country: str = "USA"  # Default value
+            country: str = 'USA'  # Default value
 
         class Person(BaseModel):
             name: str
-            address: Address = Field(default_factory=Address)
+            phone: str = Field(default='<not provided>')
+            address: Address
 
         params = pydantic_model_to_parameters(Person)
 
@@ -86,24 +87,29 @@ class TestPydanticModelToParameters:
         name_param = next(p for p in params if p.name == 'name')
         assert name_param.required is True
 
+        phone_param = next(p for p in params if p.name == 'phone')
+        assert phone_param.required is False
+
         address_param = next(p for p in params if p.name == 'address')
-        assert address_param.required is False, "Fields with defaults should not be marked as required"  # noqa: E501
+        assert address_param.required is True
 
         # Convert to OpenAI format and check for no defaults
         tool = Tool(
-            name="test_person",
+            name='test_person',
             parameters=params,
-            description="Test nested defaults",
+            description='Test nested defaults',
         )
 
         openai_format = tool.to_openai()
-        schema = openai_format["function"]["parameters"]["properties"]
-
+        schema = openai_format['function']['parameters']['properties']
+        print(schema)
         # Verify no default values in schema
-        assert "default" not in schema["address"]
-        # Also verify the address is not in required list
-        required_fields = openai_format["function"]["parameters"].get("required", [])
-        assert "address" not in required_fields
+        assert 'default' not in schema['phone']
+        assert 'street' in schema['address']['properties']
+        assert 'city' in schema['address']['properties']
+        assert 'country' in schema['address']['properties']
+        assert 'default' not in schema['address']['properties']['country']
+
 
     def test_complex_nested_objects_with_defaults(self):
         """Test handling of complex nested objects with defaults at multiple levels."""

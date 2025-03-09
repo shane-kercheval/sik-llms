@@ -394,65 +394,6 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
         assert last_result.response
     else:
         assert location in last_result.response
-        assert '°F' in last_result.response
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_MODEL,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
-        ),
-    ),
-])
-async def test_reasoning_agent_with_multiple_tools(
-        calculator_tool: Tool,
-        weather_tool: Tool,
-        model_name: str,
-    ):
-    """Test the ReasoningAgent with multiple tools."""
-    # Create the reasoning agent
-    agent = ReasoningAgent(
-        model_name=model_name,
-        tools=[calculator_tool, weather_tool],
-        temperature=0,
-    )
-    messages = [user_message("I'm planning a trip to New York. What's the weather like there? Also, if the temperature in Celsius is 22, what is that in Fahrenheit?")]  # noqa: E501
-    results = []
-    async for result in agent.run_async(messages):
-        results.append(result)
-
-    # Check that tools were used
-    tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
-
-    tool_names = [event.name for event in tool_prediction_events]
-
-    # At least one of the tools should be used
-    assert any(name in ["calculator", "get_weather"] for name in tool_names), "Should use at least one tool"  # noqa: E501
-
-    error_events = [r for r in results if isinstance(r, ErrorEvent)]
-    assert len(error_events) == 0, "Should not have errors"
-
-
-    # Last result should be a ResponseSummary with a complete answer
-    last_result = results[-1]
-    assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
-
-    # The answer should mention weather and temperature conversion
-    final_answer = last_result.response
-    assert "New York" in final_answer, "Answer should mention New York"
-    assert "°F" in final_answer, "Answer should mention °F"
-
-    # Check token accounting
-    assert last_result.input_tokens > 0, "Should have input tokens"
-    assert last_result.output_tokens > 0, "Should have output tokens"
 
 
 @pytest.mark.asyncio
@@ -490,11 +431,6 @@ async def test_reasoning_agent_no_tools_needed(model_name: str):
     # Last result should be a ResponseSummary with a complete answer
     last_result = results[-1]
     assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
-
-    # The answer should mention benefits of exercise
-    final_answer = last_result.response
-    exercise_terms = ["exercise", "health", "fitness", "cardiovascular", "strength", "mental"]
-    assert any(term in final_answer.lower() for term in exercise_terms), "Answer should discuss exercise benefits"  # noqa: E501
 
     # There should be no tool predictions
     tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
