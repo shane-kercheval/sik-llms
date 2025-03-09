@@ -7,7 +7,8 @@
 - Functions/Tools
 - Structured Output
     - Supports Anthropic models even though structured output is not natively supported in their models
-- Reasoning
+- Reasoning mode in OpenAI and Anthropic
+- ReasoningAgent that iteratively reasons and calls tool
 
 See [examples](https://github.com/shane-kercheval/sik-llms/blob/main/examples/examples.ipynb)
 
