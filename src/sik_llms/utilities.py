@@ -2,7 +2,7 @@
 from enum import Enum
 import inspect
 import types
-from typing import TypeVar, get_origin, get_args, Any, Dict, List, Union  # noqa: UP035
+from typing import Literal, TypeVar, get_origin, get_args, Any, Dict, List, Union  # noqa: UP035
 from pydantic import BaseModel
 
 
@@ -87,11 +87,14 @@ def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noq
     """
     Convert a Python type annotation to a JSON Schema type.
 
+    Args:
+        annotation: The Python type to convert
+
     Returns:
         Tuple of (type_name, extra_properties)
 
     Raises:
-        ValueError: For unsupported type annotations
+        ValueError: For unsupported type annotations with descriptive message
     """
     # Handle None/Optional types
     origin = get_origin(annotation)
@@ -119,8 +122,12 @@ def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noq
         any_of_schemas = []
         for arg in args:
             if arg is not type(None):
-                type_name, props = get_json_schema_type(arg)
-                any_of_schemas.append({"type": type_name, **props})
+                try:
+                    type_name, props = get_json_schema_type(arg)
+                    any_of_schemas.append({"type": type_name, **props})
+                except ValueError:
+                    # Skip unsupported types in unions - this makes it more robust
+                    continue
         return "anyOf", {"anyOf": any_of_schemas}
 
     # Handle primitive types
@@ -133,11 +140,32 @@ def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noq
     if annotation is bool or annotation is bool:
         return "boolean", {}
 
+    # Handle Literal types
+    if origin is Literal:
+        # Get all literal values
+        literal_values = args
+        # Determine type based on the first value and check consistency
+        first_value = literal_values[0]
+        if isinstance(first_value, str) and all(isinstance(val, str) for val in literal_values):
+            return "string", {"enum": list(literal_values)}
+        if isinstance(first_value, int) and all(isinstance(val, int) for val in literal_values):
+            return "integer", {"enum": list(literal_values)}
+        if isinstance(first_value, float) and all(isinstance(val, float) for val in literal_values):  # noqa: E501
+            return "number", {"enum": list(literal_values)}
+        if isinstance(first_value, bool) and all(isinstance(val, bool) for val in literal_values):
+            return "boolean", {"enum": list(literal_values)}
+        # Mixed types in Literal - use string representation
+        return "string", {"enum": [str(val) for val in literal_values]}
+
     # Handle lists/arrays
     if origin is list or origin is List or annotation is list:  # noqa: UP006
         if args:
-            item_type, item_props = get_json_schema_type(args[0])
-            return "array", {"items": {"type": item_type, **item_props}}
+            try:
+                item_type, item_props = get_json_schema_type(args[0])
+                return "array", {"items": {"type": item_type, **item_props}}
+            except ValueError:
+                # Fall back to default if item type is unsupported
+                return "array", {"items": {"type": "string"}}
         return "array", {"items": {"type": "string"}}  # Default to string items
 
     # Handle tuples as arrays (with tuple validation if needed)
@@ -148,14 +176,20 @@ def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noq
 
         # Handle homogeneous tuples (Tuple[X, ...])
         if len(args) == 2 and args[1] is Ellipsis:
-            item_type, item_props = get_json_schema_type(args[0])
-            return "array", {"items": {"type": item_type, **item_props}}
+            try:
+                item_type, item_props = get_json_schema_type(args[0])
+                return "array", {"items": {"type": item_type, **item_props}}
+            except ValueError:
+                return "array", {"items": {"type": "string"}}
 
         # Handle heterogeneous tuples (Tuple[X, Y, Z])
         items = []
         for arg in args:
-            item_type, item_props = get_json_schema_type(arg)
-            items.append({"type": item_type, **item_props})
+            try:
+                item_type, item_props = get_json_schema_type(arg)
+                items.append({"type": item_type, **item_props})
+            except ValueError:
+                items.append({"type": "string"})
 
         return "array", {
             "prefixItems": items,
@@ -166,19 +200,25 @@ def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noq
     # Handle sets as arrays
     if origin is set or annotation is set:
         if args:
-            item_type, item_props = get_json_schema_type(args[0])
-            return "array", {
-                "items": {"type": item_type, **item_props},
-                "uniqueItems": True,
-            }
+            try:
+                item_type, item_props = get_json_schema_type(args[0])
+                return "array", {
+                    "items": {"type": item_type, **item_props},
+                    "uniqueItems": True,
+                }
+            except ValueError:
+                return "array", {"items": {"type": "string"}, "uniqueItems": True}
         return "array", {"items": {"type": "string"}, "uniqueItems": True}
 
     # Handle dictionaries/objects
     if origin is dict or origin is Dict or annotation is dict:  # noqa: UP006
         if len(args) >= 2:  # noqa: SIM102
             if args[0] is str or args[0] is str:
-                value_type, value_props = get_json_schema_type(args[1])
-                return "object", {"additionalProperties": {"type": value_type, **value_props}}
+                try:
+                    value_type, value_props = get_json_schema_type(args[1])
+                    return "object", {"additionalProperties": {"type": value_type, **value_props}}
+                except ValueError:
+                    return "object", {"additionalProperties": True}
         return "object", {"additionalProperties": True}
 
     # Handle Enum types
@@ -187,11 +227,13 @@ def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noq
 
     # Handle nested Pydantic models
     if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
-        # For nested models, we return an object type with a reference
-        return "object", {
-            "type": "object",
-            "description": f"A {annotation.__name__} object",
-        }
+        # For nested models, create a proper schema
+        model_schema = annotation.model_json_schema()
+        # Remove some metadata that might cause issues
+        for key in ['title', '$schema', 'description']:
+            model_schema.pop(key, None)
+
+        return "object", model_schema
 
     # Raise ValueError for unhandled types
     raise ValueError(f"Unsupported type annotation: {annotation}")

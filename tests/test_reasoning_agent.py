@@ -9,6 +9,7 @@ from sik_llms.models_base import (
     ToolPredictionEvent,
     ToolResultEvent,
     ResponseSummary,
+    user_message,
 )
 from sik_llms.reasoning_agent import ReasoningAgent
 
@@ -40,7 +41,7 @@ def calculator_tool():
         parameters=[
             Parameter(
                 name='expression',
-                type='string',
+                param_type='string',
                 required=True,
                 description="The mathematical expression to evaluate (e.g., '2 + 2', '5 * 10')",
             ),
@@ -58,7 +59,7 @@ def weather_tool():
         parameters=[
             Parameter(
                 name='location',
-                type='string',
+                param_type='string',
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
             ),
@@ -88,13 +89,13 @@ def test__create_reasoning_prompt__multiple_tools(calculator_tool: Tool, test_fi
         parameters=[
             Parameter(
                 name='location',
-                type='string',
+                param_type='string',
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
             ),
             Parameter(
                 name='units',
-                type='enum',
+                param_type='enum',
                 required=True,
                 description="Temperature units",
                 enum=['°F', '°C'],
@@ -155,7 +156,7 @@ async def test__execute_tool__sync():
         parameters=[
             Parameter(
                 name='location',
-                type='string',
+                param_type='string',
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
             ),
@@ -214,6 +215,70 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool):
     assert last_result.input_tokens > 0, "Should have input tokens"
     assert last_result.output_tokens > 0, "Should have output tokens"
     assert last_result.duration_seconds > 0, "Should have duration"
+
+
+@pytest.mark.asyncio
+async def test_reasoning_agent__with_non_string_tool_return_values():
+
+    # this function returns a dict if the location is found, otherwise None
+    async def weather(location: str, units: str) -> str:
+        weather_data = {
+            'New York': '68',
+            'San Francisco': '62',
+            'Miami': '85',
+            'Chicago': '55',
+            'Los Angeles': '75',
+        }
+        for city in weather_data:  # noqa: PLC0206
+            if city.lower() in location.lower():
+                temp = weather_data[city]
+                if units == 'C':
+                    # C = (°F - 32) x (5/9)
+
+                    temp = round((temp - 32) * 5 / 9)
+                return {location: f"{temp}°{units}"}
+        return None
+
+    weather_tool = Tool(
+        name="get_weather",
+        description="Get the current weather for a location",
+        parameters=[
+            Parameter(
+                name="location",
+                param_type="string",
+                required=True,
+                description="The name of the city (e.g., 'San Francisco', 'New York', 'London')",
+            ),
+            Parameter(
+                name='units',
+                param_type='string',
+                required=True,
+                description="The units for temperature",
+                enum=['F', 'C'],
+            ),
+        ],
+        func=weather,
+    )
+
+    agent = ReasoningAgent(
+        model_name='gpt-4o-mini',
+        tools=[weather_tool],
+    )
+    messages = [user_message("What's the weather like in London?")]
+    results = []
+    async for result in agent.run_async(messages):
+        results.append(result)
+    last_result = results[-1]
+
+    # tool event
+    tool_result_events = [r for r in results if isinstance(r, ToolResultEvent)]
+    assert len(tool_result_events) > 0, "Should have tool result events"
+    assert 'London' in tool_result_events[0].result
+
+    assert isinstance(last_result, ResponseSummary)
+    assert 'London' in last_result.response
+    assert '°C' in last_result.response
+
 
 
 @pytest.mark.asyncio
@@ -311,7 +376,7 @@ async def test_reasoning_agent_with_lambda_function():
         parameters=[
             Parameter(
                 name='location',
-                type='string',
+                param_type='string',
                 required=True,
                 description="The city (e.g., 'San Francisco')",
             ),

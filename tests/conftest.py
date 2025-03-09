@@ -1,7 +1,23 @@
 """Fixtures for testing the sik_llms module."""
+from dataclasses import dataclass
 import os
 import pytest
 from sik_llms import Tool, Parameter
+from sik_llms.models_base import RegisteredClients
+
+
+OPENAI_TEST_MODEL = 'gpt-4o-mini'
+ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku-latest'
+
+
+@dataclass
+class ClientConfig:
+    """Configuration for instantiating a client."""
+
+    client_type: RegisteredClients
+    model_name: str
+
+
 
 @pytest.fixture
 def project_root():
@@ -21,7 +37,7 @@ def simple_weather_tool() -> Tool:
         parameters=[
             Parameter(
                 name="location",
-                type="string",
+                param_type=str,
                 required=True,
                 description="The city and country for weather info.",
             ),
@@ -37,20 +53,20 @@ def complex_weather_tool() -> Tool:
         parameters=[
             Parameter(
                 name="location",
-                type="string",
+                param_type=str,
                 required=True,
                 description="The city and country",
             ),
             Parameter(
                 name="unit",
-                type="string",
+                param_type=str,
                 required=False,
                 description="Temperature unit",
-                enum=["celsius", "fahrenheit"],
+                valid_values=["celsius", "fahrenheit"],
             ),
             Parameter(
                 name="include_forecast",
-                type="boolean",
+                param_type=bool,
                 required=False,
                 description="Whether to include forecast data",
             ),
@@ -66,27 +82,27 @@ def restaurant_tool() -> Tool:
         parameters=[
             Parameter(
                 name="location",
-                type="string",
+                param_type=str,
                 required=True,
                 description="The city to search in",
             ),
             Parameter(
                 name="cuisine",
-                type="string",
+                param_type=str,
                 required=False,
                 description="Type of cuisine",
-                enum=["italian", "chinese", "mexican", "indian"],
+                valid_values=["italian", "chinese", "mexican", "indian"],
             ),
             Parameter(
                 name="price_range",
-                type="string",
+                param_type=str,
                 required=False,
                 description="Price range",
-                enum=["$", "$$", "$$$", "$$$$"],
+                valid_values=["$", "$$", "$$$", "$$$$"],
             ),
             Parameter(
                 name="open_now",
-                type="boolean",
+                param_type=bool,
                 required=False,
                 description="Filter for currently open restaurants",
             ),
