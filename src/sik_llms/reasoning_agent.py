@@ -4,7 +4,7 @@ import asyncio
 import json
 from enum import Enum
 from textwrap import dedent
-from typing import AsyncGenerator, Callable, Dict, Optional, Any  # noqa: UP035
+from typing import AsyncGenerator, Optional, Any  # noqa: UP035
 from pydantic import BaseModel, Field
 from sik_llms.models_base import (
     Client,
@@ -45,20 +45,32 @@ class ReasoningStep(BaseModel):
     tool_name: str | None = Field(default=None, description="Name of the tool to use (if next_action is USE_TOOL)")  # noqa: E501
 
 
+def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
+    if client_type:
+        return client_type
+    if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
+        return RegisteredClients.OPENAI
+    if model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
+        return RegisteredClients.ANTHROPIC
+    raise ValueError(f"Unknown model name '{model_name}'")
+
+
 @Client.register(RegisteredClients.REASONING_AGENT)
 class ReasoningAgent(Client):
     """
     A reasoning agent that can iteratively think and execute tools using structured output.
 
-    This implementation uses a Pydantic model for structured reasoning steps and 
+    This implementation uses a Pydantic model for structured reasoning steps and
     an event-driven approach to provide progress updates to the client.
     """
 
     def __init__(
             self,
             model_name: str,
-            client_type: str | RegisteredClients,
-            tools: Optional[list[Tool]] = None,
+            client_type: str | RegisteredClients | None = None,
+            tools: list[Tool] | None = None,
+            tools_model_name: str | None = None,
+            tools_client_type: str | RegisteredClients | None = None,
             max_iterations: int = 5,
             reasoning_system_prompt: Optional[str] = None,
             **model_kwargs: dict,
@@ -67,34 +79,41 @@ class ReasoningAgent(Client):
         Initialize the reasoning agent.
 
         Args:
-            model_name: The name of the model to use
-            tools: Optional list of tools the agent can use
-            tool_choice: Whether tool use is required or auto
-            max_iterations: Maximum number of iterations for thinking and tool use
-            tool_executors: Dict mapping tool names to functions that execute them
-            reasoning_system_prompt: Custom system prompt for the reasoning process
-            **model_kwargs: Additional arguments to pass to the model
+            model_name:
+                The name of the model to use for the reasoning and summary models.
+            client_type:
+                The client type to use for the reasoning model.
+            tools:
+                Optional list of tools the agent can use
+            tools_model_name:
+                The model name to use for the tools client. If tools are provided, and
+                tools_model_name is not specified, the tools client will use the same
+                model as the reasoning agent.
+            tools_client_type:
+                The client type to use for the tools client. If tools are provided, and
+                tools_client_type is not specified, the tools client will use the same
+                client type as the reasoning agent.
+            max_iterations:
+                Maximum number of iterations for thinking and tool use
+            tool_executors:
+                Dict mapping tool names to functions that execute them
+            reasoning_system_prompt:
+                Custom system prompt for the reasoning process
+            **model_kwargs:
+                Additional arguments to pass to the model
         """
-        # Determine which client types to use based on the model name
-        if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
-            self.client_type = RegisteredClients.OPENAI
-            self.tools_client_type = RegisteredClients.OPENAI_TOOLS
-        elif model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
-            self.client_type = RegisteredClients.ANTHROPIC
-            self.tools_client_type = RegisteredClients.ANTHROPIC_TOOLS
-        else:
-            raise ValueError(f"Unknown model name '{model_name}'")
+        client_type = _get_client_type(model_name, client_type)
+        if not tools_model_name:
+            tools_model_name = model_name
+        if not tools_client_type:
+            tools_client_type = client_type
 
-        # Initialize the thinking model
-        self.model = model_name
+        self.model_name = model_name
+        self.client_type = client_type
+        self.tools_client_type = tools_client_type
+        self.tools_model_name = tools_model_name
+
         self.model_kwargs = model_kwargs.copy()
-        # Create the reasoning model with structured output
-        self.reasoning_model = Client.instantiate(
-            client_type=self.client_type,
-            model_name=model_name,
-            response_format=ReasoningStep,
-            **model_kwargs,
-        )
         if any(t.func is None for t in tools):
             raise ValueError("All tools must have a callable function")
         self.tools = tools or []
@@ -109,12 +128,12 @@ class ReasoningAgent(Client):
         if self.tools:
             tools_description = "Available tools:\n"
             for tool in self.tools:
-                tools_description += f"- {tool.name}: {tool.description or 'No description provided'}\n"
+                tools_description += f"- {tool.name}: {tool.description or 'No description provided'}\n"  # noqa: E501
                 if tool.parameters:
                     tools_description += "  Parameters:\n"
                     for param in tool.parameters:
                         required_str = "(required)" if param.required else "(optional)"
-                        tools_description += f"  - {param.name} {required_str}: {param.description or 'No description'}\n"
+                        tools_description += f"  - {param.name} {required_str}: {param.description or 'No description'}\n"  # noqa: E501
 
         return dedent(f"""
         You are a reasoning agent that solves problems step-by-step.
@@ -139,6 +158,18 @@ class ReasoningAgent(Client):
         Always take your time to think and reason through the problem carefully.
         """).strip()  # noqa: E501
 
+    def _get_reasoning_client(self) -> Client:
+        """Get the reasoning client."""
+        return Client.instantiate(
+            client_type=self.client_type,
+            model_name=self.model_name,
+            response_format=ReasoningStep,
+            **self.model_kwargs,
+        )
+
+    def _get_summary_client(self) -> Client:
+        return self._get_reasoning_client()
+
     def _get_tools_client(self, tool_name: str) -> Client:
         """Get or create a tools client for the given tool."""
         # If a specific tool is requested, filter to just that tool
@@ -148,13 +179,13 @@ class ReasoningAgent(Client):
 
         return Client.instantiate(
             client_type=self.tools_client_type,
-            model_name=self.model,
+            model_name=self.tools_model_name,
             tools=tools_to_use,
             tool_choice=ToolChoice.REQUIRED,
             **self.model_kwargs,
         )
 
-    async def _execute_tool(self, tool_name: str, args: Dict[str, Any]) -> str:
+    async def _execute_tool(self, tool_name: str, args: dict[str, Any]) -> str:
         """
         Execute a tool with the given arguments.
 
@@ -170,7 +201,7 @@ class ReasoningAgent(Client):
 
         # Run synchronous functions in a thread pool to avoid blocking
         return await asyncio.get_event_loop().run_in_executor(
-            None, lambda: executor(**args)
+            None, lambda: executor(**args),
         )
 
     async def run_async(  # noqa: PLR0912, PLR0915
@@ -221,8 +252,7 @@ class ReasoningAgent(Client):
         while iteration < self.max_iterations:
             iteration += 1
             # Get structured reasoning step
-
-            response: ResponseSummary = self.reasoning_model(reasoning_messages)
+            response: ResponseSummary = self._get_reasoning_client(reasoning_messages)
             # Update token usage
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
@@ -429,11 +459,6 @@ class ReasoningAgent(Client):
 
         # Generate the final streaming response using the regular model (not structured output)
         # Create a new model instance without structured output for streaming
-        final_model = Client.instantiate(
-            client_type=self.client_type,
-            model_name=self.model,
-            **self.model_kwargs,
-        )
         # Prepare the final prompt with all the reasoning history
         summary_messages = [
             system_message("Your job is to review the reasoning process and provide a final answer. Please provide the answer along with the appropriate explanation, if you deem it necessary."),  # noqa: E501
@@ -441,7 +466,7 @@ class ReasoningAgent(Client):
             assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
         ]
         final_answer = ""
-        async for chunk in final_model.run_async(summary_messages):
+        async for chunk in self._get_summary_client.run_async(summary_messages):
             if isinstance(chunk, TextChunkEvent):
                 final_answer += chunk.content
                 yield chunk

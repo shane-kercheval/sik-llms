@@ -34,6 +34,14 @@ from sik_llms.anthropic import (
     CHAT_MODEL_COST_PER_TOKEN as ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN,
 )
 
+def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
+    if client_type:
+        return client_type
+    if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
+        return RegisteredClients.OPENAI
+    if model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
+        return RegisteredClients.ANTHROPIC
+    raise ValueError(f"Unknown model name '{model_name}'")
 
 def create_client(
         model_name: str,
@@ -59,13 +67,7 @@ def create_client(
     Returns:
         A model instance.
     """
-    if client_type is None:
-        if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
-            client_type = RegisteredClients.OPENAI
-        elif model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
-            client_type = RegisteredClients.ANTHROPIC
-        else:
-            raise ValueError(f"Unknown model name '{model_name}'")
+    client_type = _get_client_type(model_name, client_type)
     return Client.instantiate(client_type=client_type, model_name=model_name, **model_kwargs)
 
 

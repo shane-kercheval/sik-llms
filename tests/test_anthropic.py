@@ -219,8 +219,8 @@ class TestAnthropicReasoning:
         """
         Test that the extended thinking works when temperature is set.
 
-        From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications as well
-        as forced tool use."
+        From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications as
+        well as forced tool use."
 
         Make sure it doesn't crash.
         """
