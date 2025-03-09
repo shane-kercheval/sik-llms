@@ -98,7 +98,7 @@ def test__create_reasoning_prompt__multiple_tools(calculator_tool: Tool, test_fi
                 required=True,
                 description="Temperature units",
                 enum=['°F', '°C'],
-            )
+            ),
         ],
         func=lambda location, units: f"Weather for {location}: 70{units}, Sunny with some clouds",
     )
@@ -301,3 +301,41 @@ async def test_reasoning_agent_no_tools_needed():
     # There should be no tool predictions
     tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
     assert len(tool_prediction_events) == 0, "Should not have tool predictions"
+
+
+@pytest.mark.asyncio
+async def test_reasoning_agent_with_lambda_function():
+    weather_tool = Tool(
+        name='get_weather',
+        description="Get the current weather for a location",
+        parameters=[
+            Parameter(
+                name='location',
+                type='string',
+                required=True,
+                description="The city (e.g., 'San Francisco')",
+            ),
+        ],
+        func=lambda location: f"Weather for {location}: 72°F, Sunny with some clouds",
+    )
+    agent = ReasoningAgent(
+        model_name="gpt-4o-mini",
+        tools=[weather_tool],
+        temperature=0,
+    )
+    messages = [{
+        "role": "user",
+        "content": "What's the weather like in New York?",
+    }]
+    results = []
+    async for result in agent.run_async(messages):
+        results.append(result)
+    last_result = results[-1]
+    assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
+    assert "New York" in last_result.response
+    assert "72°F" in last_result.response
+
+    # get to the tool result event
+    tool_result_events = [r for r in results if isinstance(r, ToolResultEvent)]
+    assert len(tool_result_events) > 0, "Should have tool result events"
+    assert tool_result_events[0].result == "Weather for New York: 72°F, Sunny with some clouds"

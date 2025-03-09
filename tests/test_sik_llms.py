@@ -71,14 +71,14 @@ class TestOpenAIFunctions:
     @pytest.mark.parametrize('is_async', [True, False])
     async def test_single_function_single_parameter__instantiate(
             self,
-            simple_weather_function: Tool,
+            simple_weather_tool: Tool,
             is_async: bool,
         ):
         """Test calling a simple function with one required parameter."""
         client = create_client(
             client_type=RegisteredClients.OPENAI_TOOLS,
             model_name=OPENAI_TEST_MODEL,
-            tools=[simple_weather_function],
+            tools=[simple_weather_tool],
         )
         if is_async:
             response = await client.run_async(
@@ -111,14 +111,14 @@ class TestAnthropicFunctions:
     @pytest.mark.parametrize('is_async', [True, False])
     async def test_single_function_single_parameter__instantiate(
             self,
-            simple_weather_function: Tool,
+            simple_weather_tool: Tool,
             is_async: bool,
         ):
         """Test calling a simple function with one required parameter."""
         client = create_client(
             client_type=RegisteredClients.ANTHROPIC_TOOLS,
             model_name=ANTHROPIC_TEST_MODEL,
-            tools=[simple_weather_function],
+            tools=[simple_weather_tool],
         )
         if is_async:
             response = await client.run_async(
