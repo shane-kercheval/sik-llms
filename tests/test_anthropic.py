@@ -108,7 +108,6 @@ async def test__Anthropic__instantiate__run_async():
     assert 'Paris' in ''.join([response.content for response in responses])
 
 
-
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 def test__Anthropic_instantiate___parameters():
     model = Client.instantiate(
