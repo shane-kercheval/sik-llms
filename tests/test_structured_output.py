@@ -7,7 +7,6 @@ from sik_llms import (
     create_client,
     system_message,
     user_message,
-    RegisteredClients,
     ResponseSummary,
     StructuredOutputResponse,
 )

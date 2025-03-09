@@ -14,7 +14,7 @@ from sik_llms import (
     ToolPredictionResponse,
     ToolPrediction,
     RegisteredClients,
-    ToolChoice
+    ToolChoice,
 )
 from sik_llms.models_base import pydantic_model_to_parameters
 from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL, ClientConfig
@@ -67,7 +67,7 @@ class TestPydanticModelToParameters:
         assert age_param.required is False, "Fields with defaults should not be marked as required"
 
         active_param = next(p for p in params if p.name == 'active')
-        assert active_param.required is False, "Fields with defaults should not be marked as required"
+        assert active_param.required is False, "Fields with defaults should not be marked as required"  # noqa: E501
 
     def test_nested_model_with_defaults(self):
         """Test conversion of nested models with default values."""
@@ -75,30 +75,30 @@ class TestPydanticModelToParameters:
             street: str
             city: str
             country: str = "USA"  # Default value
-        
+
         class Person(BaseModel):
             name: str
-            address: Address = Field(default_factory=Address)  # Default value using default_factory
-            
+            address: Address = Field(default_factory=Address)
+
         params = pydantic_model_to_parameters(Person)
-        
+
         # Check required status
         name_param = next(p for p in params if p.name == 'name')
         assert name_param.required is True
-        
+
         address_param = next(p for p in params if p.name == 'address')
-        assert address_param.required is False, "Fields with defaults should not be marked as required"
-        
+        assert address_param.required is False, "Fields with defaults should not be marked as required"  # noqa: E501
+
         # Convert to OpenAI format and check for no defaults
         tool = Tool(
             name="test_person",
             parameters=params,
-            description="Test nested defaults"
+            description="Test nested defaults",
         )
-        
+
         openai_format = tool.to_openai()
         schema = openai_format["function"]["parameters"]["properties"]
-        
+
         # Verify no default values in schema
         assert "default" not in schema["address"]
         # Also verify the address is not in required list
@@ -110,44 +110,44 @@ class TestPydanticModelToParameters:
         class Configuration(BaseModel):
             debug: bool = False
             verbosity: int = 1
-        
+
         class Database(BaseModel):
             url: str
             timeout: int = 30
             config: Configuration = Field(default_factory=Configuration)
-        
+
         class AppSettings(BaseModel):
             app_name: str
             db: Database
             temp_dir: str = "/tmp"
             backup_dbs: list[Database] = Field(default_factory=list)
-        
+
         params = pydantic_model_to_parameters(AppSettings)
-        
+
         # Check required fields
         app_name_param = next(p for p in params if p.name == 'app_name')
         assert app_name_param.required is True
-        
+
         db_param = next(p for p in params if p.name == 'db')
         assert db_param.required is True
-        
+
         temp_dir_param = next(p for p in params if p.name == 'temp_dir')
         assert temp_dir_param.required is False
-        
+
         backup_dbs_param = next(p for p in params if p.name == 'backup_dbs')
         assert backup_dbs_param.required is False
-        
+
         # Convert to OpenAI format
         tool = Tool(
             name="app_settings",
             parameters=params,
-            description="Test app settings"
+            description="Test app settings",
         )
-        
+
         openai_format = tool.to_openai()
-        
+
         # Verify no defaults exist anywhere in the schema
-        def check_no_defaults(obj):
+        def check_no_defaults(obj) -> None:  # noqa: ANN001
             if isinstance(obj, dict):
                 assert "default" not in obj, f"Found 'default' in: {obj}"
                 for key, value in obj.items():
@@ -157,7 +157,7 @@ class TestPydanticModelToParameters:
                 for item in obj:
                     if isinstance(item, (dict, list)):
                         check_no_defaults(item)
-        
+
         check_no_defaults(openai_format)
 
     def test_model_with_optional_fields(self):
@@ -206,10 +206,10 @@ class TestPydanticModelToParameters:
         params = pydantic_model_to_parameters(ModelWithComplexTypes)
 
         tags_param = next(p for p in params if p.name == 'tags')
-        assert tags_param.param_type == List[str]  # Direct Python type comparison
+        assert tags_param.param_type == List[str]  # Direct Python type comparison  # noqa: UP006
 
         counts_param = next(p for p in params if p.name == 'counts')
-        assert counts_param.param_type == Dict[str, int]  # Direct Python type comparison
+        assert counts_param.param_type == Dict[str, int]  # Direct Python type comparison  # noqa: E501, UP006
 
     def test_model_with_enum(self):
         """Test conversion of a model with Enum fields."""
@@ -224,8 +224,8 @@ class TestPydanticModelToParameters:
         params = pydantic_model_to_parameters(ModelWithEnum)
 
         color_param = params[0]
-        assert color_param.param_type is str  # Base type for enum is string
-        assert color_param.valid_values == ['red', 'green', 'blue']  # Using valid_values instead of enum
+        assert color_param.param_type is str
+        assert color_param.valid_values == ['red', 'green', 'blue']
 
     # Better test for nested models
     def test_nested_models(self):
@@ -246,14 +246,14 @@ class TestPydanticModelToParameters:
         assert person_params[0].param_type is str
         assert person_params[0].required is True
         assert person_params[0].description is None
-        assert person_params[0].valid_values is None  # Using valid_values instead of enum
+        assert person_params[0].valid_values is None
 
         assert person_params[1].name == 'address'
-        assert person_params[1].param_type is Address  # Direct Python type comparison
+        assert person_params[1].param_type is Address
         assert person_params[1].required is True
         assert person_params[1].description is not None
         assert "The person's address" in person_params[1].description
-        assert person_params[1].valid_values is None  # Using valid_values instead of enum
+        assert person_params[1].valid_values is None
 
     # Better test for list of models
     def test_model_with_list_of_models(self):
@@ -269,8 +269,8 @@ class TestPydanticModelToParameters:
         params = pydantic_model_to_parameters(Order)
 
         items_param = next(p for p in params if p.name == 'items')
-        assert items_param.param_type == List[Item]  # Direct Python type comparison
-        assert items_param.description is None  # Description likely not included by default
+        assert items_param.param_type == List[Item]  # noqa: UP006
+        assert items_param.description is None
 
     def test_model_with_unsupported_types(self):
         """Test handling of models with unsupported types."""
@@ -290,11 +290,11 @@ class TestPydanticModelToParameters:
         params = pydantic_model_to_parameters(ModelWithOptionalComplex)
 
         tags_param = next(p for p in params if p.name == 'tags')
-        assert tags_param.param_type == list[str]  # Direct Python type comparison
+        assert tags_param.param_type == list[str]
         assert tags_param.required is False
 
         metadata_param = next(p for p in params if p.name == 'metadata')
-        assert metadata_param.param_type == dict[str, str]  # Direct Python type comparison
+        assert metadata_param.param_type == dict[str, str]
         assert metadata_param.required is False
 
     # Add new tests for our updated features
@@ -313,8 +313,8 @@ class TestPydanticModelToParameters:
         data_param = next(p for p in params if p.name == 'data')
         assert data_param.param_type is str  # Base type is string (placeholder)
         assert len(data_param.any_of) == 2
-        assert Dict[str, int] in data_param.any_of
-        assert List[str] in data_param.any_of
+        assert Dict[str, int] in data_param.any_of  # noqa: UP006
+        assert List[str] in data_param.any_of  # noqa: UP006
 
     def test_model_with_literal_types(self):
         """Test conversion of a model with Literal types."""
@@ -336,10 +336,10 @@ class TestPydanticModelToParameters:
         """Test handling of Literal types with mixed value types."""
         class MixedLiteralModel(BaseModel):
             mixed: Literal["success", 404, True]  # String, int, and bool
-        
+
         params = pydantic_model_to_parameters(MixedLiteralModel)
         mixed_param = params[0]
-        
+
         # Since mixed types are converted to strings
         assert mixed_param.param_type is str
         assert set(mixed_param.valid_values) == {"success", "404", "True"}
@@ -347,12 +347,12 @@ class TestPydanticModelToParameters:
     def test_model_with_complex_nested_unions(self):
         """Test handling of complex nested union types."""
         class ComplexUnionModel(BaseModel):
-            data: Union[str, List[int], Dict[str, bool]]
+            data: Union[str, List[int], Dict[str, bool]]  # noqa: UP006
             data2: str | list[int] | dict[str, bool]
-        
+
         params = pydantic_model_to_parameters(ComplexUnionModel)
         data_param = params[0]
-        
+
         assert data_param.param_type is str  # Base placeholder type
         assert len(data_param.any_of) == 3
         assert str in data_param.any_of
@@ -366,16 +366,16 @@ class TestPydanticModelToParameters:
         Parameter(name="test2", param_type=int, required=True)
         Parameter(name="test3", param_type=list[str], required=True)
         Parameter(name="test4", param_type=dict[str, int], required=True)
-        
+
         class TestModel(BaseModel):
             x: int
-        
+
         Parameter(name="test5", param_type=TestModel, required=True)
-        
+
         # Invalid param_type values
         with pytest.raises(ValueError):  # noqa: PT011
             Parameter(name="invalid1", param_type=Any, required=True)
-        
+
         with pytest.raises(ValueError):  # noqa: PT011
             Parameter(name="invalid2", param_type="string", required=True)  # `str` instead of type
 
@@ -383,25 +383,25 @@ class TestPydanticModelToParameters:
         """Test Parameter serialization and deserialization."""
         param = Parameter(
             name="test",
-            param_type=str, 
+            param_type=str,
             required=True,
             description="Test parameter",
             valid_values=["a", "b", "c"],
         )
-        
+
         # Serialize
         data = param.model_dump()
-        
+
         # Verify serialized data
         assert data["name"] == "test"
         assert "param_type" in data  # Now stored as string representation
         assert data["required"] is True
         assert data["description"] == "Test parameter"
         assert data["valid_values"] == ["a", "b", "c"]
-        
+
         # Deserialize (simplified test)
         deserialized = Parameter.model_validate(data)
-        
+
         # Basic verification of deserialized object
         assert deserialized.name == param.name
         assert deserialized.required == param.required
@@ -417,20 +417,20 @@ class TestPydanticModelToParameters:
             param_type=str,
             required=True,
             description="Color selection",
-            valid_values=["red", "green", "blue"]
+            valid_values=["red", "green", "blue"],
         )
-        
+
         tool = Tool(
             name="set_color",
             parameters=[param],
             description="Set a color",
-            func=lambda color: f"Color set to {color}"
+            func=lambda color: f"Color set to {color}",
         )
-        
+
         openai_format = tool.to_openai()
         assert openai_format["function"]["parameters"]["properties"]["color"]["type"] == "string"
-        assert openai_format["function"]["parameters"]["properties"]["color"]["enum"] == ["red", "green", "blue"]
-        assert openai_format["function"]["parameters"]["properties"]["color"]["description"] == "Color selection"
+        assert openai_format["function"]["parameters"]["properties"]["color"]["enum"] == ["red", "green", "blue"]  # noqa: E501
+        assert openai_format["function"]["parameters"]["properties"]["color"]["description"] == "Color selection"  # noqa: E501
 
     def test_parameter_to_openai_with_any_of(self):
         """Test conversion of Parameter with any_of to OpenAI format."""
@@ -441,18 +441,18 @@ class TestPydanticModelToParameters:
             description="ID value",
             any_of=[str, int],
         )
-        
+
         tool = Tool(
             name="get_item",
             parameters=[param],
             description="Get an item",
-            func=lambda id: f"Item {id}",
+            func=lambda id: f"Item {id}",  # noqa: A006
         )
 
         openai_format = tool.to_openai()
         assert "anyOf" in openai_format["function"]["parameters"]["properties"]["id"]
         assert len(openai_format["function"]["parameters"]["properties"]["id"]["anyOf"]) == 2
-        assert openai_format["function"]["parameters"]["properties"]["id"]["description"] == "ID value"
+        assert openai_format["function"]["parameters"]["properties"]["id"]["description"] == "ID value"  # noqa: E501
         assert openai_format['function']["description"] == "Get an item"
 
     def test_openai_schema_has_no_defaults(self):
@@ -462,22 +462,22 @@ class TestPydanticModelToParameters:
             timeout: int = 30
             retries: int = 3
             settings: dict = Field(default_factory=dict)
-        
+
         params = pydantic_model_to_parameters(ConfigModel)
         tool = Tool(
             name="test_config",
             parameters=params,
-            description="Test config"
+            description="Test config",
         )
-        
+
         # Convert to OpenAI format
         openai_format = tool.to_openai()
         properties = openai_format["function"]["parameters"]["properties"]
-        
+
         # Check that no properties have default values
         for prop_name, prop_schema in properties.items():
-            assert "default" not in prop_schema, f"Property {prop_name} should not have a default value"
-        
+            assert "default" not in prop_schema, f"Property {prop_name} should not have a default value"  # noqa: E501
+
         # Check required fields
         required = openai_format["function"]["parameters"].get("required", [])
         assert "name" in required
@@ -492,22 +492,22 @@ class TestPydanticModelToParameters:
             param_type=str,
             required=True,
             description="Color selection",
-            valid_values=["red", "green", "blue"]
+            valid_values=["red", "green", "blue"],
         )
-        
+
         tool = Tool(
             name="set_color",
             parameters=[param],
             description="Set a color",
-            func=lambda color: f"Color set to {color}"
+            func=lambda color: f"Color set to {color}",
         )
-        
+
         anthropic_format = tool.to_anthropic()
         assert anthropic_format["name"] == "set_color"
         assert anthropic_format["description"] == "Set a color"
         assert anthropic_format["input_schema"]["properties"]["color"]["type"] == "string"
-        assert anthropic_format["input_schema"]["properties"]["color"]["enum"] == ["red", "green", "blue"]
-        assert anthropic_format["input_schema"]["properties"]["color"]["description"] == "Color selection"
+        assert anthropic_format["input_schema"]["properties"]["color"]["enum"] == ["red", "green", "blue"]  # noqa: E501
+        assert anthropic_format["input_schema"]["properties"]["color"]["description"] == "Color selection"  # noqa: E501
 
     def test_parameter_to_anthropic_with_any_of(self):
         """Test conversion of Parameter with any_of to Anthropic format."""
@@ -518,12 +518,12 @@ class TestPydanticModelToParameters:
             description="ID value",
             any_of=[str, int],
         )
-        
+
         tool = Tool(
             name="get_item",
             parameters=[param],
             description="Get an item",
-            func=lambda id: f"Item {id}",
+            func=lambda id: f"Item {id}",  # noqa: A006
         )
 
         anthropic_format = tool.to_anthropic()
@@ -538,22 +538,22 @@ class TestPydanticModelToParameters:
             timeout: int = 30
             retries: int = 3
             settings: dict = Field(default_factory=dict)
-        
+
         params = pydantic_model_to_parameters(ConfigModel)
         tool = Tool(
             name="test_config",
             parameters=params,
-            description="Test config"
+            description="Test config",
         )
-        
+
         # Convert to Anthropic format
         anthropic_format = tool.to_anthropic()
         properties = anthropic_format["input_schema"]["properties"]
-        
+
         # Check that no properties have default values
         for prop_name, prop_schema in properties.items():
-            assert "default" not in prop_schema, f"Property {prop_name} should not have a default value"
-        
+            assert "default" not in prop_schema, f"Property {prop_name} should not have a default value"  # noqa: E501
+
         # Check required fields
         required = anthropic_format["input_schema"].get("required", [])
         assert "name" in required

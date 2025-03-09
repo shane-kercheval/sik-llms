@@ -83,7 +83,7 @@ class Registry:
         return self._registry[type_name.upper()](**data)
 
 
-def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noqa: PLR0911, PLR0912
+def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noqa: PLR0911, PLR0912, PLR0915
     """
     Convert a Python type annotation to a JSON Schema type.
 

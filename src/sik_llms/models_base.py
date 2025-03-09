@@ -1,7 +1,6 @@
 """Base classes and utilities for models."""
 import asyncio
 import inspect
-import json
 import types
 import nest_asyncio
 from pydantic import BaseModel, Field, field_validator
@@ -9,7 +8,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from copy import deepcopy
 from enum import Enum, auto
-from typing import Any, Callable, List, Literal, Type, TypeVar, Union, get_args, get_origin  # noqa: UP035
+from typing import Any, Callable, Literal, TypeVar, Union, get_args, get_origin
 from sik_llms.utilities import Registry, get_json_schema_type
 
 
@@ -230,59 +229,59 @@ class Parameter(BaseModel):
     description: str | None = None
     valid_values: list[Any] | None = None  # For enum-like constraints
     any_of: list[Any] | None = None  # For union types
-    
+
     model_config = {
         "arbitrary_types_allowed": True,  # Allow any type for param_type field
     }
-    
+
     @field_validator('param_type')
     @classmethod
-    def validate_param_type(cls, v):
+    def validate_param_type(cls, v):  # noqa: ANN001
         """Validate that param_type is a valid type."""
         # Reject Any explicitly
         if v is Any:
             raise ValueError("Any is not supported as a param_type")
-            
+
         # Check if it's a base type
         if isinstance(v, type):
             return v
-        
+
         # Check if it's a typing generic (like List[str])
         origin = get_origin(v)
         if origin is not None:
             return v
-                
+
         # If we get here, it's not a valid type
         raise ValueError(f"Invalid param_type: {v}. Must be a type, BaseModel, or typing generic.")
-    
-    def model_dump(self, **kwargs):
+
+    def model_dump(self, **kwargs):  # noqa: ANN003, ANN201
         """Custom serialization that handles type objects."""
         # Create a copy of the object with param_type and any_of converted to strings
         data = super().model_dump(**kwargs)
-        
+
         # Convert param_type to string representation
         if self.param_type is not None:
             data['param_type'] = str(self.param_type)
-        
+
         # Convert any_of to string representations
         if self.any_of is not None:
             data['any_of'] = [str(t) for t in self.any_of]
-            
+
         return data
-    
+
     @classmethod
-    def model_validate(cls, obj, **kwargs):
+    def model_validate(cls, obj, **kwargs):  # noqa: ANN001, ANN003
         """Custom deserialization that handles type strings."""
-        # This is just a placeholder since proper deserialization of types 
+        # This is just a placeholder since proper deserialization of types
         # from strings requires more complex logic
         if isinstance(obj, dict) and 'param_type' in obj and isinstance(obj['param_type'], str):
             # For deserialization tests, use str as a default type
             obj = dict(obj)
             obj['param_type'] = str
-            
-            if 'any_of' in obj and obj['any_of']:
+
+            if obj.get('any_of'):
                 obj['any_of'] = [str for _ in obj['any_of']]
-                
+
         return super().model_validate(obj, **kwargs)
 
 
@@ -299,7 +298,7 @@ class Tool(BaseModel):
         """Convert the tool to the format expected by OpenAI API."""
         properties = {}
         required = []
-        
+
         for param in self.parameters:
             # Convert the Python type to JSON Schema type
             if param.any_of:
@@ -313,21 +312,21 @@ class Tool(BaseModel):
                 # Handle single type
                 json_type, extra_props = get_json_schema_type(param.param_type)
                 param_dict = {"type": json_type, **extra_props}
-                
+
             # Add description if available
             if param.description:
                 param_dict["description"] = param.description
-                
+
             # Add enum values if provided
             if param.valid_values:
                 param_dict["enum"] = param.valid_values
-                
+
             # For object types, ensure all properties are required
             if json_type == 'object' and 'properties' in param_dict:
                 if param_dict['properties']:
                     param_dict['required'] = list(param_dict['properties'].keys())
                 param_dict['additionalProperties'] = False
-                
+
             properties[param.name] = param_dict
             if param.required:
                 required.append(param.name)
@@ -351,41 +350,41 @@ class Tool(BaseModel):
                 'parameters': parameters_dict,
             },
         }
-        
+
         # Helper function to process the entire schema recursively
-        def process_schema(obj):
+        def process_schema(obj) -> None:  # noqa: ANN001
             if isinstance(obj, dict):
                 # Remove default values
                 if 'default' in obj:
                     del obj['default']
-                    
+
                 # Ensure object types have required fields and additionalProperties: false
                 if obj.get('type') == 'object' and 'properties' in obj:
                     # Make all properties required
                     if obj['properties']:
                         obj['required'] = list(obj['properties'].keys())
                     obj['additionalProperties'] = False
-                    
+
                 # Process all nested objects/arrays
                 for key, value in list(obj.items()):
                     if isinstance(value, (dict, list)):
                         process_schema(value)
-                        
+
             elif isinstance(obj, list):
                 for item in obj:
                     if isinstance(item, (dict, list)):
                         process_schema(item)
-        
+
         # Process the entire schema
         process_schema(result)
-        
+
         return result
 
     def to_anthropic(self) -> dict[str, object]:
         """Convert the tool to the format expected by Anthropic API."""
         properties = {}
         required = []
-        
+
         for param in self.parameters:
             # Convert the Python type to JSON Schema type
             if param.any_of:
@@ -405,22 +404,22 @@ class Tool(BaseModel):
                 if 'default' in extra_props:
                     del extra_props['default']
                 param_dict = {"type": json_type, **extra_props}
-                
+
             # Add description if available
             if param.description:
                 param_dict["description"] = param.description
-                
+
             # Add enum values if provided
             if param.valid_values:
                 param_dict["enum"] = param.valid_values
-                
+
             # Ensure all object types have additionalProperties: false
             if json_type == 'object':
                 param_dict['additionalProperties'] = False
                 # Recursively remove default values from nested object properties
                 if 'properties' in param_dict:
                     self._remove_defaults_recursively(param_dict['properties'])
-                
+
             properties[param.name] = param_dict
             if param.required:
                 required.append(param.name)
@@ -440,22 +439,22 @@ class Tool(BaseModel):
         }
 
     # Helper method to recursively remove default values from schemas
-    def _remove_defaults_recursively(self, obj):
+    def _remove_defaults_recursively(self, obj) -> None:  # noqa: ANN001
         """Remove default values recursively from a properties dictionary."""
         if isinstance(obj, dict):
             # Remove default from this object if present
             if 'default' in obj:
                 del obj['default']
-            
+
             # Process all dictionary values recursively
             for key, value in list(obj.items()):
                 if isinstance(value, (dict, list)):
                     self._remove_defaults_recursively(value)
-                    
+
             # For object types, ensure additionalProperties is false
             if obj.get('type') == 'object' and 'properties' in obj:
                 obj['additionalProperties'] = False
-                
+
         elif isinstance(obj, list):
             # Process all list items recursively
             for item in obj:
@@ -629,7 +628,7 @@ class Client(ABC):
         raise ValueError(f"Unknown Model type `{client_type}`")
 
 
-def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
+def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:  # noqa: PLR0912
     """Convert a Pydantic model to a list of Parameter objects for function/tool calling."""
     parameters = []
 
@@ -644,17 +643,17 @@ def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
 
         # Get description from Field if available
         description = field.description or None
-        
+
         # Get the field annotation for type analysis
         annotation = field.annotation
         origin = get_origin(annotation)
         args = get_args(annotation)
-        
+
         # Handle Literal types
         if origin is Literal:
             # Get all literal values
             literal_values = args
-            
+
             # Determine appropriate base type for the literal
             if all(isinstance(val, str) for val in literal_values):
                 base_type = str
@@ -668,7 +667,7 @@ def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
                 # Mixed types, use string
                 base_type = str
                 literal_values = [str(val) for val in literal_values]
-                
+
             parameters.append(Parameter(
                 name=field_name,
                 param_type=base_type,
@@ -722,7 +721,7 @@ def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
                 description=description,
             ))
             continue
-            
+
         # Handle Any type - reject it
         if annotation is Any:
             raise ValueError(f"Field {field_name} has type Any which is not supported")
@@ -734,7 +733,7 @@ def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:
             required=required,
             description=description,
         ))
-    
+
     return parameters
 
 def pydantic_model_to_tool(model_class: BaseModel) -> Tool:
