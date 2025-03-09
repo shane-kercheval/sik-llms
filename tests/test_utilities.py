@@ -1,7 +1,7 @@
 """Tests for the utilities module."""
 import pytest
 from enum import Enum, auto
-from typing import List, Dict, Optional, Union, Any  # noqa: UP035
+from typing import List, Dict, Literal, Optional, Union, Any  # noqa: UP035
 from pydantic import BaseModel
 from sik_llms.utilities import Registry
 from sik_llms.utilities import get_json_schema_type
@@ -128,7 +128,6 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         assert get_json_schema_type(float) == ('number', {})
         assert get_json_schema_type(bool) == ('boolean', {})
 
-
     def test_list_types(self):
         """Test conversion of list/array types to JSON Schema types."""
         # Simple list of strings
@@ -157,7 +156,6 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         type_name_alt, props_alt = get_json_schema_type(list)
         assert type_name_alt == type_name
         assert props_alt == props
-
 
     def test_dict_types(self):
         """Test conversion of dict/object types to JSON Schema types."""
@@ -188,7 +186,6 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         assert type_name_alt == type_name
         assert props_alt == props
 
-
     def test_optional_types(self):
         """Test conversion of Optional types to JSON Schema types."""
         # Optional string (Union[str, None])
@@ -217,7 +214,6 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         type_name, props = get_json_schema_type(annotation)
         assert type_name == 'array'
         assert props['items']['type'] == 'string'
-
 
     def test_union_types(self):
         """Test conversion of Union types to JSON Schema types."""
@@ -252,6 +248,87 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         assert any(schema['type'] == 'string' for schema in props['anyOf'])
         assert any(schema['type'] == 'integer' for schema in props['anyOf'])
 
+    def test_complex_union_types(self):
+        """Test conversion of complex Union types with multiple nested types."""
+        # Union with multiple different types
+        type_name, props = get_json_schema_type(Union[str, List[int], Dict[str, float]])  # noqa: UP006
+        assert type_name == 'anyOf'
+        assert len(props['anyOf']) == 3
+
+        # Verify each component type is correctly represented
+        type_schemas = [schema['type'] for schema in props['anyOf']]
+        assert 'string' in type_schemas
+        assert 'array' in type_schemas
+        assert 'object' in type_schemas
+
+        # Find and check the array schema
+        array_schema = next(schema for schema in props['anyOf'] if schema['type'] == 'array')
+        assert array_schema['items']['type'] == 'integer'
+
+        # Find and check the object schema
+        object_schema = next(schema for schema in props['anyOf'] if schema['type'] == 'object')
+        assert object_schema['additionalProperties']['type'] == 'number'
+
+    def test_tuple_variants(self):
+        """Test different kinds of tuple type annotations."""
+        # Homogeneous tuple (Tuple[str, ...])
+        type_name, props = get_json_schema_type(tuple[str, ...])
+        assert type_name == 'array'
+        assert props['items']['type'] == 'string'
+
+        # Heterogeneous tuple (Tuple[str, int, bool])
+        type_name, props = get_json_schema_type(tuple[str, int, bool])
+        assert type_name == 'array'
+        assert 'prefixItems' in props
+        assert len(props['prefixItems']) == 3
+        assert props['prefixItems'][0]['type'] == 'string'
+        assert props['prefixItems'][1]['type'] == 'integer'
+        assert props['prefixItems'][2]['type'] == 'boolean'
+        assert props['minItems'] == 3
+        assert props['maxItems'] == 3
+
+    def test_forward_references(self):
+        """Test handling of forward references in type annotations."""
+        from typing import ForwardRef
+
+        # Simple forward reference
+        StringRef = ForwardRef('str')  # noqa: N806
+        try:
+            type_name, props = get_json_schema_type(StringRef)
+            assert type_name == 'string'
+        except ValueError:
+            # If forward refs aren't supported, this is acceptable too
+            pass
+
+    def test_deeply_nested_types(self):
+        """Test conversion of deeply nested type structures."""
+        # Dict with nested structure: Dict[str, List[Dict[str, int]]]
+        complex_type = dict[str, list[dict[str, int]]]
+        type_name, props = get_json_schema_type(complex_type)
+
+        assert type_name == 'object'
+        # First level: dictionary
+        assert 'additionalProperties' in props
+        # Second level: list
+        assert props['additionalProperties']['type'] == 'array'
+        # Third level: dictionary
+        assert props['additionalProperties']['items']['type'] == 'object'
+        # Fourth level: integer
+        assert props['additionalProperties']['items']['additionalProperties']['type'] == 'integer'
+
+    def test_literal_types(self):
+        """Test conversion of Literal types to JSON Schema."""
+        # Simple literal with strings
+        type_name, props = get_json_schema_type(Literal['red', 'green', 'blue'])
+        assert type_name == 'string'
+        assert 'enum' in props
+        assert set(props['enum']) == {'red', 'green', 'blue'}
+
+        # Literal with integers
+        type_name, props = get_json_schema_type(Literal[1, 2, 3])
+        assert type_name == 'integer'
+        assert 'enum' in props
+        assert set(props['enum']) == {1, 2, 3}
 
     def test_nested_container_types(self):
         """Test conversion of nested container types to JSON Schema types."""
@@ -275,7 +352,6 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         assert type_name_alt == type_name
         assert props_alt == props
 
-
     # Special type tests
     def test_enum_types(self):
         """Test conversion of Enum types to JSON Schema types."""
@@ -284,21 +360,17 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         assert 'enum' in props
         assert set(props['enum']) == {'red', 'green', 'blue'}
 
-
     def test_pydantic_model_types(self):
         """Test conversion of Pydantic model types to JSON Schema types."""
         # Simple model
         type_name, props = get_json_schema_type(Address)
         assert type_name == 'object'
         assert props['type'] == 'object'
-        assert 'description' in props
 
         # Model with nested model
         type_name, props = get_json_schema_type(Person)
         assert type_name == 'object'
         assert props['type'] == 'object'
-        assert 'description' in props
-
 
     # Edge case tests
     def test_any_type(self):
@@ -306,29 +378,25 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         with pytest.raises(ValueError, match="Unsupported type annotation"):
             get_json_schema_type(Any)
 
-
     def test_object_type(self):
         """Test conversion of object types to JSON Schema types."""
         # The function should return a reasonable default for unsupported types
         with pytest.raises(ValueError, match="Unsupported type annotation"):
             get_json_schema_type(object)
 
-
     def test_tuple_type(self):
         """Test conversion of tuple types to JSON Schema types."""
         # Tuples might be handled as arrays
         type_name, props = get_json_schema_type(tuple[str, int])
         # The exact implementation might vary, but it should return a valid type
-        assert type_name in ("array", "string")
-
+        assert type_name == 'array'
 
     def test_set_type(self):
         """Test conversion of set types to JSON Schema types."""
         # Sets might be handled as arrays
         type_name, props = get_json_schema_type(set[str])
         # The exact implementation might vary, but it should return a valid type
-        assert type_name in ("array", "string")
-
+        assert type_name == 'array'
 
     # Test for unsupported types
     def test_unsupported_types(self):

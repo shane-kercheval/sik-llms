@@ -6,28 +6,43 @@ from sik_llms.models_base import (
     user_message,
     assistant_message,
     system_message,
-    ResponseChunk,
+    TextChunkEvent,
+    ErrorEvent,
+    InfoEvent,
+    AgentEvent,
+    ThinkingEvent,
+    ThinkingChunkEvent,
+    ToolPredictionEvent,
+    ToolResultEvent,
     ResponseSummary,
     Parameter,
-    Function,
-    FunctionCallResult,
-    FunctionCallResponse,
+    Tool,
+    ToolPrediction,
+    ToolPredictionResponse,
     ToolChoice,
     StructuredOutputResponse,
     ReasoningEffort,
-    ContentType,
 )
 from sik_llms.openai import (
     OpenAI,
-    OpenAIFunctions,
+    OpenAITools,
     CHAT_MODEL_COST_PER_TOKEN as OPENAI_CHAT_MODEL_COST_PER_TOKEN,
 )
 from sik_llms.anthropic import (
     Anthropic,
-    AnthropicFunctions,
+    AnthropicTools,
     CHAT_MODEL_COST_PER_TOKEN as ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN,
 )
+from sik_llms.reasoning_agent import ReasoningAgent
 
+def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
+    if client_type:
+        return client_type
+    if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
+        return RegisteredClients.OPENAI
+    if model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
+        return RegisteredClients.ANTHROPIC
+    raise ValueError(f"Unknown model name '{model_name}'")
 
 def create_client(
         model_name: str,
@@ -53,13 +68,7 @@ def create_client(
     Returns:
         A model instance.
     """
-    if client_type is None:
-        if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
-            client_type = RegisteredClients.OPENAI
-        elif model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
-            client_type = RegisteredClients.ANTHROPIC
-        else:
-            raise ValueError(f"Unknown model name '{model_name}'")
+    client_type = _get_client_type(model_name, client_type)
     return Client.instantiate(client_type=client_type, model_name=model_name, **model_kwargs)
 
 
@@ -70,18 +79,25 @@ __all__ = [  # noqa: RUF022
     'user_message',
     'assistant_message',
     'system_message',
-    'ResponseChunk',
+    'TextChunkEvent',
+    'ErrorEvent',
+    'InfoEvent',
+    'AgentEvent',
+    'ThinkingEvent',
+    'ThinkingChunkEvent',
+    'ToolPredictionEvent',
+    'ToolResultEvent',
     'ResponseSummary',
     'Parameter',
-    'Function',
-    'FunctionCallResult',
-    'FunctionCallResponse',
+    'Tool',
+    'ToolPrediction',
+    'ToolPredictionResponse',
     'ToolChoice',
     'StructuredOutputResponse',
     'ReasoningEffort',
-    'ContentType',
+    'ReasoningAgent',
     'OpenAI',
-    'OpenAIFunctions',
+    'OpenAITools',
     'Anthropic',
-    'AnthropicFunctions',
+    'AnthropicTools',
 ]

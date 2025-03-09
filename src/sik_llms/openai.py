@@ -9,11 +9,11 @@ from pydantic import BaseModel
 import tiktoken
 from tiktoken import Encoding
 from sik_llms.models_base import (
-    Function,
-    FunctionCallResponse,
-    FunctionCallResult,
+    Tool,
+    ToolPredictionResponse,
+    ToolPrediction,
     Client,
-    ResponseChunk,
+    TextChunkEvent,
     ResponseSummary,
     ReasoningEffort,
     RegisteredClients,
@@ -84,7 +84,6 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
     try:
         encoding = _get_encoding_for_model(model_name)
     except KeyError:
-        print("Warning: model not found. Using o200k_base encoding.")
         encoding = tiktoken.get_encoding("o200k_base")
     if model_name in {
         "gpt-3.5-turbo-0125",
@@ -98,16 +97,12 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
         tokens_per_message = 3
         tokens_per_name = 1
     elif "gpt-3.5-turbo" in model_name:
-        print("Warning: gpt-3.5-turbo may update over time. Returning num tokens assuming gpt-3.5-turbo-0125.")  # noqa: E501
         return num_tokens_from_messages(messages=messages, model_name="gpt-3.5-turbo-0125")
     elif "gpt-4o-mini" in model_name:
-        print("Warning: gpt-4o-mini may update over time. Returning num tokens assuming gpt-4o-mini-2024-07-18.")  # noqa: E501
         return num_tokens_from_messages(messages=messages, model_name="gpt-4o-mini-2024-07-18")
     elif "gpt-4o" in model_name:
-        print("Warning: gpt-4o and gpt-4o-mini may update over time. Returning num tokens assuming gpt-4o-2024-08-06.")  # noqa: E501
         return num_tokens_from_messages(messages=messages, model_name="gpt-4o-2024-08-06")
     elif "gpt-4" in model_name:
-        print("Warning: gpt-4 may update over time. Returning num tokens assuming gpt-4-0613.")
         return num_tokens_from_messages(messages=messages, model_name="gpt-4-0613")
     elif "o1" in model_name or "o3-mini" in model_name:
         return num_tokens_from_messages(messages=messages, model_name="gpt-4o-2024-08-06")
@@ -126,12 +121,12 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
     return num_tokens
 
 
-def _parse_completion_chunk(chunk) -> ResponseChunk:  # noqa: ANN001
+def _parse_completion_chunk(chunk) -> TextChunkEvent:  # noqa: ANN001
     assert chunk.object == 'chat.completion.chunk'
     log_prob = None
     if chunk.choices[0].logprobs:
         log_prob = chunk.choices[0].logprobs.content[0].logprob
-    return ResponseChunk(
+    return TextChunkEvent(
         content=chunk.choices[0].delta.content,
         logprob=log_prob,
     )
@@ -212,7 +207,7 @@ class OpenAI(Client):
     async def run_async(
             self,
             messages: list[dict],
-        ) -> AsyncGenerator[ResponseChunk | ResponseSummary | None]:
+        ) -> AsyncGenerator[TextChunkEvent | ResponseSummary | None]:
         """
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
@@ -227,7 +222,7 @@ class OpenAI(Client):
             )
             end_time = time.time()
             yield ResponseSummary(
-                content=StructuredOutputResponse(
+                response=StructuredOutputResponse(
                     parsed=completion.choices[0].message.parsed,
                     refusal=completion.choices[0].message.refusal,
                 ),
@@ -265,7 +260,7 @@ class OpenAI(Client):
                 total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
                 total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
             yield ResponseSummary(
-                content=''.join([chunk.content for chunk in chunks]),
+                response=''.join([chunk.content for chunk in chunks]),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 input_cost=total_input_cost,
@@ -274,14 +269,14 @@ class OpenAI(Client):
             )
 
 
-@Client.register(RegisteredClients.OPENAI_FUNCTIONS)
-class OpenAIFunctions(Client):
-    """Wrapper for OpenAI API function calling."""
+@Client.register(RegisteredClients.OPENAI_TOOLS)
+class OpenAITools(Client):
+    """Wrapper for OpenAI API function/tool calling."""
 
     def __init__(
             self,
             model_name: str,
-            functions: list[Function],
+            tools: list[Tool],
             tool_choice: ToolChoice = ToolChoice.REQUIRED,
             server_url: str | None = None,
             **model_kwargs: dict,
@@ -296,8 +291,8 @@ class OpenAIFunctions(Client):
                 If the server_url is provided, the model name should be 'openai-compatible-server'.
                 (You can pass a keyword argument called `model` if you want to override the model
                 that is passed to the API call.)
-            functions:
-                List of Function objects defining available functions.
+            tools:
+                List of Tool objects defining available tools.
             tool_choice:
                 Controls if tools are required or optional.
             server_url:
@@ -327,18 +322,14 @@ class OpenAIFunctions(Client):
             self.model_parameters['tool_choice'] = 'auto'
         else:
             raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
-        self.model_parameters['tools'] = [func.to_openai() for func in functions]
+        self.model_parameters['tools'] = [t.to_openai() for t in tools]
 
-    async def run_async(self, messages: list[dict[str, str]]) -> FunctionCallResponse:
+    async def run_async(self, messages: list[dict[str, str]]) -> ToolPredictionResponse:
         """
-        Call the model with functions.
+        Call the model with tools.
 
         Args:
             messages: List of messages to send to the model.
-            model_name: Optional model override.
-            functions: Optional functions override.
-            tool_choice: Controls if tools are required or optional.
-            **model_kwargs: Additional parameters to override defaults.
         """
         start = time.time()
         completion = await self.client.chat.completions.create(
@@ -358,17 +349,17 @@ class OpenAIFunctions(Client):
         if completion.choices[0].message.tool_calls:
             message = None
             tool_call = completion.choices[0].message.tool_calls[0]
-            function_call = FunctionCallResult(
+            tool_prediction = ToolPrediction(
                 name=tool_call.function.name,
                 arguments=json.loads(tool_call.function.arguments),
                 call_id=tool_call.id,
             )
         else:
             message = completion.choices[0].message.content
-            function_call = None
+            tool_prediction = None
 
-        return FunctionCallResponse(
-            function_call=function_call,
+        return ToolPredictionResponse(
+            tool_prediction=tool_prediction,
             message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

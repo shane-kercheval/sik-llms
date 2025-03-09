@@ -4,17 +4,14 @@ import pytest
 from sik_llms import (
     create_client,
     user_message,
-    ResponseChunk,
+    TextChunkEvent,
     ResponseSummary,
-    Function,
+    Tool,
     RegisteredClients,
-    FunctionCallResponse,
-    FunctionCallResult,
+    ToolPredictionResponse,
+    ToolPrediction,
 )
-
-
-OPENAI_TEST_MODEL = 'gpt-4o-mini'
-ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku-latest'
+from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
 
 
 @pytest.mark.asyncio
@@ -29,7 +26,7 @@ async def test__create_client__openai() -> None:
 
     responses = []
     async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ResponseChunk):
+        if isinstance(response, TextChunkEvent):
             responses.append(response)
 
     assert len(responses) > 0
@@ -37,7 +34,7 @@ async def test__create_client__openai() -> None:
 
     response = client(messages=[user_message("What is the capital of France?")])
     assert isinstance(response, ResponseSummary)
-    assert 'Paris' in response.content
+    assert 'Paris' in response.response
 
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
@@ -53,7 +50,7 @@ async def test__create_client__anthropic() -> None:
 
     responses = []
     async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
-        if isinstance(response, ResponseChunk):
+        if isinstance(response, TextChunkEvent):
             responses.append(response)
 
     assert len(responses) > 0
@@ -61,7 +58,7 @@ async def test__create_client__anthropic() -> None:
 
     response = client(messages=[user_message("What is the capital of France?")])
     assert isinstance(response, ResponseSummary)
-    assert 'Paris' in response.content
+    assert 'Paris' in response.response
 
 
 @pytest.mark.asyncio
@@ -71,14 +68,14 @@ class TestOpenAIFunctions:
     @pytest.mark.parametrize('is_async', [True, False])
     async def test_single_function_single_parameter__instantiate(
             self,
-            simple_weather_function: Function,
+            simple_weather_tool: Tool,
             is_async: bool,
         ):
         """Test calling a simple function with one required parameter."""
         client = create_client(
-            client_type=RegisteredClients.OPENAI_FUNCTIONS,
+            client_type=RegisteredClients.OPENAI_TOOLS,
             model_name=OPENAI_TEST_MODEL,
-            functions=[simple_weather_function],
+            tools=[simple_weather_tool],
         )
         if is_async:
             response = await client.run_async(
@@ -92,11 +89,11 @@ class TestOpenAIFunctions:
                     user_message("What's the weather like in Paris?"),
                 ],
             )
-        assert isinstance(response, FunctionCallResponse)
-        assert isinstance(response.function_call, FunctionCallResult)
-        assert response.function_call.name == "get_weather"
-        assert "location" in response.function_call.arguments
-        assert "Paris" in response.function_call.arguments["location"]
+        assert isinstance(response, ToolPredictionResponse)
+        assert isinstance(response.tool_prediction, ToolPrediction)
+        assert response.tool_prediction.name == "get_weather"
+        assert "location" in response.tool_prediction.arguments
+        assert "Paris" in response.tool_prediction.arguments["location"]
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0
@@ -111,14 +108,14 @@ class TestAnthropicFunctions:
     @pytest.mark.parametrize('is_async', [True, False])
     async def test_single_function_single_parameter__instantiate(
             self,
-            simple_weather_function: Function,
+            simple_weather_tool: Tool,
             is_async: bool,
         ):
         """Test calling a simple function with one required parameter."""
         client = create_client(
-            client_type=RegisteredClients.ANTHROPIC_FUNCTIONS,
+            client_type=RegisteredClients.ANTHROPIC_TOOLS,
             model_name=ANTHROPIC_TEST_MODEL,
-            functions=[simple_weather_function],
+            tools=[simple_weather_tool],
         )
         if is_async:
             response = await client.run_async(
@@ -132,11 +129,11 @@ class TestAnthropicFunctions:
                     user_message("What's the weather like in Paris?"),
                 ],
             )
-        assert isinstance(response, FunctionCallResponse)
-        assert isinstance(response.function_call, FunctionCallResult)
-        assert response.function_call.name == "get_weather"
-        assert "location" in response.function_call.arguments
-        assert "Paris" in response.function_call.arguments["location"]
+        assert isinstance(response, ToolPredictionResponse)
+        assert isinstance(response.tool_prediction, ToolPrediction)
+        assert response.tool_prediction.name == "get_weather"
+        assert "location" in response.tool_prediction.arguments
+        assert "Paris" in response.tool_prediction.arguments["location"]
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0

@@ -6,17 +6,18 @@ from anthropic import AsyncAnthropic, Anthropic as SyncAnthropic
 from pydantic import BaseModel
 from sik_llms.models_base import (
     Client,
-    ResponseChunk,
+    ErrorEvent,
+    TextChunkEvent,
     ResponseSummary,
-    ContentType,
-    Function,
-    FunctionCallResponse,
-    FunctionCallResult,
+    ThinkingChunkEvent,
+    Tool,
+    ToolPredictionResponse,
+    ToolPrediction,
     RegisteredClients,
     ReasoningEffort,
     StructuredOutputResponse,
     ToolChoice,
-    pydantic_model_to_function,
+    pydantic_model_to_tool,
 )
 
 
@@ -66,32 +67,34 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
     return response.tokens
 
 
-def _parse_completion_chunk(chunk) -> ResponseChunk | None:  # noqa: ANN001
+def _parse_completion_chunk(chunk) -> TextChunkEvent | None:  # noqa: ANN001
     """Parse a chunk from the Anthropic API streaming response."""
     # Process content block deltas
     if chunk.type == 'content_block_start':  # noqa: SIM102
         if chunk.content_block.type == 'redacted_thinking':
-            return ResponseChunk(
+            return ThinkingChunkEvent(
                 content=chunk.content_block.data,
-                content_type=ContentType.REDACTED_THINKING,
+                is_redacted=True,
             )
     if chunk.type == 'content_block_delta':
         # Text delta
         if chunk.delta.type == 'text_delta':
-            return ResponseChunk(
+            return TextChunkEvent(
                 content=chunk.delta.text,
-                content_type=ContentType.TEXT,
             )
         # Thinking delta
         if chunk.delta.type == 'thinking_delta':
-            return ResponseChunk(
+            return ThinkingChunkEvent(
                 content=chunk.delta.thinking,
-                content_type=ContentType.THINKING,
+                is_redacted=False,
             )
     if chunk.type == 'error':
-        return ResponseChunk(
+        return ErrorEvent(
             content=f"Error: type={chunk.error.type}, message={chunk.error.message}",
-            content_type=ContentType.ERROR,
+            metadata={
+                'type': chunk.error.type,
+                'message': chunk.error.message,
+            },
         )
     # All other event types are ignored (content_block_start, message_start, message_delta, etc.)
     return None
@@ -172,18 +175,18 @@ class Anthropic(Client):
     async def run_async(
             self,
             messages: list[dict],
-        ) -> AsyncGenerator[ResponseChunk | ResponseSummary, None]:
+        ) -> AsyncGenerator[TextChunkEvent | ResponseSummary, None]:
         """
         Streams chat chunks and returns a final summary. Parameters passed here
         override those passed to the constructor.
         """
         if self.response_format:
             # Convert Pydantic model to Function
-            function = pydantic_model_to_function(self.response_format)
+            function = pydantic_model_to_tool(self.response_format)
             # Create AnthropicFunctions client
-            functions_client = AnthropicFunctions(
+            functions_client = AnthropicTools(
                 model_name=self.model,
-                functions=[function],
+                tools=[function],
                 tool_choice=ToolChoice.REQUIRED,
                 max_tokens=self.model_parameters.get('max_tokens', 5000),
                 temperature=0.2,
@@ -194,10 +197,10 @@ class Anthropic(Client):
                 response = await functions_client.run_async(messages)
 
                 # Extract function call result and convert to Pydantic model
-                if response.function_call:
+                if response.tool_prediction:
                     try:
                         # Create instance of Pydantic model from arguments
-                        parsed_model = self.response_format(**response.function_call.arguments)
+                        parsed_model = self.response_format(**response.tool_prediction.arguments)
                         structured_output = StructuredOutputResponse(
                             parsed=parsed_model,
                             refusal=None,
@@ -217,7 +220,7 @@ class Anthropic(Client):
 
                 # Yield the response
                 yield ResponseSummary(
-                    content=structured_output,
+                    response=structured_output,
                     input_tokens=response.input_tokens,
                     output_tokens=response.output_tokens,
                     input_cost=response.input_cost,
@@ -227,12 +230,12 @@ class Anthropic(Client):
                 return
             except Exception as e:
                 # Handle any other errors
-                yield ResponseChunk(
+                yield ErrorEvent(
                     content=f"Error: {e!s}",
-                    content_type=ContentType.ERROR,
+                    metadata={'error': e},
                 )
                 yield ResponseSummary(
-                    content=StructuredOutputResponse(
+                    response=StructuredOutputResponse(
                         parsed=None,
                         refusal=f"Function call error: {e!s}",
                     ),
@@ -274,11 +277,12 @@ class Anthropic(Client):
         processed_chunks = []
         for chunk in chunks:
             # Ignore REDACTED_THINKING chunks for the summary
-            if chunk.content_type in (ContentType.TEXT, ContentType.THINKING):
+            # if chunk.content_type in (ContentType.TEXT, ContentType.THINKING):
+            if isinstance(chunk, TextChunkEvent) or (isinstance(chunk, ThinkingChunkEvent) and not chunk.is_redacted):  # noqa: E501
                 processed_chunks.append(chunk.content)
 
         yield ResponseSummary(
-            content=''.join(processed_chunks),
+            response=''.join(processed_chunks),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input'],
@@ -287,14 +291,14 @@ class Anthropic(Client):
         )
 
 
-@Client.register(RegisteredClients.ANTHROPIC_FUNCTIONS)
-class AnthropicFunctions(Client):
+@Client.register(RegisteredClients.ANTHROPIC_TOOLS)
+class AnthropicTools(Client):
     """Wrapper for Anthropic API which provides a simple interface for using functions."""
 
     def __init__(
             self,
             model_name: str,
-            functions: list[Function],
+            tools: list[Tool],
             tool_choice: ToolChoice = ToolChoice.REQUIRED,
             max_tokens: int = 1_000,
             **model_kwargs: dict,
@@ -305,8 +309,8 @@ class AnthropicFunctions(Client):
         Args:
             model_name:
                 The model name to use for the API call (e.g. 'gpt-4').
-            functions:
-                List of Function objects defining available functions.
+            tools:
+                List of Tool objects defining available tool.
             tool_choice:
                 Controls if tools are required or optional.
             max_tokens:
@@ -326,7 +330,7 @@ class AnthropicFunctions(Client):
         # remove any None values
         self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
 
-        tools = [func.to_anthropic() for func in functions]
+        tools = [t.to_anthropic() for t in tools]
         if tool_choice == ToolChoice.REQUIRED:
             tool_choice = 'any'
         elif tool_choice == ToolChoice.AUTO:
@@ -351,8 +355,8 @@ class AnthropicFunctions(Client):
                 })
         return system_content, anthropic_messages
 
-    async def run_async(self, messages: list[dict]) -> FunctionCallResponse:
-        """Runs the function call and returns the response."""
+    async def run_async(self, messages: list[dict]) -> ToolPredictionResponse:
+        """Runs the tool prediction and returns the response."""
         system_content, anthropic_messages = self._convert_messages(messages)
         api_params = {
             'model': self.model,
@@ -366,12 +370,12 @@ class AnthropicFunctions(Client):
         response = await self.client.messages.create(**api_params)
         end_time = time.time()
 
-        function_call = None
+        tool_prediction = None
         message = None
         if len(response.content) > 1:
             raise ValueError(f"Unexpected multiple content items in response: {response.content}")
         if response.content[0].type == 'tool_use':
-            function_call = FunctionCallResult(
+            tool_prediction = ToolPrediction(
                 name=response.content[0].name,
                 arguments=response.content[0].input,
                 call_id=response.content[0].id,
@@ -383,8 +387,8 @@ class AnthropicFunctions(Client):
 
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
-        return FunctionCallResponse(
-            function_call=function_call,
+        return ToolPredictionResponse(
+            tool_prediction=tool_prediction,
             message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
