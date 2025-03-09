@@ -2,6 +2,7 @@
 import re
 import pytest
 from sik_llms.models_base import (
+    ErrorEvent,
     Tool,
     Parameter,
     ThinkingEvent,
@@ -12,11 +13,11 @@ from sik_llms.models_base import (
 from sik_llms.reasoning_agent import ReasoningAgent
 
 
-async def calculator(expression: str) -> str:
+async def calculator_async(expression: str) -> str:
         """Execute calculator tool."""
         try:
             # Only allow simple arithmetic for safety
-            allowed_chars = set("0123456789+-*/() .")
+            allowed_chars = set('0123456789+-*/() .')
             if not all(c in allowed_chars for c in expression):
                 return "Error: Invalid characters in expression"
             return str(eval(expression))
@@ -24,7 +25,7 @@ async def calculator(expression: str) -> str:
             return f"Error: {e!s}"
 
 
-async def weather(location: str) -> str:
+async def weather_async(location: str) -> str:
     """Mock weather tool - returns fake data."""
     # Return mock weather data
     return f"Weather for {location}: 72°F, Sunny with some clouds"
@@ -34,17 +35,17 @@ async def weather(location: str) -> str:
 def calculator_tool():
     """Fixture for a calculator tool."""
     return Tool(
-        name="calculator",
+        name='calculator',
         description="Perform mathematical calculations",
         parameters=[
             Parameter(
-                name="expression",
-                type="string",
+                name='expression',
+                type='string',
                 required=True,
                 description="The mathematical expression to evaluate (e.g., '2 + 2', '5 * 10')",
             ),
         ],
-        func=calculator,
+        func=calculator_async,
     )
 
 
@@ -52,18 +53,76 @@ def calculator_tool():
 def weather_tool():
     """Fixture for a weather tool."""
     return Tool(
-        name="get_weather",
+        name='get_weather',
         description="Get the current weather for a location",
         parameters=[
             Parameter(
-                name="location",
-                type="string",
+                name='location',
+                type='string',
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
             ),
         ],
-        func=weather,
+        func=weather_async,
     )
+
+
+def test__create_reasoning_prompt(calculator_tool: Tool):
+    agent = ReasoningAgent(
+        model_name='gpt-4o-mini',
+        tools=[calculator_tool],
+    )
+    # check that the tool is in the prompt
+    assert 'calculator' in agent._create_reasoning_prompt()
+    # check that the parameter is in the prompt
+    assert 'expression' in agent._create_reasoning_prompt()
+
+def test__create_reasoning_prompt__no_tools():
+    agent = ReasoningAgent(
+        model_name='gpt-4o-mini',
+        tools=[],
+    )
+    # check that the prompt signals that there are no tools
+    assert 'No tools' in agent._create_reasoning_prompt()
+
+@pytest.mark.asyncio
+async def test__execute_tool__async(calculator_tool: Tool):
+    agent = ReasoningAgent(
+        model_name='gpt-4o-mini',
+        tools=[calculator_tool],
+    )
+    # check that the tool is executed successfully
+    result = await agent._execute_tool('calculator', {'expression': '234 * 22'})
+    assert result == '5148'
+
+
+@pytest.mark.asyncio
+async def test__execute_tool__sync():
+    def weather_sync(location: str) -> str:
+        """Mock weather tool - returns fake data."""
+        # Return mock weather data
+        return f"Weather for {location}: 72°F, Sunny with some clouds"
+
+    tool = Tool(
+        name='get_weather',
+        description="Get the current weather for a location",
+        parameters=[
+            Parameter(
+                name='location',
+                type='string',
+                required=True,
+                description="The city and state/country (e.g., 'San Francisco, CA')",
+            ),
+        ],
+        func=weather_sync,
+    )
+    agent = ReasoningAgent(
+        model_name='gpt-4o-mini',
+        tools=[tool],
+    )
+    # check that the tool is executed successfully
+    result = await agent._execute_tool('get_weather', {'location': 'New York, NY'})
+    assert result == 'Weather for New York, NY: 72°F, Sunny with some clouds'
 
 
 @pytest.mark.asyncio
@@ -88,6 +147,9 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool):
     # Check that we got the expected results
     thinking_events = [r for r in results if isinstance(r, ThinkingEvent)]
     assert len(thinking_events) > 0, "Should have thinking events"
+
+    error_events = [r for r in results if isinstance(r, ErrorEvent)]
+    assert len(error_events) == 0, "Should not have errors"
 
     tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
     assert len(tool_prediction_events) > 0, "Should have tool prediction events"
@@ -136,6 +198,10 @@ async def test_reasoning_agent_with_multiple_tools(calculator_tool: Tool, weathe
 
     # At least one of the tools should be used
     assert any(name in ["calculator", "get_weather"] for name in tool_names), "Should use at least one tool"  # noqa: E501
+
+    error_events = [r for r in results if isinstance(r, ErrorEvent)]
+    assert len(error_events) == 0, "Should not have errors"
+
 
     # Last result should be a ResponseSummary with a complete answer
     last_result = results[-1]

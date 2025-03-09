@@ -322,7 +322,7 @@ class OpenAITools(Client):
             self.model_parameters['tool_choice'] = 'auto'
         else:
             raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
-        self.model_parameters['tools'] = [func.to_openai() for func in tools]
+        self.model_parameters['tools'] = [t.to_openai() for t in tools]
 
     async def run_async(self, messages: list[dict[str, str]]) -> ToolPredictionResponse:
         """
