@@ -1,6 +1,15 @@
 """Fixtures for testing the sik_llms module."""
+import os
 import pytest
 from sik_llms import Tool, Parameter
+
+@pytest.fixture
+def project_root():
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+@pytest.fixture
+def test_files_path(project_root: str) -> str:
+    return os.path.join(project_root, 'tests', 'test_files')
 
 
 @pytest.fixture

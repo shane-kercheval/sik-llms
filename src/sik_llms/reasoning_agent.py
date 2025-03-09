@@ -4,8 +4,7 @@ import asyncio
 from importlib import resources
 import json
 from enum import Enum
-from textwrap import dedent
-from typing import AsyncGenerator, Optional, Any  # noqa: UP035
+from typing import AsyncGenerator, Any  # noqa: UP035
 from pydantic import BaseModel, Field
 from sik_llms.models_base import (
     Client,
@@ -28,6 +27,11 @@ from sik_llms.openai import (
 from sik_llms.anthropic import (
     CHAT_MODEL_COST_PER_TOKEN as ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN,
 )
+
+
+PROMPT__REASONING_AGENT = resources.read_text('sik_llms.prompts', 'reasoning_prompt.txt')
+PROMPT__ANSWER_AGENT = resources.read_text('sik_llms.prompts', 'final_answer_prompt.txt')
+
 
 
 class ReasoningAction(str, Enum):
@@ -54,9 +58,6 @@ def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | E
     if model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
         return RegisteredClients.ANTHROPIC
     raise ValueError(f"Unknown model name '{model_name}' or client when trying to infer client type")  # noqa: E501
-
-
-REASONING_PROMPT = resources.read_text('sik_llms.prompts', 'reasoning_prompt.txt')
 
 
 @Client.register(RegisteredClients.REASONING_AGENT)
@@ -143,7 +144,7 @@ class ReasoningAgent(Client):
         else:
             tools_description = "No tools available."
 
-        return REASONING_PROMPT.replace('{{tools_description}}', tools_description)
+        return PROMPT__REASONING_AGENT.replace('{{tools_description}}', tools_description)
 
     def _get_reasoning_client(self) -> Client:
         """Get the reasoning client."""
@@ -407,7 +408,6 @@ class ReasoningAgent(Client):
                     else:
                         # No tool prediction was made
                         response_message = tool_response.message
-                        # No tool prediction was made
                         error_message = f"Error: Failed to get tool prediction for {tool_name}; message=`{response_message}`"  # noqa: E501
                         yield ErrorEvent(
                             content=error_message,
@@ -452,7 +452,7 @@ class ReasoningAgent(Client):
         # Create a new model instance without structured output for streaming
         # Prepare the final prompt with all the reasoning history
         summary_messages = [
-            system_message("Your job is to review the reasoning process and provide a final answer. Please provide the answer along with the appropriate explanation, if you deem it necessary."),  # noqa: E501
+            system_message(PROMPT__ANSWER_AGENT),
             assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),  # noqa: E501
             assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
         ]

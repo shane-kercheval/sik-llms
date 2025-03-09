@@ -12,7 +12,11 @@ You are a reasoning agent that solves problems step-by-step.
 
 [TOOLS]:
 
-{{tools_description}}
+Available tools:
+- calculator: Perform mathematical calculations
+  Parameters:
+  - expression (required): The mathematical expression to evaluate (e.g., '2 + 2', '5 * 10')
+
 
 [INSTRUCTIONS]
 

@@ -67,23 +67,31 @@ def weather_tool():
     )
 
 
-def test__create_reasoning_prompt(calculator_tool: Tool):
+def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str):
     agent = ReasoningAgent(
         model_name='gpt-4o-mini',
         tools=[calculator_tool],
     )
+    prompt = agent._create_reasoning_prompt()
+    with open(f'{test_files_path}/reasoning_prompt_calculator_tool.txt', 'w') as f:
+        f.write(prompt)
     # check that the tool is in the prompt
-    assert 'calculator' in agent._create_reasoning_prompt()
+    assert 'calculator' in prompt
     # check that the parameter is in the prompt
-    assert 'expression' in agent._create_reasoning_prompt()
+    assert 'expression' in prompt
 
-def test__create_reasoning_prompt__no_tools():
+
+def test__create_reasoning_prompt__no_tools(test_files_path: str):
     agent = ReasoningAgent(
         model_name='gpt-4o-mini',
         tools=[],
     )
     # check that the prompt signals that there are no tools
-    assert 'No tools' in agent._create_reasoning_prompt()
+    prompt = agent._create_reasoning_prompt()
+    with open(f'{test_files_path}/reasoning_prompt_no_tools.txt', 'w') as f:
+        f.write(prompt)
+    assert 'No tools' in prompt
+
 
 @pytest.mark.asyncio
 async def test__execute_tool__async(calculator_tool: Tool):
