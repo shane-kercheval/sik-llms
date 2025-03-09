@@ -144,7 +144,6 @@ class TestAnthropicReasoning:
         assert model.model_parameters['thinking']['budget_tokens']
         assert model.model_parameters['max_tokens'] > model.model_parameters['thinking']['budget_tokens']  # noqa: E501
 
-
     def test__Anthropic_instantiate__with_thinking_budget(self):
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
@@ -157,7 +156,6 @@ class TestAnthropicReasoning:
         assert model.model_parameters['thinking']['type'] == 'enabled'
         assert model.model_parameters['thinking']['budget_tokens'] == 12000
         assert model.model_parameters['max_tokens'] > model.model_parameters['thinking']['budget_tokens']  # noqa: E501
-
 
     @pytest.mark.asyncio
     async def test__Anthropic__with_thinking__reasoning_effort(self):
@@ -183,7 +181,6 @@ class TestAnthropicReasoning:
 
         assert has_thinking_content, "No thinking content was generated"
         assert has_text_content, "No text content was generated"
-
 
     @pytest.mark.asyncio
     async def test__Anthropic__with_thinking__thinking_budget_tokens(self):
@@ -212,7 +209,6 @@ class TestAnthropicReasoning:
         assert has_thinking_content, "No thinking content was generated"
         assert has_text_content, "No text content was generated"
         assert has_summary, "No summary was generated"
-
 
     @pytest.mark.asyncio
     async def test__Anthropic__with_thinking__temperature(self):
@@ -246,8 +242,6 @@ class TestAnthropicReasoning:
 
         assert has_thinking_content, "No thinking content was generated"
         assert has_text_content, "No text content was generated"
-
-
 
     @pytest.mark.asyncio
     async def test__Anthropic__with_thinking__test_redacted_thinking(self):
@@ -283,7 +277,6 @@ class TestAnthropicReasoning:
         assert not has_thinking_content, "Thinking content was generated"
         assert has_text_content, "No text content was generated"
         assert has_summary, "No summary was generated"
-
 
     @pytest.mark.asyncio
     async def test__Anthropic__without_thinking__verify_no_thinking_events(self):
