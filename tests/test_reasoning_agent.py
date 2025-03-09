@@ -81,6 +81,44 @@ def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str):
     assert 'expression' in prompt
 
 
+def test__create_reasoning_prompt__multiple_tools(calculator_tool: Tool, test_files_path: str):
+    weather_multi_param_tool = Tool(
+        name='get_weather',
+        description="Get the current weather for a location",
+        parameters=[
+            Parameter(
+                name='location',
+                type='string',
+                required=True,
+                description="The city and state/country (e.g., 'San Francisco, CA')",
+            ),
+            Parameter(
+                name='units',
+                type='enum',
+                required=True,
+                description="Temperature units",
+                enum=['°F', '°C'],
+            )
+        ],
+        func=lambda location, units: f"Weather for {location}: 70{units}, Sunny with some clouds",
+    )
+    agent = ReasoningAgent(
+        model_name='gpt-4o-mini',
+        tools=[calculator_tool, weather_multi_param_tool],
+    )
+    prompt = agent._create_reasoning_prompt()
+    with open(f'{test_files_path}/reasoning_prompt_calculator_weather_tool.txt', 'w') as f:
+        f.write(prompt)
+    # check that the calculator tool is in the prompt
+    assert 'calculator' in prompt
+    # check that the parameter is in the prompt
+    assert 'expression' in prompt
+    # check that the weather tool is in the prompt
+    assert 'get_weather' in prompt
+    # check that the parameter is in the prompt
+    assert 'location' in prompt
+
+
 def test__create_reasoning_prompt__no_tools(test_files_path: str):
     agent = ReasoningAgent(
         model_name='gpt-4o-mini',
