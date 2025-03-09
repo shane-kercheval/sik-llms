@@ -33,7 +33,6 @@ PROMPT__REASONING_AGENT = resources.read_text('sik_llms.prompts', 'reasoning_pro
 PROMPT__ANSWER_AGENT = resources.read_text('sik_llms.prompts', 'final_answer_prompt.txt')
 
 
-
 class ReasoningAction(str, Enum):
     """Possible actions the reasoning agent can take."""
 
