@@ -204,6 +204,7 @@ class ReasoningAgent(Client):
         ) -> AsyncGenerator[
             TextChunkEvent | ThinkingEvent | ToolPredictionEvent | ToolResultEvent
             | ErrorEvent | ResponseSummary,
+            None,
         ]:
         """
         Run the reasoning agent on the given messages.
