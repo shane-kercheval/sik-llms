@@ -30,17 +30,6 @@ class ReasoningEffort(Enum):
     HIGH = 'high'
 
 
-# class ContentType(Enum):
-#     """Enum for content chunk types."""
-
-#     TEXT = auto()
-#     THINKING = auto()
-#     REDACTED_THINKING = auto()
-#     TOOL_PREDICTION = auto()
-#     TOOL_RESULT = auto()
-#     ERROR = auto()
-
-
 def user_message(content: str) -> dict:
     """Returns a user message."""
     return {'role': 'user', 'content': content.strip()}
@@ -88,6 +77,7 @@ class ThinkingEvent(AgentEvent):
 
     content: str
     is_redacted: bool = False
+
 
 class ThinkingChunkEvent(AgentEvent):
     """Event emitted during agent thinking."""
@@ -283,7 +273,6 @@ class Parameter(BaseModel):
                 obj['any_of'] = [str for _ in obj['any_of']]
 
         return super().model_validate(obj, **kwargs)
-
 
 
 class Tool(BaseModel):
@@ -490,6 +479,7 @@ class Tool(BaseModel):
             for item in obj:
                 if isinstance(item, (dict, list)):
                     self._remove_defaults_recursively(item)
+
 
 class ToolChoice(Enum):
     """
