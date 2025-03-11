@@ -31,11 +31,12 @@ class TestPydanticModelToParameters:
             name: str
             age: int
             active: bool
+            a_float: float
 
         params = pydantic_model_to_parameters(SimpleModel)
 
         # Check number of parameters
-        assert len(params) == 3
+        assert len(params) == 4
 
         # Check parameter properties
         name_param = next(p for p in params if p.name == 'name')
@@ -49,6 +50,52 @@ class TestPydanticModelToParameters:
         active_param = next(p for p in params if p.name == 'active')
         assert active_param.param_type is bool
         assert active_param.required is True
+
+    def test_primitive_types_to_json_schema(self):
+        """Test that Python primitive types are converted to correct JSON Schema types."""
+        # Test all primitive types
+        class AllTypes(BaseModel):
+            a_str: str
+            an_int: int
+            a_float: float
+            a_bool: bool
+            a_list: list[str]
+            a_dict: dict[str, int]
+
+        params = pydantic_model_to_parameters(AllTypes)
+        tool = Tool(
+            name="test_types",
+            parameters=params,
+            description="Test type conversions",
+            func=lambda **kwargs: str(kwargs),
+        )
+
+        # Get the OpenAI format
+        openai_format = tool.to_openai()
+        properties = openai_format["function"]["parameters"]["properties"]
+
+        # Check each type conversion
+        assert properties["a_str"]["type"] == "string"
+        assert properties["an_int"]["type"] == "integer"
+        assert properties["a_float"]["type"] == "number"
+        assert properties["a_bool"]["type"] == "boolean"
+        assert properties["a_list"]["type"] == "array"
+        assert properties["a_list"]["items"]["type"] == "string"
+        assert properties["a_dict"]["type"] == "object"
+        assert properties["a_dict"]["additionalProperties"]["type"] == "integer"
+
+        # Do the same check for Anthropic format
+        anthropic_format = tool.to_anthropic()
+        properties = anthropic_format["input_schema"]["properties"]
+
+        assert properties["a_str"]["type"] == "string"
+        assert properties["an_int"]["type"] == "integer"
+        assert properties["a_float"]["type"] == "number"
+        assert properties["a_bool"]["type"] == "boolean"
+        assert properties["a_list"]["type"] == "array"
+        assert properties["a_list"]["items"]["type"] == "string"
+        assert properties["a_dict"]["type"] == "object"
+        assert properties["a_dict"]["additionalProperties"]["type"] == "integer"
 
     def test_model_with_defaults(self):
         """Test conversion of a model with default values."""

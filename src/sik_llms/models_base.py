@@ -30,17 +30,6 @@ class ReasoningEffort(Enum):
     HIGH = 'high'
 
 
-# class ContentType(Enum):
-#     """Enum for content chunk types."""
-
-#     TEXT = auto()
-#     THINKING = auto()
-#     REDACTED_THINKING = auto()
-#     TOOL_PREDICTION = auto()
-#     TOOL_RESULT = auto()
-#     ERROR = auto()
-
-
 def user_message(content: str) -> dict:
     """Returns a user message."""
     return {'role': 'user', 'content': content.strip()}
@@ -89,6 +78,7 @@ class ThinkingEvent(AgentEvent):
     content: str
     is_redacted: bool = False
 
+
 class ThinkingChunkEvent(AgentEvent):
     """Event emitted during agent thinking."""
 
@@ -110,14 +100,6 @@ class ToolResultEvent(AgentEvent):
     arguments: dict[str, Any]
     result: object
 
-
-class StructuredOutputResponse(BaseModel):
-    """Response containing structured output data."""
-
-    parsed: BaseModel | None
-    refusal: str | object | None
-
-
 class TokenSummary(BaseModel):
     """Summary of a chat response."""
 
@@ -138,10 +120,17 @@ class TokenSummary(BaseModel):
         return self.input_cost + self.output_cost
 
 
-class ResponseSummary(TokenSummary):
+class StructuredOutputResponse(TokenSummary):
+    """Response containing structured output data."""
+
+    parsed: BaseModel | None
+    refusal: str | object | None
+
+
+class TextResponse(TokenSummary):
     """Summary of a chat response."""
 
-    response: str | StructuredOutputResponse
+    response: str
 
 
 class Parameter(BaseModel):
@@ -285,7 +274,6 @@ class Parameter(BaseModel):
         return super().model_validate(obj, **kwargs)
 
 
-
 class Tool(BaseModel):
     """Represents a function/tool that can be called by the model."""
 
@@ -410,15 +398,21 @@ class Tool(BaseModel):
                 if isinstance(item, (dict, list)):
                     self._remove_defaults_recursively(item)
 
-    def to_anthropic(self) -> dict[str, object]:
-        """Convert the tool to the format expected by Anthropic API."""
+    def to_anthropic(self) -> dict[str, object]:  # noqa: PLR0912
+        """
+        Convert the tool to the format expected by Anthropic API.
+
+        Follows JSON Schema best practices:
+        - Removes default values for consistency with OpenAI implementation
+        - Sets additionalProperties: false to prevent unexpected properties
+        - Preserves dictionary type constraints for proper typing
+        """
         properties = {}
         required = []
 
         for param in self.parameters:
-            # Convert the Python type to JSON Schema type
+            # Handle union types (any_of) by creating multiple schema options
             if param.any_of:
-                # Handle union types
                 any_of_schemas = []
                 for union_type in param.any_of:
                     json_type, extra_props = get_json_schema_type(union_type)
@@ -428,14 +422,14 @@ class Tool(BaseModel):
                     any_of_schemas.append({"type": json_type, **extra_props})
                 param_dict = {"anyOf": any_of_schemas}
             else:
-                # Handle single type
+                # Convert Python types to JSON Schema types
                 json_type, extra_props = get_json_schema_type(param.param_type)
                 # Remove any default values from extra_props
                 if 'default' in extra_props:
                     del extra_props['default']
                 param_dict = {"type": json_type, **extra_props}
 
-            # Add description if available
+            # Add description to improve usability for the LLM
             if param.description:
                 param_dict["description"] = param.description
 
@@ -443,12 +437,17 @@ class Tool(BaseModel):
             if param.valid_values:
                 param_dict["enum"] = param.valid_values
 
-            # Ensure all object types have additionalProperties: false
+            # Special handling for object types:
             if json_type == 'object':
-                param_dict['additionalProperties'] = False
-                # Recursively remove default values from nested object properties
-                if 'properties' in param_dict:
-                    self._remove_defaults_recursively(param_dict['properties'])
+                # If this is a dictionary type with value type constraints, preserve them
+                if 'additionalProperties' in extra_props and isinstance(extra_props['additionalProperties'], dict):  # noqa: E501
+                    param_dict['additionalProperties'] = extra_props['additionalProperties']
+                else:
+                    param_dict['additionalProperties'] = False
+
+                # For nested objects, ensure all properties are required (similar to OpenAI)
+                if param_dict.get('properties'):
+                    param_dict['required'] = list(param_dict['properties'].keys())
 
             properties[param.name] = param_dict
             if param.required:
@@ -462,34 +461,18 @@ class Tool(BaseModel):
             parameters_dict['required'] = required
         parameters_dict['additionalProperties'] = False
 
-        return {
+        # Assemble the complete tool schema
+        result = {
             'name': self.name,
             **({'description': self.description} if self.description else {}),
             'input_schema': parameters_dict,
         }
 
-    # Helper method to recursively remove default values from schemas
-    def _remove_defaults_recursively(self, obj) -> None:  # noqa: ANN001
-        """Remove default values recursively from a properties dictionary."""
-        if isinstance(obj, dict):
-            # Remove default from this object if present
-            if 'default' in obj:
-                del obj['default']
+        # Remove any remaining default values that might be nested deeply in the schema
+        self._remove_defaults_recursively(result)
 
-            # Process all dictionary values recursively
-            for key, value in list(obj.items()):
-                if isinstance(value, (dict, list)):
-                    self._remove_defaults_recursively(value)
+        return result
 
-            # For object types, ensure additionalProperties is false
-            if obj.get('type') == 'object' and 'properties' in obj:
-                obj['additionalProperties'] = False
-
-        elif isinstance(obj, list):
-            # Process all list items recursively
-            for item in obj:
-                if isinstance(item, (dict, list)):
-                    self._remove_defaults_recursively(item)
 
 class ToolChoice(Enum):
     """
@@ -543,7 +526,7 @@ class Client(ABC):
     def __call__(
             self,
             messages: list[dict[str, object]],
-        ) -> ResponseSummary | ToolPredictionResponse:
+        ) -> TextResponse | ToolPredictionResponse | StructuredOutputResponse:
         """
         Invoke the model (e.g. chat).
 
@@ -555,9 +538,9 @@ class Client(ABC):
             **model_kwargs:
                 Additional parameters to pass to the API call (e.g. temperature, max_tokens).
         """
-        async def run() -> ResponseSummary:
-            # Check if the run_async method returns a generator or a direct value
-            result = self.run_async(messages)
+        async def run() -> TextResponse:
+            # Check if the stream method returns a generator or a direct value
+            result = self.stream(messages)
             # If it's an async generator, collect the last response
             if hasattr(result, '__aiter__'):
                 last_response = None
@@ -582,13 +565,38 @@ class Client(ABC):
             # No event loop exists
             return asyncio.run(run())
 
-    @abstractmethod
     async def run_async(
         self,
         messages: list[dict[str, object]],
-    ) -> AsyncGenerator[TextChunkEvent | ResponseSummary, None] | ToolPredictionResponse:
+    ) -> TextResponse | ToolPredictionResponse | StructuredOutputResponse:
         """
-        Run asynchronously.
+        Invoke the model asynchronously but does not stream via AsyncGenerator. Rather, it waits
+        for the model to finish processing all messages and returns the last response which is
+        either a ResponseSummary (containing the entire content) or a ToolPredictionResponse.
+
+        Args:
+            messages:
+                List of messages to send to the model (i.e. model input).
+            model_name:
+                The model name to use for the API call (e.g. 'gpt-4o-mini').
+            **model_kwargs:
+                Additional parameters to pass to the API call (e.g. temperature, max_tokens).
+        """
+        last_response = None
+        async for response in self.stream(messages):
+            last_response = response
+        return last_response
+
+    @abstractmethod
+    async def stream(
+        self,
+        messages: list[dict[str, object]],
+    ) -> AsyncGenerator[
+            TextChunkEvent | TextResponse | ToolPredictionResponse | StructuredOutputResponse,
+            None,
+        ]:
+        """
+        Streams asynchronously.
 
         For chat models, this method should return an async generator that yields ResponseChunk
         objects. The last response should be a ResponseSummary object.

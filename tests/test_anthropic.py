@@ -10,7 +10,7 @@ from sik_llms import (
     RegisteredClients,
     Anthropic,
     TextChunkEvent,
-    ResponseSummary,
+    TextResponse,
     ReasoningEffort,
     ThinkingChunkEvent,
 )
@@ -36,10 +36,10 @@ async def test__async_anthropic_completion_wrapper_call():
         chunks = []
         summary = None
         try:
-            async for response in client.run_async(messages=messages):
+            async for response in client.stream(messages=messages):
                 if isinstance(response, TextChunkEvent):
                     chunks.append(response)
-                elif isinstance(response, ResponseSummary):
+                elif isinstance(response, TextResponse):
                     summary = response
             return chunks, summary
         except Exception:
@@ -52,7 +52,7 @@ async def test__async_anthropic_completion_wrapper_call():
         response = ''.join([chunk.content for chunk in chunks])
         passed_tests.append(
             'Paris' in response
-            and isinstance(summary, ResponseSummary)
+            and isinstance(summary, TextResponse)
             and summary.input_tokens > 0
             and summary.output_tokens > 0
             and summary.input_cost > 0
@@ -84,13 +84,13 @@ def test__Anthropic__instantiate():
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 @pytest.mark.asyncio
-async def test__Anthropic__instantiate__run_async():
+async def test__Anthropic__instantiate__stream():
     model = Client.instantiate(
         client_type=RegisteredClients.ANTHROPIC,
         model_name=ANTHROPIC_TEST_MODEL,
     )
     responses = []
-    async for response in model.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
+    async for response in model.stream(messages=[user_message("What is the capital of France?")]):
         if isinstance(response, TextChunkEvent):
             responses.append(response)
 
@@ -159,12 +159,12 @@ class TestAnthropicReasoning:
         has_text_content = False
 
         messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
-        async for response in model.run_async(messages=messages):
+        async for response in model.stream(messages=messages):
             if isinstance(response, TextChunkEvent):
                 has_text_content = True
             elif isinstance(response, ThinkingChunkEvent):
                 has_thinking_content = True
-            elif isinstance(response, ResponseSummary):
+            elif isinstance(response, TextResponse):
                 # Check that summary contains both thinking and answer
                 assert "45" in response.response
 
@@ -185,12 +185,12 @@ class TestAnthropicReasoning:
         has_summary = False
 
         messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
-        async for response in model.run_async(messages=messages):
+        async for response in model.stream(messages=messages):
             if isinstance(response, TextChunkEvent):
                 has_text_content = True
             elif isinstance(response, ThinkingChunkEvent):
                 has_thinking_content = True
-            elif isinstance(response, ResponseSummary):
+            elif isinstance(response, TextResponse):
                 # Check that summary contains both thinking and answer
                 has_summary = True
                 assert "45" in response.response
@@ -220,12 +220,12 @@ class TestAnthropicReasoning:
         has_text_content = False
 
         messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
-        async for response in model.run_async(messages=messages):
+        async for response in model.stream(messages=messages):
             if isinstance(response, TextChunkEvent):
                 has_text_content = True
             elif isinstance(response, ThinkingChunkEvent):
                 has_thinking_content = True
-            elif isinstance(response, ResponseSummary):
+            elif isinstance(response, TextResponse):
                 # Check that summary contains both thinking and answer
                 assert "45" in response.response
 
@@ -249,7 +249,7 @@ class TestAnthropicReasoning:
         # test redacted thinking:
         # https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#example-working-with-redacted-thinking-blocks
         messages = [user_message("ANTHROPIC_MAGIC_STRING_TRIGGER_REDACTED_THINKING_46C9A13E193C177646C7398A98432ECCCE4C1253D5E2D82641AC0E52CC2876CB")]  # noqa: E501
-        async for response in model.run_async(messages=messages):
+        async for response in model.stream(messages=messages):
             if isinstance(response, TextChunkEvent):
                 has_text_content = True
             elif isinstance(response, ThinkingChunkEvent):
@@ -258,7 +258,7 @@ class TestAnthropicReasoning:
                     assert response.content
                 else:
                     has_thinking_content = True
-            elif isinstance(response, ResponseSummary):
+            elif isinstance(response, TextResponse):
                 has_summary = True
                 assert response.response
 
@@ -280,12 +280,12 @@ class TestAnthropicReasoning:
         has_summary = False
 
         messages = [user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")]
-        async for response in model.run_async(messages=messages):
+        async for response in model.stream(messages=messages):
             if isinstance(response, TextChunkEvent):
                 has_text_content = True
             elif isinstance(response, ThinkingChunkEvent):
                 has_thinking_content = True
-            elif isinstance(response, ResponseSummary):
+            elif isinstance(response, TextResponse):
                 # Check that summary contains both thinking and answer
                 has_summary = True
 

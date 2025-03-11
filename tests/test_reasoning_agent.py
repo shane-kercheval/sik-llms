@@ -10,7 +10,7 @@ from sik_llms import (
     ThinkingEvent,
     ToolPredictionEvent,
     ToolResultEvent,
-    ResponseSummary,
+    TextResponse,
     ReasoningAgent,
 )
 from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
@@ -274,7 +274,7 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool, model_name
     )
 
     results = []
-    async for result in agent.run_async([user_message("What is 532 * 124?")]):
+    async for result in agent.stream([user_message("What is 532 * 124?")]):
         results.append(result)
 
     # Check that we got the expected results
@@ -294,7 +294,7 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool, model_name
 
     # Last result should be a ResponseSummary with the full response
     last_result = results[-1]
-    assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
+    assert isinstance(last_result, TextResponse), "Last result should be ResponseSummary"
     assert re.search(r'65[,]?968', last_result.response) is not None, "Final answer should contain 65968 or 65,968"  # noqa: E501
 
     # Check token accounting
@@ -376,7 +376,7 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
     )
     messages = [user_message(f"What's the weather like in {location}?")]
     results = []
-    async for result in agent.run_async(messages):
+    async for result in agent.stream(messages):
         results.append(result)
     last_result = results[-1]
 
@@ -389,7 +389,7 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
     else:
         assert location in tool_result_events[0].result
 
-    assert isinstance(last_result, ResponseSummary)
+    assert isinstance(last_result, TextResponse)
     if location == "London":
         assert last_result.response
     else:
@@ -421,7 +421,7 @@ async def test_reasoning_agent_no_tools_needed(model_name: str):
         temperature=0,
     )
     results = []
-    async for result in agent.run_async([user_message("Write a very short haiku.")]):
+    async for result in agent.stream([user_message("Write a very short haiku.")]):
         results.append(result)
 
     # Check thinking occurred
@@ -430,7 +430,7 @@ async def test_reasoning_agent_no_tools_needed(model_name: str):
 
     # Last result should be a ResponseSummary with a complete answer
     last_result = results[-1]
-    assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
+    assert isinstance(last_result, TextResponse), "Last result should be ResponseSummary"
 
     # There should be no tool predictions
     tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
@@ -472,10 +472,10 @@ async def test_reasoning_agent_with_lambda_function(model_name: str):
         temperature=0,
     )
     results = []
-    async for result in agent.run_async([user_message("What's the weather like in New York?")]):
+    async for result in agent.stream([user_message("What's the weather like in New York?")]):
         results.append(result)
     last_result = results[-1]
-    assert isinstance(last_result, ResponseSummary), "Last result should be ResponseSummary"
+    assert isinstance(last_result, TextResponse), "Last result should be ResponseSummary"
     assert "New York" in last_result.response
     assert "72°F" in last_result.response
 

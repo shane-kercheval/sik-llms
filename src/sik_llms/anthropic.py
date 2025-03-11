@@ -8,7 +8,7 @@ from sik_llms.models_base import (
     Client,
     ErrorEvent,
     TextChunkEvent,
-    ResponseSummary,
+    TextResponse,
     ThinkingChunkEvent,
     Tool,
     ToolPredictionResponse,
@@ -172,10 +172,10 @@ class Anthropic(Client):
                 anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
         return system_content, anthropic_messages
 
-    async def run_async(
+    async def stream(
             self,
             messages: list[dict],
-        ) -> AsyncGenerator[TextChunkEvent | ResponseSummary, None]:
+        ) -> AsyncGenerator[TextChunkEvent | TextResponse, None]:
         """
         Streams chat chunks and returns a final summary. Parameters passed here
         override those passed to the constructor.
@@ -194,33 +194,24 @@ class Anthropic(Client):
 
             # Call functions client
             try:
+                parsed = None
+                refusal = None
                 response = await functions_client.run_async(messages)
-
                 # Extract function call result and convert to Pydantic model
                 if response.tool_prediction:
                     try:
                         # Create instance of Pydantic model from arguments
-                        parsed_model = self.response_format(**response.tool_prediction.arguments)
-                        structured_output = StructuredOutputResponse(
-                            parsed=parsed_model,
-                            refusal=None,
-                        )
+                        parsed = self.response_format(**response.tool_prediction.arguments)
                     except Exception as e:
                         # If conversion fails, set refusal with error message
-                        structured_output = StructuredOutputResponse(
-                            parsed=None,
-                            refusal=f"Failed to parse response: response={response}, error={e!s}",
-                        )
+                        refusal=f"Failed to parse response: response={response}, error={e!s}"
                 else:
                     # No function call, set refusal with model message
-                    structured_output = StructuredOutputResponse(
-                        parsed=None,
-                        refusal=response.message,
-                    )
-
+                    refusal=response.message
                 # Yield the response
-                yield ResponseSummary(
-                    response=structured_output,
+                yield StructuredOutputResponse(
+                    parsed=parsed,
+                    refusal=refusal,
                     input_tokens=response.input_tokens,
                     output_tokens=response.output_tokens,
                     input_cost=response.input_cost,
@@ -234,11 +225,9 @@ class Anthropic(Client):
                     content=f"Error: {e!s}",
                     metadata={'error': e},
                 )
-                yield ResponseSummary(
-                    response=StructuredOutputResponse(
-                        parsed=None,
-                        refusal=f"Function call error: {e!s}",
-                    ),
+                yield StructuredOutputResponse(
+                    parsed=None,
+                    refusal=f"Function call error: {e!s}",
                     input_tokens=0,
                     output_tokens=0,
                     input_cost=0,
@@ -281,7 +270,7 @@ class Anthropic(Client):
             if isinstance(chunk, TextChunkEvent) or (isinstance(chunk, ThinkingChunkEvent) and not chunk.is_redacted):  # noqa: E501
                 processed_chunks.append(chunk.content)
 
-        yield ResponseSummary(
+        yield TextResponse(
             response=''.join(processed_chunks),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -355,7 +344,7 @@ class AnthropicTools(Client):
                 })
         return system_content, anthropic_messages
 
-    async def run_async(self, messages: list[dict]) -> ToolPredictionResponse:
+    async def stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[ToolPredictionResponse | None]:  # noqa: E501
         """Runs the tool prediction and returns the response."""
         system_content, anthropic_messages = self._convert_messages(messages)
         api_params = {
@@ -387,7 +376,7 @@ class AnthropicTools(Client):
 
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
-        return ToolPredictionResponse(
+        yield ToolPredictionResponse(
             tool_prediction=tool_prediction,
             message=message,
             input_tokens=input_tokens,
