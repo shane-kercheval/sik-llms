@@ -113,7 +113,7 @@ class Anthropic(Client):
             max_tokens: int = 1_000,
             reasoning_effort: ReasoningEffort | None = None,
             thinking_budget_tokens: int | None = None,
-            response_format: BaseModel | None = None,
+            response_format: type[BaseModel] | None = None,
             **model_kwargs: dict,
     ) -> None:
         if model_name not in CHAT_MODEL_COST_PER_TOKEN:

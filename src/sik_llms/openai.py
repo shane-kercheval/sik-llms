@@ -148,7 +148,7 @@ class OpenAI(Client):
             model_name: str,
             server_url: str | None = None,
             reasoning_effort: ReasoningEffort | None = None,
-            response_format: BaseModel | None = None,
+            response_format: type[BaseModel] | None = None,
             **model_kwargs: dict,
             ) -> None:
         """

@@ -666,14 +666,14 @@ class Client(ABC):
         raise ValueError(f"Unknown Model type `{client_type}`")
 
 
-def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:  # noqa: PLR0912
+def pydantic_model_to_parameters(response_format: type[BaseModel]) -> list[Parameter]:  # noqa: PLR0912
     """Convert a Pydantic model to a list of Parameter objects for function/tool calling."""
     parameters = []
 
     # Get model schema - this includes info about required fields
-    model_schema = model_class.model_json_schema()
+    model_schema = response_format.model_json_schema()
     required_fields = set(model_schema.get('required', []))
-    model_fields = model_class.model_fields
+    model_fields = response_format.model_fields
 
     for field_name, field in model_fields.items():
         # Start with default from schema
@@ -774,10 +774,10 @@ def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:  # 
 
     return parameters
 
-def pydantic_model_to_tool(model_class: BaseModel) -> Tool:
+def pydantic_model_to_tool(response_format: type[BaseModel]) -> Tool:
     """Convert a Pydantic model to a Tool object for use with function/tool calling APIs."""
-    parameters = pydantic_model_to_parameters(model_class)
-    tool_name = model_class.__name__
+    parameters = pydantic_model_to_parameters(response_format)
+    tool_name = response_format.__name__
     description = f"Generate a response in the format specified by {tool_name}"
     return Tool(
         name=tool_name,
