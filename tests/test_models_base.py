@@ -7,7 +7,7 @@ class MockClient(Client):  # noqa: D101
         self.model_name = model_name
         self.kwargs = kwargs
 
-    async def run_async(self, messages):  # noqa: ANN001
+    async def stream(self, messages):  # noqa: ANN001
         # Simple implementation for testing
         return messages
 

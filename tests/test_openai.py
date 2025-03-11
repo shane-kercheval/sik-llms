@@ -14,7 +14,7 @@ from sik_llms import (
     RegisteredClients,
     OpenAI,
     TextChunkEvent,
-    ResponseSummary,
+    TextResponse,
     OpenAITools,
 )
 from tests.conftest import OPENAI_TEST_MODEL, OPENAI_TEST_REASONING_MODEL
@@ -48,7 +48,7 @@ class TestOpenAIRegistration:
 
         # call async/stream method
         responses = []
-        async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
+        async for response in client.stream(messages=[user_message("What is the capital of France?")]):  # noqa: E501
             if isinstance(response, TextChunkEvent):
                 responses.append(response)
 
@@ -57,7 +57,7 @@ class TestOpenAIRegistration:
 
         # call non-async method
         response = client(messages=[user_message("What is the capital of France?")])
-        assert isinstance(response, ResponseSummary)
+        assert isinstance(response, TextResponse)
         assert 'Paris' in response.response
 
     async def test__openai__compatible_server_instantiate___parameters__missing_server_url(self):
@@ -184,10 +184,10 @@ class TestOpenAI:
             chunks = []
             summary = None
             try:
-                async for response in client.run_async(messages=messages):
+                async for response in client.stream(messages=messages):
                     if isinstance(response, TextChunkEvent):
                         chunks.append(response)
-                    elif isinstance(response, ResponseSummary):
+                    elif isinstance(response, TextResponse):
                         summary = response
                 return chunks, summary
             except Exception:
@@ -200,7 +200,7 @@ class TestOpenAI:
             response = ''.join([chunk.content for chunk in chunks])
             passed_tests.append(
                 'Paris' in response
-                and isinstance(summary, ResponseSummary)
+                and isinstance(summary, TextResponse)
                 and summary.input_tokens > 0
                 and summary.output_tokens > 0
                 and summary.input_cost > 0
@@ -218,7 +218,7 @@ class TestOpenAI:
         async def execute_request(i: int):  # noqa: ANN202
             start = time.time()
             result = None
-            async for chunk in client.run_async(messages=messages):
+            async for chunk in client.stream(messages=messages):
                 if hasattr(chunk, 'content') and isinstance(chunk.content, str):
                     result = chunk
             end = time.time()
@@ -248,7 +248,7 @@ class TestOpenAIReasoning:
             reasoning_effort=ReasoningEffort.LOW,
         )
         response = client(messages=[user_message("What is 1 + 2 + (3 * 4) + (5 * 6)?")])
-        assert isinstance(response, ResponseSummary)
+        assert isinstance(response, TextResponse)
         assert '45' in response.response
         assert response.input_tokens > 0
         assert response.output_tokens > 0
@@ -268,7 +268,7 @@ class TestOpenAIReasoning:
             reasoning_effort=None,
         )
         response = client(messages=[user_message("What is the capital of France?")])
-        assert isinstance(response, ResponseSummary)
+        assert isinstance(response, TextResponse)
         assert 'Paris' in response.response
         assert response.input_tokens > 0
         assert response.output_tokens > 0

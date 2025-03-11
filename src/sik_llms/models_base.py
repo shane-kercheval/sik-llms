@@ -100,14 +100,6 @@ class ToolResultEvent(AgentEvent):
     arguments: dict[str, Any]
     result: object
 
-
-class StructuredOutputResponse(BaseModel):
-    """Response containing structured output data."""
-
-    parsed: BaseModel | None
-    refusal: str | object | None
-
-
 class TokenSummary(BaseModel):
     """Summary of a chat response."""
 
@@ -128,10 +120,17 @@ class TokenSummary(BaseModel):
         return self.input_cost + self.output_cost
 
 
-class ResponseSummary(TokenSummary):
+class StructuredOutputResponse(TokenSummary):
+    """Response containing structured output data."""
+
+    parsed: BaseModel | None
+    refusal: str | object | None
+
+
+class TextResponse(TokenSummary):
     """Summary of a chat response."""
 
-    response: str | StructuredOutputResponse
+    response: str
 
 
 class Parameter(BaseModel):
@@ -527,7 +526,7 @@ class Client(ABC):
     def __call__(
             self,
             messages: list[dict[str, object]],
-        ) -> ResponseSummary | ToolPredictionResponse:
+        ) -> TextResponse | ToolPredictionResponse | StructuredOutputResponse:
         """
         Invoke the model (e.g. chat).
 
@@ -539,9 +538,9 @@ class Client(ABC):
             **model_kwargs:
                 Additional parameters to pass to the API call (e.g. temperature, max_tokens).
         """
-        async def run() -> ResponseSummary:
-            # Check if the run_async method returns a generator or a direct value
-            result = self.run_async(messages)
+        async def run() -> TextResponse:
+            # Check if the stream method returns a generator or a direct value
+            result = self.stream(messages)
             # If it's an async generator, collect the last response
             if hasattr(result, '__aiter__'):
                 last_response = None
@@ -566,13 +565,38 @@ class Client(ABC):
             # No event loop exists
             return asyncio.run(run())
 
-    @abstractmethod
     async def run_async(
         self,
         messages: list[dict[str, object]],
-    ) -> AsyncGenerator[TextChunkEvent | ResponseSummary, None] | ToolPredictionResponse:
+    ) -> TextResponse | ToolPredictionResponse | StructuredOutputResponse:
         """
-        Run asynchronously.
+        Invoke the model asynchronously but does not stream via AsyncGenerator. Rather, it waits
+        for the model to finish processing all messages and returns the last response which is
+        either a ResponseSummary (containing the entire content) or a ToolPredictionResponse.
+
+        Args:
+            messages:
+                List of messages to send to the model (i.e. model input).
+            model_name:
+                The model name to use for the API call (e.g. 'gpt-4o-mini').
+            **model_kwargs:
+                Additional parameters to pass to the API call (e.g. temperature, max_tokens).
+        """
+        last_response = None
+        async for response in self.stream(messages):
+            last_response = response
+        return last_response
+
+    @abstractmethod
+    async def stream(
+        self,
+        messages: list[dict[str, object]],
+    ) -> AsyncGenerator[
+            TextChunkEvent | TextResponse | ToolPredictionResponse | StructuredOutputResponse,
+            None,
+        ]:
+        """
+        Streams asynchronously.
 
         For chat models, this method should return an async generator that yields ResponseChunk
         objects. The last response should be a ResponseSummary object.

@@ -30,7 +30,7 @@ response = model(messages=messages)
 # async streaming
 responses = []
 summary = None
-async for response in model.run_async(messages=messages):
+async for response in model.stream(messages=messages):
     if isinstance(response, ResponseChunk):
         print(response.content, end="")
         responses.append(response)

@@ -14,7 +14,7 @@ from sik_llms.models_base import (
     ToolPrediction,
     Client,
     TextChunkEvent,
-    ResponseSummary,
+    TextResponse,
     ReasoningEffort,
     RegisteredClients,
     StructuredOutputResponse,
@@ -204,10 +204,10 @@ class OpenAI(Client):
         else:
             self.log_probs = True
 
-    async def run_async(
+    async def stream(
             self,
             messages: list[dict],
-        ) -> AsyncGenerator[TextChunkEvent | ResponseSummary | None]:
+        ) -> AsyncGenerator[TextChunkEvent | TextResponse | None]:
         """
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
@@ -221,11 +221,9 @@ class OpenAI(Client):
                 **self.model_parameters,
             )
             end_time = time.time()
-            yield ResponseSummary(
-                response=StructuredOutputResponse(
-                    parsed=completion.choices[0].message.parsed,
-                    refusal=completion.choices[0].message.refusal,
-                ),
+            yield StructuredOutputResponse(
+                parsed=completion.choices[0].message.parsed,
+                refusal=completion.choices[0].message.refusal,
                 input_tokens=completion.usage.prompt_tokens,
                 output_tokens=completion.usage.completion_tokens,
                 input_cost=completion.usage.prompt_tokens * MODEL_COST_PER_TOKEN[self.model]['input'],  # noqa: E501
@@ -259,7 +257,7 @@ class OpenAI(Client):
                 output_tokens = sum(num_tokens(self.model, chunk.content) for chunk in chunks)
                 total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
                 total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
-            yield ResponseSummary(
+            yield TextResponse(
                 response=''.join([chunk.content for chunk in chunks]),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -324,7 +322,7 @@ class OpenAITools(Client):
             raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
         self.model_parameters['tools'] = [t.to_openai() for t in tools]
 
-    async def run_async(self, messages: list[dict[str, str]]) -> ToolPredictionResponse:
+    async def stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[ToolPredictionResponse | None]:  # noqa: E501
         """
         Call the model with tools.
 
@@ -358,7 +356,7 @@ class OpenAITools(Client):
             message = completion.choices[0].message.content
             tool_prediction = None
 
-        return ToolPredictionResponse(
+        yield ToolPredictionResponse(
             tool_prediction=tool_prediction,
             message=message,
             input_tokens=input_tokens,

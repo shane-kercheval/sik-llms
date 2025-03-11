@@ -10,8 +10,9 @@ from sik_llms.models_base import (
     Client,
     ErrorEvent,
     RegisteredClients,
+    StructuredOutputResponse,
     TextChunkEvent,
-    ResponseSummary,
+    TextResponse,
     ThinkingEvent,
     Tool,
     ToolChoice,
@@ -198,12 +199,12 @@ class ReasoningAgent(Client):
             None, lambda: executor(**args),
         )
 
-    async def run_async(  # noqa: PLR0912, PLR0915
+    async def stream(  # noqa: PLR0912, PLR0915
             self,
             messages: list[dict[str, Any]],
         ) -> AsyncGenerator[
             TextChunkEvent | ThinkingEvent | ToolPredictionEvent | ToolResultEvent
-            | ErrorEvent | ResponseSummary,
+            | ErrorEvent | TextResponse,
             None,
         ]:
         """
@@ -247,7 +248,8 @@ class ReasoningAgent(Client):
         while iteration < self.max_iterations:
             iteration += 1
             # Get structured reasoning step
-            response: ResponseSummary = self._get_reasoning_client()(reasoning_messages)
+            reasoning_client = self._get_reasoning_client()
+            response: StructuredOutputResponse = await reasoning_client.run_async(reasoning_messages)  # noqa: E501
             # Update token usage
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
@@ -255,7 +257,7 @@ class ReasoningAgent(Client):
             total_output_cost += response.output_cost
 
             # Parse the reasoning step
-            reasoning_step: ReasoningStep = response.response.parsed
+            reasoning_step: ReasoningStep = response.parsed
 
             # check if the structured response was successfully parsed/created
             if reasoning_step:
@@ -266,7 +268,7 @@ class ReasoningAgent(Client):
                 })
             else:
                 # Handle parsing failure
-                error_message = f"Error: Failed to parse reasoning step. Response: {response.response.refusal}"  # noqa: E501
+                error_message = f"Error: Failed to parse reasoning step. Response: {response.refusal}"  # noqa: E501
                 yield ErrorEvent(
                     content=error_message,
                     metadata={
@@ -460,11 +462,11 @@ class ReasoningAgent(Client):
             assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
         ]
         final_answer = ""
-        async for chunk in self._get_summary_client().run_async(summary_messages):
+        async for chunk in self._get_summary_client().stream(summary_messages):
             if isinstance(chunk, TextChunkEvent):
                 final_answer += chunk.content
                 yield chunk
-            elif isinstance(chunk, ResponseSummary):
+            elif isinstance(chunk, TextResponse):
                 # Update token usage stats
                 total_input_tokens += chunk.input_tokens
                 total_output_tokens += chunk.output_tokens
@@ -476,7 +478,7 @@ class ReasoningAgent(Client):
         duration = end_time - start_time
 
         # Yield the final summary
-        yield ResponseSummary(
+        yield TextResponse(
             response=final_answer,
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,

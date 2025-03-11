@@ -7,14 +7,13 @@ from sik_llms import (
     create_client,
     system_message,
     user_message,
-    ResponseSummary,
     StructuredOutputResponse,
 )
 from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
 
 
 @pytest.mark.asyncio
-class TestAnthropicStructuredOutputs:
+class TestStructuredOutputs:
     """Test the OpenAI Structured Output Wrapper."""
 
     @pytest.mark.parametrize('model_name', [
@@ -31,7 +30,8 @@ class TestAnthropicStructuredOutputs:
             ),
         ),
     ])
-    async def test__anthropic__structured_outputs(self, model_name: str):
+    @pytest.mark.parametrize('run_async', [True, False])
+    async def test__anthropic__structured_outputs(self, model_name: str, run_async: bool):
         class CalendarEvent(BaseModel):
             name: str
             date: str
@@ -45,16 +45,17 @@ class TestAnthropicStructuredOutputs:
             system_message("Extract the event information."),
             user_message("Alice and Bob are going to a science fair on Friday."),
         ]
-
-        response = client(messages=messages)
-        assert isinstance(response, ResponseSummary)
-        assert isinstance(response.response, StructuredOutputResponse)
-        assert isinstance(response.response.parsed, CalendarEvent)
-        assert response.response.parsed.name
-        assert response.response.parsed.date
-        assert response.response.parsed.participants
-        assert 'Alice' in response.response.parsed.participants
-        assert 'Bob' in response.response.parsed.participants
+        if run_async:
+            response = await client.run_async(messages=messages)
+        else:
+            response = client(messages=messages)
+        assert isinstance(response, StructuredOutputResponse)
+        assert isinstance(response.parsed, CalendarEvent)
+        assert response.parsed.name
+        assert response.parsed.date
+        assert response.parsed.participants
+        assert 'Alice' in response.parsed.participants
+        assert 'Bob' in response.parsed.participants
 
     @pytest.mark.parametrize('model_name', [
         pytest.param(
@@ -95,15 +96,14 @@ class TestAnthropicStructuredOutputs:
         ]
 
         response = client(messages=messages)
-        assert isinstance(response, ResponseSummary)
-        assert isinstance(response.response, StructuredOutputResponse)
-        assert isinstance(response.response.parsed, Contact)
-        assert response.response.parsed.first_name == 'Shane'
-        assert response.response.parsed.last_name == 'Kercheval'
-        assert not response.response.parsed.phone
-        assert not response.response.parsed.email
-        assert response.response.parsed.address.street == '123 Main Street'
-        assert not response.response.parsed.address.street_2
-        assert response.response.parsed.address.city == 'Anytown'
-        assert response.response.parsed.address.state in ('Washington', 'WA')
-        assert response.response.parsed.address.zip_code == '12345'
+        assert isinstance(response, StructuredOutputResponse)
+        assert isinstance(response.parsed, Contact)
+        assert response.parsed.first_name == 'Shane'
+        assert response.parsed.last_name == 'Kercheval'
+        assert not response.parsed.phone
+        assert not response.parsed.email
+        assert response.parsed.address.street == '123 Main Street'
+        assert not response.parsed.address.street_2
+        assert response.parsed.address.city == 'Anytown'
+        assert response.parsed.address.state in ('Washington', 'WA')
+        assert response.parsed.address.zip_code == '12345'

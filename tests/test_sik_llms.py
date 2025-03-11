@@ -5,7 +5,7 @@ from sik_llms import (
     create_client,
     user_message,
     TextChunkEvent,
-    ResponseSummary,
+    TextResponse,
     Tool,
     RegisteredClients,
     ToolPredictionResponse,
@@ -25,7 +25,7 @@ async def test__create_client__openai() -> None:
     assert client.model == OPENAI_TEST_MODEL
 
     responses = []
-    async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
+    async for response in client.stream(messages=[user_message("What is the capital of France?")]):
         if isinstance(response, TextChunkEvent):
             responses.append(response)
 
@@ -33,7 +33,7 @@ async def test__create_client__openai() -> None:
     assert 'Paris' in ''.join([response.content for response in responses])
 
     response = client(messages=[user_message("What is the capital of France?")])
-    assert isinstance(response, ResponseSummary)
+    assert isinstance(response, TextResponse)
     assert 'Paris' in response.response
 
 
@@ -49,7 +49,7 @@ async def test__create_client__anthropic() -> None:
     assert client.model == ANTHROPIC_TEST_MODEL
 
     responses = []
-    async for response in client.run_async(messages=[user_message("What is the capital of France?")]):  # noqa: E501
+    async for response in client.stream(messages=[user_message("What is the capital of France?")]):
         if isinstance(response, TextChunkEvent):
             responses.append(response)
 
@@ -57,7 +57,7 @@ async def test__create_client__anthropic() -> None:
     assert 'Paris' in ''.join([response.content for response in responses])
 
     response = client(messages=[user_message("What is the capital of France?")])
-    assert isinstance(response, ResponseSummary)
+    assert isinstance(response, TextResponse)
     assert 'Paris' in response.response
 
 
