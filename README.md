@@ -27,11 +27,14 @@ messages = [
 # sync
 response = model(messages=messages)
 
+# async
+response = await model.run_async(messages=messages)
+
 # async streaming
 responses = []
 summary = None
 async for response in model.stream(messages=messages):
-    if isinstance(response, ResponseChunk):
+    if isinstance(response, TextChunkEvent):
         print(response.content, end="")
         responses.append(response)
     else:
