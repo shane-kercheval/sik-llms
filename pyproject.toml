@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.47.0",
-    "dotenv>=0.9.9",
+    "python-dotenv>=1.0.1",
     "nest-asyncio>=1.6.0",
     "openai>=1.64.0",
     "pydantic>=2.10.6",
