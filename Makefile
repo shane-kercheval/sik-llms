@@ -1,4 +1,4 @@
-.PHONY: tests app
+.PHONY: tests
 
 -include .env
 export
