@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.11"
 
 [[package]]
@@ -502,6 +503,7 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-timeout" },
     { name = "ruff" },
+    { name = "sik-stochastic-tests" },
 ]
 
 [package.metadata]
@@ -521,6 +523,21 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.25.3" },
     { name = "pytest-timeout", specifier = ">=2.3.1" },
     { name = "ruff", specifier = ">=0.9.6" },
+    { name = "sik-stochastic-tests", specifier = ">=0.1.0" },
+]
+
+[[package]]
+name = "sik-stochastic-tests"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nest-asyncio" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/53/46/f9c35df11552fd93ffef4366859a384a6c214e032b8a8023927f748fdc91/sik_stochastic_tests-0.1.0.tar.gz", hash = "sha256:c0c6eedf71fdfb12068f63094c0756c6b556b688c8ca37d154324339b6a91fde", size = 41449 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/7a/fad74d0be64182419ad6ec68d05784b59a8efd1615235e975ecaf717b154/sik_stochastic_tests-0.1.0-py3-none-any.whl", hash = "sha256:f8f06442b419c9b530ad8468464c557170247d114dde8fd4f9747ac63b839b4b", size = 20257 },
 ]
 
 [[package]]

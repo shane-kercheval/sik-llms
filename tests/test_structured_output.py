@@ -10,7 +10,8 @@ from sik_llms import (
     StructuredOutputResponse,
 )
 from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
-
+from dotenv import load_dotenv
+load_dotenv()
 
 @pytest.mark.asyncio
 class TestStructuredOutputs:
@@ -57,6 +58,7 @@ class TestStructuredOutputs:
         assert 'Alice' in response.parsed.participants
         assert 'Bob' in response.parsed.participants
 
+    @pytest.mark.stochastic(samples=5, threshold=0.5)
     @pytest.mark.parametrize('model_name', [
         pytest.param(
             OPENAI_TEST_MODEL,

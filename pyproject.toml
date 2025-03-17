@@ -20,6 +20,7 @@ dev = [
     "pytest-timeout>=2.3.1",
     "ruff>=0.9.6",
     "pip>=25.0.1",
+    "sik-stochastic-tests>=0.1.0",
 ]
 
 [tool.hatch.metadata]
@@ -33,6 +34,7 @@ requires = ["hatchling>=1.17.1"]
 build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["src"]
 timeout = 60

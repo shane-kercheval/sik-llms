@@ -528,15 +528,16 @@ class Client(ABC):
             messages: list[dict[str, object]],
         ) -> TextResponse | ToolPredictionResponse | StructuredOutputResponse:
         """
-        Invoke the model (e.g. chat).
+        Invoke the model synchronously (e.g. chat) and return the complete response.
+
+        This method handles the event loop complexity for you, making it easy to use
+        in both synchronous and asynchronous contexts. It internally streams the response
+        and returns the final result.
 
         Args:
             messages:
                 List of messages to send to the model (i.e. model input).
-            model_name:
-                The model name to use for the API call (e.g. 'gpt-4o-mini').
-            **model_kwargs:
-                Additional parameters to pass to the API call (e.g. temperature, max_tokens).
+                Each message should be a dict with 'role' and 'content' keys.
         """
         async def run() -> TextResponse:
             # Check if the stream method returns a generator or a direct value
