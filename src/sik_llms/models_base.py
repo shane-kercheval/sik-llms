@@ -105,8 +105,8 @@ class TokenSummary(BaseModel):
 
     input_tokens: int
     output_tokens: int
-    input_cost: float
-    output_cost: float
+    input_cost: float | None = None
+    output_cost: float | None = None
     duration_seconds: float
 
     @property
@@ -115,8 +115,10 @@ class TokenSummary(BaseModel):
         return self.input_tokens + self.output_tokens
 
     @property
-    def total_cost(self) -> float:
+    def total_cost(self) -> float | None:
         """Calculate the total cost."""
+        if self.input_cost is None or self.output_cost is None:
+            return None
         return self.input_cost + self.output_cost
 
 

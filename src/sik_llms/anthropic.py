@@ -110,6 +110,7 @@ class Anthropic(Client):
     def __init__(
             self,
             model_name: str,
+            api_key: str | None = None,
             max_tokens: int = 1_000,
             reasoning_effort: ReasoningEffort | None = None,
             thinking_budget_tokens: int | None = None,
@@ -118,7 +119,7 @@ class Anthropic(Client):
     ) -> None:
         if model_name not in CHAT_MODEL_COST_PER_TOKEN:
             raise ValueError(f"Model '{model_name}' is not supported.")
-        api_key = os.getenv('ANTHROPIC_API_KEY')
+        api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set")
         self.client = AsyncAnthropic(api_key=api_key)
