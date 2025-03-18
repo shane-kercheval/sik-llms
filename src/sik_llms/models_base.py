@@ -105,8 +105,8 @@ class TokenSummary(BaseModel):
 
     input_tokens: int
     output_tokens: int
-    input_cost: float
-    output_cost: float
+    input_cost: float | None = None
+    output_cost: float | None = None
     duration_seconds: float
 
     @property
@@ -115,8 +115,10 @@ class TokenSummary(BaseModel):
         return self.input_tokens + self.output_tokens
 
     @property
-    def total_cost(self) -> float:
+    def total_cost(self) -> float | None:
         """Calculate the total cost."""
+        if self.input_cost is None or self.output_cost is None:
+            return None
         return self.input_cost + self.output_cost
 
 
@@ -528,15 +530,16 @@ class Client(ABC):
             messages: list[dict[str, object]],
         ) -> TextResponse | ToolPredictionResponse | StructuredOutputResponse:
         """
-        Invoke the model (e.g. chat).
+        Invoke the model synchronously (e.g. chat) and return the complete response.
+
+        This method handles the event loop complexity for you, making it easy to use
+        in both synchronous and asynchronous contexts. It internally streams the response
+        and returns the final result.
 
         Args:
             messages:
                 List of messages to send to the model (i.e. model input).
-            model_name:
-                The model name to use for the API call (e.g. 'gpt-4o-mini').
-            **model_kwargs:
-                Additional parameters to pass to the API call (e.g. temperature, max_tokens).
+                Each message should be a dict with 'role' and 'content' keys.
         """
         async def run() -> TextResponse:
             # Check if the stream method returns a generator or a direct value
@@ -666,14 +669,14 @@ class Client(ABC):
         raise ValueError(f"Unknown Model type `{client_type}`")
 
 
-def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:  # noqa: PLR0912
+def pydantic_model_to_parameters(response_format: type[BaseModel]) -> list[Parameter]:  # noqa: PLR0912
     """Convert a Pydantic model to a list of Parameter objects for function/tool calling."""
     parameters = []
 
     # Get model schema - this includes info about required fields
-    model_schema = model_class.model_json_schema()
+    model_schema = response_format.model_json_schema()
     required_fields = set(model_schema.get('required', []))
-    model_fields = model_class.model_fields
+    model_fields = response_format.model_fields
 
     for field_name, field in model_fields.items():
         # Start with default from schema
@@ -774,10 +777,10 @@ def pydantic_model_to_parameters(model_class: BaseModel) -> list[Parameter]:  # 
 
     return parameters
 
-def pydantic_model_to_tool(model_class: BaseModel) -> Tool:
+def pydantic_model_to_tool(response_format: type[BaseModel]) -> Tool:
     """Convert a Pydantic model to a Tool object for use with function/tool calling APIs."""
-    parameters = pydantic_model_to_parameters(model_class)
-    tool_name = model_class.__name__
+    parameters = pydantic_model_to_parameters(response_format)
+    tool_name = response_format.__name__
     description = f"Generate a response in the format specified by {tool_name}"
     return Tool(
         name=tool_name,

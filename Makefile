@@ -1,4 +1,4 @@
-.PHONY: tests app proto
+.PHONY: tests
 
 -include .env
 export
@@ -13,7 +13,7 @@ linting:
 	uv run ruff check src/sik_llms
 	uv run ruff check tests
 
-unittests: proto
+unittests:
 	uv run pytest --durations=0 --durations-min=0.1 tests
 
 tests: linting unittests

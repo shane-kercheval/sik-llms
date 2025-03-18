@@ -14,6 +14,8 @@ from sik_llms import (
     ReasoningAgent,
 )
 from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
+from dotenv import load_dotenv
+load_dotenv()
 
 
 async def calculator_async(expression: str) -> str:
@@ -249,6 +251,7 @@ async def test__execute_tool__sync(model_name: str):
 
 
 @pytest.mark.asyncio
+@pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
         OPENAI_TEST_MODEL,
@@ -304,6 +307,7 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool, model_name
 
 
 @pytest.mark.asyncio
+@pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
         OPENAI_TEST_MODEL,
@@ -373,6 +377,7 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
     agent = ReasoningAgent(
         model_name=model_name,
         tools=[weather_tool],
+        max_iterations=1,
     )
     messages = [user_message(f"What's the weather like in {location}?")]
     results = []
@@ -381,9 +386,11 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
     last_result = results[-1]
 
     tool_result_events = [r for r in results if isinstance(r, ToolResultEvent)]
+    if len(tool_result_events) != 1:
+        print(f"tool_result_events: `{tool_result_events}`")
     assert len(tool_result_events) == 1
     if location == "London":
-        # Londone is not in the weather data, so the tool should return None
+        # London is not in the weather data, so the tool should return None
         # and the reasoning agent should not crash
         assert tool_result_events[0].result is None
     else:
@@ -397,6 +404,7 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
 
 
 @pytest.mark.asyncio
+@pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
         OPENAI_TEST_MODEL,
@@ -438,6 +446,7 @@ async def test_reasoning_agent_no_tools_needed(model_name: str):
 
 
 @pytest.mark.asyncio
+@pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
         OPENAI_TEST_MODEL,

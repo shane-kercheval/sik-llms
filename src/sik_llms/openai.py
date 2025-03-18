@@ -20,6 +20,9 @@ from sik_llms.models_base import (
     StructuredOutputResponse,
     ToolChoice,
 )
+from dotenv import load_dotenv
+load_dotenv()
+
 
 CHAT_MODEL_COST_PER_TOKEN = {
     # minor versions
@@ -145,10 +148,11 @@ class OpenAI(Client):
 
     def __init__(
             self,
-            model_name: str,
-            server_url: str | None = None,
+            model_name: str | None = None,
             reasoning_effort: ReasoningEffort | None = None,
-            response_format: BaseModel | None = None,
+            response_format: type[BaseModel] | None = None,
+            server_url: str | None = None,
+            api_key: str | None = None,
             **model_kwargs: dict,
             ) -> None:
         """
@@ -159,32 +163,24 @@ class OpenAI(Client):
                 An instance of the AsyncOpenAI client.
             model_name:
                 The model name to use for the API call (e.g. 'gpt-4o-mini').
-            server_url:
-                The base URL for the API call. Required for the `openai-compatible-server` model.
             reasoning_effort:
                 The reasoning effort to use for the API call (reasoning model required).
             response_format:
                 Pydantic class defining structure of the response (i.e. structured output)
+            server_url:
+                The base URL for the API call.
+            api_key:
+                The API key to use for the API call. If not provided, the API key will be read from
+                the OPENAI_API_KEY environment variable.
             **model_kwargs: Additional parameters to pass to the API call
         """
         if server_url is None and model_name not in CHAT_MODEL_COST_PER_TOKEN:
             raise ValueError(f"Model '{model_name}' is not supported.")
-        if model_name == 'openai-compatible-server':
-            if not server_url:
-                raise ValueError("Missing `server_url` for model `openai-compatible-server`")
-            api_key = 'None'
-            # If max_tokens is not provided, we'll set it;
-            # otherwise the server will just output 1 token; not sure if this is llama.cpp issue
-            # or something else
-            if model_kwargs.get('max_tokens') is None:
-                model_kwargs['max_tokens'] = -1
-        else:
-            server_url = None
-            api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key:
-                raise ValueError(f"Missing `api_key` for model `{model_name}`")
 
-        self.client = AsyncOpenAI(base_url=server_url, api_key=api_key)
+        self.client = AsyncOpenAI(
+            base_url=server_url,
+            api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
+        )
         self.model = model_name
         self.model_parameters = model_kwargs or {}
         self.reasoning_effort = reasoning_effort
@@ -196,13 +192,11 @@ class OpenAI(Client):
                 self.model_parameters['reasoning_effort'] = reasoning_effort.value
             else:
                 self.model_parameters['reasoning_effort'] = reasoning_effort
-        # log_probs, temp, top_p are not supported with reasoning or reasoning models
-        if reasoning_effort or any(self.model.startswith(prefix) for prefix in ['o1', 'o3']):
-            self.log_probs = False
+        # logprobs, temp, top_p are not supported with reasoning or reasoning models
+        if reasoning_effort or (self.model and any(self.model.startswith(prefix) for prefix in ['o1', 'o3'])):  # noqa: E501
+            self.model_parameters.pop('logprobs', None)
             self.model_parameters.pop('temperature', None)
             self.model_parameters.pop('top_p', None)
-        else:
-            self.log_probs = True
 
     async def stream(
             self,
@@ -237,7 +231,6 @@ class OpenAI(Client):
                 model=self.model,
                 messages=messages,
                 stream=True,
-                logprobs=self.log_probs,
                 store=False,
                 **self.model_parameters,
             )
@@ -247,11 +240,11 @@ class OpenAI(Client):
                     yield parsed_chunk
                     chunks.append(parsed_chunk)
             end_time = time.time()
-            if self.model == 'openai-compatible-server':
+            if self.model not in MODEL_COST_PER_TOKEN:
                 input_tokens = len(str(messages)) // 4
                 output_tokens = sum(len(chunk.content) for chunk in chunks) // 4
-                total_input_cost=0
-                total_output_cost=0
+                total_input_cost = None
+                total_output_cost = None
             else:
                 input_tokens = num_tokens_from_messages(self.model, messages)
                 output_tokens = sum(num_tokens(self.model, chunk.content) for chunk in chunks)
@@ -277,6 +270,7 @@ class OpenAITools(Client):
             tools: list[Tool],
             tool_choice: ToolChoice = ToolChoice.REQUIRED,
             server_url: str | None = None,
+            api_key: str | None = None,
             **model_kwargs: dict,
             ) -> None:
         """
@@ -285,30 +279,25 @@ class OpenAITools(Client):
         Args:
             model_name:
                 The model name to use for the API call (e.g. 'gpt-4').
-
-                If the server_url is provided, the model name should be 'openai-compatible-server'.
-                (You can pass a keyword argument called `model` if you want to override the model
-                that is passed to the API call.)
             tools:
                 List of Tool objects defining available tools.
             tool_choice:
                 Controls if tools are required or optional.
             server_url:
-                The base URL for the API call. Required for the `openai-compatible-server` model.
+                The base URL for the API call.
+            api_key:
+                The API key to use for the API call. If not provided, the API key will be read from
+                the OPENAI_API_KEY environment variable.
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
-        if model_name == 'openai-compatible-server':
-            if not server_url:
-                raise ValueError("Missing `server_url` for model `openai-compatible-server`")
-            api_key = 'None'
-        else:
-            server_url = None
-            api_key = os.getenv('OPENAI_API_KEY')
-            if not api_key:
-                raise ValueError(f"Missing `api_key` for model `{model_name}`")
+        if server_url is None and model_name not in CHAT_MODEL_COST_PER_TOKEN:
+            raise ValueError(f"Model '{model_name}' is not supported.")
 
-        self.client = AsyncOpenAI(base_url=server_url, api_key=api_key)
+        self.client = AsyncOpenAI(
+            base_url=server_url,
+            api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
+        )
         self.model = model_name
         self.model_parameters = model_kwargs or {}
         if 'temperature' not in self.model_parameters:

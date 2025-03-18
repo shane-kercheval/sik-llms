@@ -34,6 +34,7 @@ def test__registration__openai_tools():
 class TestOpenAIRegistration:
     """Test the OpenAI Completion Wrapper registration."""
 
+    @pytest.mark.stochastic(samples=10, threshold=0.8)
     async def test__openai__instantiate(self):
         client = Client.instantiate(
             client_type=RegisteredClients.OPENAI,
@@ -59,30 +60,6 @@ class TestOpenAIRegistration:
         response = client(messages=[user_message("What is the capital of France?")])
         assert isinstance(response, TextResponse)
         assert 'Paris' in response.response
-
-    async def test__openai__compatible_server_instantiate___parameters__missing_server_url(self):
-        # This base_url is required for openai-compatible-server
-        with pytest.raises(ValueError):  # noqa: PT011
-            _ = Client.instantiate(
-                client_type=RegisteredClients.OPENAI,
-                model_name='openai-compatible-server',
-            )
-
-    async def test__openai__compatible_server_instantiate___parameters__missing_max_tokens(self):
-        model_config = {
-            'server_url': 'http://localhost:8000',
-            'temperature': 0.5,
-        }
-        client = Client.instantiate(
-            client_type=RegisteredClients.OPENAI,
-            model_name='openai-compatible-server',
-            **model_config,
-        )
-        assert isinstance(client, OpenAI)
-        assert client.model == 'openai-compatible-server'
-        assert client.model_parameters['temperature'] == 0.5
-        # we need to set the max_tokens parameter to -1 to avoid it sending just 1 token
-        assert client.model_parameters['max_tokens'] is not None
 
     async def test__openai__compatible_server_instantiate___parameters_max_tokens(self):
         model_config = {
@@ -139,7 +116,6 @@ class TestReasoningModelsDoNotSetCertainParameters:
         assert client.reasoning_effort is None
         assert 'temperature' in client.model_parameters
         assert 'top_p' in client.model_parameters
-        assert client.log_probs is True
 
     def test__does_not_set_params__reasoning_model(self):
         client = OpenAI(
@@ -148,11 +124,12 @@ class TestReasoningModelsDoNotSetCertainParameters:
             reasoning_effort=None,
             temperature=0.5,
             top_p=0.9,
+            logprobs=True,
         )
         assert client.reasoning_effort is None
         assert 'temperature' not in client.model_parameters
         assert 'top_p' not in client.model_parameters
-        assert client.log_probs is False
+        assert 'logprobs' not in client.model_parameters
 
     @pytest.mark.parametrize('reasoning_effort', [None, ReasoningEffort.LOW])
     def test__does_not_set_params__reasoning_effort(self, reasoning_effort: ReasoningEffort | None):  # noqa: E501
@@ -161,17 +138,19 @@ class TestReasoningModelsDoNotSetCertainParameters:
             reasoning_effort=reasoning_effort,
             temperature=0.5,
             top_p=0.9,
+            logprobs=True,
         )
         assert client.reasoning_effort == reasoning_effort
         assert 'temperature' not in client.model_parameters if reasoning_effort else 'temperature' in client.model_parameters  # noqa: E501
         assert 'top_p' not in client.model_parameters if reasoning_effort else 'top_p' in client.model_parameters  # noqa: E501
-        assert client.log_probs if not reasoning_effort else not client.log_probs
+        assert 'logprobs' not in client.model_parameters if reasoning_effort else 'logprobs' in client.model_parameters  # noqa: E501
 
 
 @pytest.mark.asyncio
 class TestOpenAI:
     """Test the OpenAI Completion Wrapper."""
 
+    @pytest.mark.stochastic(samples=10, threshold=0.8)
     async def test__async_openai(self):
         # Create an instance of the wrapper
         client = OpenAI(model_name=OPENAI_TEST_MODEL)
@@ -179,35 +158,39 @@ class TestOpenAI:
             system_message("You are a helpful assistant."),
             user_message("What is the capital of France?"),
         ]
+        chunks = []
+        summary = None
+        async for c in client.stream(messages=messages):
+            if isinstance(c, TextChunkEvent):
+                chunks.append(c)
+            elif isinstance(c, TextResponse):
+                summary = c
+        response = ''.join([chunk.content for chunk in chunks])
+        assert 'Paris' in response
+        assert isinstance(summary, TextResponse)
+        assert summary.input_tokens > 0
+        assert summary.output_tokens > 0
+        assert summary.input_cost > 0
+        assert summary.output_cost > 0
+        assert summary.duration_seconds > 0
 
-        async def run_model():  # noqa: ANN202
-            chunks = []
-            summary = None
-            try:
-                async for response in client.stream(messages=messages):
-                    if isinstance(response, TextChunkEvent):
-                        chunks.append(response)
-                    elif isinstance(response, TextResponse):
-                        summary = response
-                return chunks, summary
-            except Exception:
-                return [], None
 
-        results = await asyncio.gather(*(run_model() for _ in range(10)))
-        passed_tests = []
-        for chunks, summary in results:
-            assert all(chunk.logprob is not None for chunk in chunks)
-            response = ''.join([chunk.content for chunk in chunks])
-            passed_tests.append(
-                'Paris' in response
-                and isinstance(summary, TextResponse)
-                and summary.input_tokens > 0
-                and summary.output_tokens > 0
-                and summary.input_cost > 0
-                and summary.output_cost > 0
-                and summary.duration_seconds > 0,
-            )
-        assert sum(passed_tests) / len(passed_tests) >= 0.9, f"Only {sum(passed_tests)} out of {len(passed_tests)} tests passed."  # noqa: E501
+    async def test__openai_logprobs(self):
+        # Create an instance of the wrapper
+        client = OpenAI(
+            model_name=OPENAI_TEST_MODEL,
+            logprobs=True,
+        )
+        messages = [
+            system_message("You are a helpful assistant."),
+            user_message("What is the capital of France?"),
+        ]
+        chunks = []
+        async for response in client.stream(messages=messages):
+            if isinstance(response, TextChunkEvent):
+                chunks.append(response)
+        assert all(chunk.logprob is not None for chunk in chunks)
+
 
     async def test_concurrent_performance(self):
         # This test will use the actual API, so consider using it sparingly

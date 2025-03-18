@@ -619,6 +619,7 @@ class TestPydanticModelToParameters:
 class TestTools:
     """Test the Tools Wrapper."""
 
+    # @pytest.mark.stochastic(samples=5, threshold=0.5)
     @pytest.mark.parametrize('client_config', [
         pytest.param(
             ClientConfig(
