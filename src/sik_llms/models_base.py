@@ -5,10 +5,10 @@ import types
 import nest_asyncio
 from pydantic import BaseModel, Field, field_validator
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from copy import deepcopy
 from enum import Enum, auto
-from typing import Any, Callable, Literal, TypeVar, Union, get_args, get_origin
+from typing import Any, Literal, TypeVar, Union, get_args, get_origin
 from sik_llms.utilities import Registry, get_json_schema_type
 
 
@@ -387,7 +387,7 @@ class Tool(BaseModel):
 
             # Process all nested dictionary values to handle deeply nested objects
             for _, value in list(obj.items()):
-                if isinstance(value, (dict, list)):
+                if isinstance(value, dict | list):
                     self._remove_defaults_recursively(value)
 
             # Ensure all object types have additionalProperties: false (OpenAI requirement)
@@ -397,7 +397,7 @@ class Tool(BaseModel):
         elif isinstance(obj, list):
             # Process all list items to handle arrays of objects or schemas
             for item in obj:
-                if isinstance(item, (dict, list)):
+                if isinstance(item, dict | list):
                     self._remove_defaults_recursively(item)
 
     def to_anthropic(self) -> dict[str, object]:  # noqa: PLR0912

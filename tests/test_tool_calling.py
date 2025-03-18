@@ -204,11 +204,11 @@ class TestPydanticModelToParameters:
             if isinstance(obj, dict):
                 assert "default" not in obj, f"Found 'default' in: {obj}"
                 for key, value in obj.items():
-                    if isinstance(value, (dict, list)):
+                    if isinstance(value, dict | list):
                         check_no_defaults(value)
             elif isinstance(obj, list):
                 for item in obj:
-                    if isinstance(item, (dict, list)):
+                    if isinstance(item, dict | list):
                         check_no_defaults(item)
 
         check_no_defaults(openai_format)
@@ -217,7 +217,7 @@ class TestPydanticModelToParameters:
         """Test conversion of a model with Optional fields."""
         class ModelWithOptional(BaseModel):
             name: str
-            age: Optional[int]  # Using Optional syntax
+            age: Optional[int]  # Using Optional syntax  # noqa: UP007
             email: str | None   # Using pipe syntax
 
         ModelWithOptional(name='shane', email=None, age=None)
@@ -400,7 +400,7 @@ class TestPydanticModelToParameters:
     def test_model_with_complex_nested_unions(self):
         """Test handling of complex nested union types."""
         class ComplexUnionModel(BaseModel):
-            data: Union[str, List[int], Dict[str, bool]]  # noqa: UP006
+            data: Union[str, List[int], Dict[str, bool]]  # noqa: UP006, UP007
             data2: str | list[int] | dict[str, bool]
 
         params = pydantic_model_to_parameters(ComplexUnionModel)
