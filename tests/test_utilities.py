@@ -189,15 +189,15 @@ class Test_get_json_schema_type:  # noqa: D101, N801
     def test_optional_types(self):
         """Test conversion of Optional types to JSON Schema types."""
         # Optional string (Union[str, None])
-        type_name, props = get_json_schema_type(Optional[str])
+        type_name, props = get_json_schema_type(Optional[str])  # noqa: UP007
         assert type_name == 'string'
 
         # Optional int
-        type_name, props = get_json_schema_type(Optional[int])
+        type_name, props = get_json_schema_type(int | None)
         assert type_name == 'integer'
 
         # Optional list of strings
-        type_name, props = get_json_schema_type(Optional[List[str]])  # noqa: UP006
+        type_name, props = get_json_schema_type(list[str] | None)
         assert type_name == 'array'
         assert props['items']['type'] == 'string'
 
@@ -218,13 +218,13 @@ class Test_get_json_schema_type:  # noqa: D101, N801
     def test_union_types(self):
         """Test conversion of Union types to JSON Schema types."""
         # Union of string and int
-        type_name, props = get_json_schema_type(Union[str, int])
+        type_name, props = get_json_schema_type(Union[str, int])  # noqa: UP007
         assert type_name == 'anyOf'
         assert any(schema['type'] == 'string' for schema in props['anyOf'])
         assert any(schema['type'] == 'integer' for schema in props['anyOf'])
 
         # Union with None (should be handled as Optional)
-        type_name, props = get_json_schema_type(Union[str, None])
+        type_name, props = get_json_schema_type(Union[str, None])  # noqa: UP007
         assert type_name == 'string'
 
         class TestModel(BaseModel):
@@ -251,7 +251,7 @@ class Test_get_json_schema_type:  # noqa: D101, N801
     def test_complex_union_types(self):
         """Test conversion of complex Union types with multiple nested types."""
         # Union with multiple different types
-        type_name, props = get_json_schema_type(Union[str, List[int], Dict[str, float]])  # noqa: UP006
+        type_name, props = get_json_schema_type(Union[str, List[int], Dict[str, float]])  # noqa: UP006, UP007
         assert type_name == 'anyOf'
         assert len(props['anyOf']) == 3
 
