@@ -157,7 +157,6 @@ class TestPydanticModelToParameters:
         assert 'country' in schema['address']['properties']
         assert 'default' not in schema['address']['properties']['country']
 
-
     def test_complex_nested_objects_with_defaults(self):
         """Test handling of complex nested objects with defaults at multiple levels."""
         class Configuration(BaseModel):

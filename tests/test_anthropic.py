@@ -10,14 +10,17 @@ from sik_llms import (
     Client,
     system_message,
     user_message,
+    assistant_message,
+    Tool,
     RegisteredClients,
     Anthropic,
+    AnthropicTools,
     TextChunkEvent,
     TextResponse,
     ReasoningEffort,
     ThinkingChunkEvent,
 )
-from sik_llms.models_base import assistant_message
+from sik_llms.anthropic import _convert_messages
 from tests.conftest import ANTHROPIC_TEST_MODEL, ANTRHOPIC_THINKING_MODEL
 load_dotenv()
 
@@ -26,7 +29,6 @@ class TestAnthropicSync:  # noqa: D101
 
     def test__Anthropic_registration(self):
         assert Client.is_registered(RegisteredClients.ANTHROPIC)
-
 
     def test__Anthropic__instantiate(self):
         model = Client.instantiate(
@@ -124,7 +126,7 @@ class TestConvertMessages:
             user_message(message_user),
         ]
         original_messages = deepcopy(messages)
-        converted_system, converted_other = Anthropic._convert_messages(messages)
+        converted_system, converted_other = _convert_messages(messages)
         assert messages == original_messages  # test no side effects
         assert not converted_system
         assert len(converted_other) == 1
@@ -135,7 +137,6 @@ class TestConvertMessages:
         },
         ]
 
-
     def test__Anthropic___convert_messages__system__user(self):
         message_system = "You are a helpful assistant."
         message_user = "What is the capital of France?"
@@ -144,7 +145,7 @@ class TestConvertMessages:
             user_message(message_user),
         ]
         original_messages = deepcopy(messages)
-        converted_system, converted_other = Anthropic._convert_messages(messages)
+        converted_system, converted_other = _convert_messages(messages)
         assert messages == original_messages  # test no side effects
         assert len(converted_system) == 1
         assert len(converted_other) == 1
@@ -161,7 +162,6 @@ class TestConvertMessages:
         },
         ]
 
-
     def test__Anthropic___convert_messages__system__user__assistant(self):
         message_system = "You are a helpful assistant."
         message_user = "What is the capital of France?"
@@ -173,7 +173,7 @@ class TestConvertMessages:
             assistant_message(message_assistant),
         ]
         original_messages = deepcopy(messages)
-        converted_system, converted_other = Anthropic._convert_messages(messages)
+        converted_system, converted_other = _convert_messages(messages)
         assert messages == original_messages  # test no side effects
         assert len(converted_system) == 1
         assert len(converted_other) == 2
@@ -194,7 +194,6 @@ class TestConvertMessages:
             },
         ]
 
-
     def test__Anthropic___convert_messages__multiple_system_with_cache_control__user(self):
         message_system = "You are a helpful assistant."
         message_cache = "This is some cached information."
@@ -205,7 +204,7 @@ class TestConvertMessages:
             user_message(message_user),
         ]
         original_messages = deepcopy(messages)
-        converted_system, converted_other = Anthropic._convert_messages(messages)
+        converted_system, converted_other = _convert_messages(messages)
         assert messages == original_messages  # test no side effects
         assert len(converted_system) == 2
         assert len(converted_other) == 1
@@ -285,6 +284,72 @@ class TestAnthropicCaching:
         # second run should result in a cache-hit
         response = client(messages=messages)
         assert response.response
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.cache_write_tokens == 0
+        assert response.cache_read_tokens == previous_cache_write_tokens
+        expected_total_tokens = (
+            response.input_tokens
+            + response.output_tokens
+            + response.cache_read_tokens
+        )
+        assert response.total_tokens == expected_total_tokens
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        assert response.cache_write_cost == 0
+        assert response.cache_read_cost > 0
+        expected_total_cost = (
+            response.input_cost
+            + response.output_cost
+            + response.cache_read_cost
+        )
+        assert response.total_cost == expected_total_cost
+
+    def test__Anthropic__caching__with_tools(self, complex_weather_tool: Tool, restaurant_tool: Tool):  # noqa: E501
+
+        # we need to make the text long enough to trigger the cache
+        text = "[THE FOLLOWING IS TEST DATA FOR TESTING PURPOSES ONLY; **INGNORE THE FOLLOWING TEXT**]"  # noqa: E501
+        text += Faker().text(max_nb_chars=15_000)
+        complex_weather_tool.parameters[-1].description = "\n\n" + text
+
+        client = AnthropicTools(
+            model_name=ANTHROPIC_TEST_MODEL,
+            tools=[complex_weather_tool, restaurant_tool],
+            cache_tools=True,
+        )
+        messages=[
+            user_message("What's the weather like in Tokyo in Celsius with forecast?"),
+        ]
+        response = client(messages=messages)
+        assert response.tool_prediction
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.cache_write_tokens > 0
+        previous_cache_write_tokens = response.cache_write_tokens
+        assert response.cache_read_tokens == 0
+        expected_total_tokens = (
+            response.input_tokens
+            + response.output_tokens
+            + response.cache_write_tokens
+        )
+        assert response.total_tokens == expected_total_tokens
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        assert response.cache_write_cost > 0
+        assert response.cache_read_cost == 0
+        expected_total_cost = (
+            response.input_cost
+            + response.output_cost
+            + response.cache_write_cost
+        )
+        assert response.total_cost == expected_total_cost
+
+        # second run should result in a cache-hit
+        messages=[
+            user_message("Search for expensive italian restaurants in New York?"),
+        ]
+        response = client(messages=messages)
+        assert response.tool_prediction
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.cache_write_tokens == 0

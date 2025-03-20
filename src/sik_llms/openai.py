@@ -323,6 +323,9 @@ class OpenAITools(Client):
             model=self.model,
             messages=messages,
             store=False,
+            # i'm not sure it makes sense to stream chunks for tools, perhaps this will change
+            # in the future; but seems overly complicated for a tool call.
+            stream=False,
             **self.model_parameters,
         )
         end = time.time()

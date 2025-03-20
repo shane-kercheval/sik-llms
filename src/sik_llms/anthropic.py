@@ -112,6 +112,24 @@ def _parse_completion_chunk(chunk) -> TextChunkEvent | None:  # noqa: ANN001
     # All other event types are ignored (content_block_start, message_start, message_delta, etc.)
     return None
 
+def _convert_messages(messages: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Convert OpenAI-style messages to Anthropic format."""
+    system_messages = []
+    anthropic_messages = []
+
+    for msg in deepcopy(messages):
+        if msg['role'] == 'system':
+            _ = msg.pop('role')
+            text = msg.pop('content')
+            system_messages.append({
+                'type': 'text',
+                'text': text,
+                **msg,
+            })
+        else:
+            anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
+    return system_messages, anthropic_messages
+
 
 @Client.register(RegisteredClients.ANTHROPIC)
 class Anthropic(Client):
@@ -173,25 +191,6 @@ class Anthropic(Client):
                 self.model_parameters.pop('top_p')
             if 'top_k' in self.model_parameters:
                 self.model_parameters.pop('top_k')
-
-    @staticmethod
-    def _convert_messages(messages: list[dict]) -> tuple[list[dict], list[dict]]:
-        """Convert OpenAI-style messages to Anthropic format."""
-        system_messages = []
-        anthropic_messages = []
-
-        for msg in deepcopy(messages):
-            if msg['role'] == 'system':
-                _ = msg.pop('role')
-                text = msg.pop('content')
-                system_messages.append({
-                    'type': 'text',
-                    'text': text,
-                    **msg,
-                })
-            else:
-                anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
-        return system_messages, anthropic_messages
 
     async def stream(
             self,
@@ -257,7 +256,7 @@ class Anthropic(Client):
                 )
                 return
 
-        system_messages, anthropic_messages = Anthropic._convert_messages(messages)
+        system_messages, anthropic_messages = _convert_messages(messages)
         api_params = {
             'model': self.model,
             'messages': anthropic_messages,
@@ -319,6 +318,7 @@ class AnthropicTools(Client):
             model_name: str,
             tools: list[Tool],
             tool_choice: ToolChoice = ToolChoice.REQUIRED,
+            cache_tools: bool = False,
             max_tokens: int = 1_000,
             **model_kwargs: dict,
     ) -> None:
@@ -332,6 +332,9 @@ class AnthropicTools(Client):
                 List of Tool objects defining available tool.
             tool_choice:
                 Controls if tools are required or optional.
+            cache_tools:
+                If True, caching will be used according to:
+                https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#caching-tool-definitions
             max_tokens:
                 The maximum number of tokens to generate in a single call.
             **model_kwargs:
@@ -356,30 +359,20 @@ class AnthropicTools(Client):
             tool_choice = 'auto'
         else:
             raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
+        if cache_tools:
+            # https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#caching-tool-definitions
+            tools[-1]['cache_control'] = {'type': 'ephemeral'}
         self.model_parameters['tools'] = tools
         self.model_parameters['tool_choice'] = {'type': tool_choice}
 
-    def _convert_messages(self, messages: list[dict]) -> tuple[str, list[dict]]:
-        """Convert OpenAI-style messages to Anthropic format."""
-        system_content = None
-        anthropic_messages = []
-
-        for msg in messages:
-            if msg['role'] == 'system':
-                system_content = msg['content']
-            else:
-                anthropic_messages.append({
-                    'role': msg['role'],
-                    'content': msg['content'],
-                })
-        return system_content, anthropic_messages
-
     async def stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[ToolPredictionResponse | None]:  # noqa: E501
         """Runs the tool prediction and returns the response."""
-        system_content, anthropic_messages = self._convert_messages(messages)
+        system_content, anthropic_messages = _convert_messages(messages)
         api_params = {
             'model': self.model,
             'messages': anthropic_messages,
+            # i'm not sure it makes sense to stream chunks for tools, perhaps this will change
+            # in the future; but seems overly complicated for a tool call.
             'stream': False,
             **self.model_parameters,
         }
@@ -406,6 +399,8 @@ class AnthropicTools(Client):
 
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
+        cache_creation_input_tokens = response.usage.cache_creation_input_tokens
+        cache_read_input_tokens = response.usage.cache_read_input_tokens
         yield ToolPredictionResponse(
             tool_prediction=tool_prediction,
             message=message,
@@ -413,5 +408,9 @@ class AnthropicTools(Client):
             output_tokens=output_tokens,
             input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input'],
             output_cost=output_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['output'],
+            cache_write_tokens=cache_creation_input_tokens,
+            cache_read_tokens=cache_read_input_tokens,
+            cache_write_cost=cache_creation_input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['cache_write'],  # noqa: E501
+            cache_read_cost=cache_read_input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['cache_read'],  # noqa: E501
             duration_seconds=end_time - start_time,
         )
