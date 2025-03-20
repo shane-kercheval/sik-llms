@@ -1,6 +1,8 @@
 """Test the OpenAI Wrapper."""
 import asyncio
+import random
 import time
+from faker import Faker
 import pytest
 from dotenv import load_dotenv
 from sik_llms import (
@@ -170,10 +172,11 @@ class TestOpenAI:
         assert isinstance(summary, TextResponse)
         assert summary.input_tokens > 0
         assert summary.output_tokens > 0
+        assert summary.total_tokens > 0
         assert summary.input_cost > 0
         assert summary.output_cost > 0
+        assert summary.total_cost > 0
         assert summary.duration_seconds > 0
-
 
     async def test__openai_logprobs(self):
         # Create an instance of the wrapper
@@ -190,7 +193,6 @@ class TestOpenAI:
             if isinstance(response, TextChunkEvent):
                 chunks.append(response)
         assert all(chunk.logprob is not None for chunk in chunks)
-
 
     async def test_concurrent_performance(self):
         # This test will use the actual API, so consider using it sparingly
@@ -235,8 +237,10 @@ class TestOpenAIReasoning:
         assert '45' in response.response
         assert response.input_tokens > 0
         assert response.output_tokens > 0
+        assert response.total_tokens > 0
         assert response.input_cost > 0
         assert response.output_cost > 0
+        assert response.total_cost > 0
         assert response.duration_seconds > 0
         response = client(messages=[user_message("What is the capital of France?")])
         assert 'Paris' in response.response
@@ -255,6 +259,148 @@ class TestOpenAIReasoning:
         assert 'Paris' in response.response
         assert response.input_tokens > 0
         assert response.output_tokens > 0
+        assert response.total_tokens > 0
         assert response.input_cost > 0
         assert response.output_cost > 0
+        assert response.total_cost > 0
         assert response.duration_seconds > 0
+
+
+class TestOpenAICaching:
+    """
+    Test the caching functionality of the OpenAI Wrapper.
+
+    Not tested with Anthropic because each provider has different caching behavior. Anthropic has
+    mechanisms to specify caching behavior in the request, but OpenAI caches automatically.
+    Additionally, Anthropic differentiates between cache hits and misses, while OpenAI does not.
+
+    https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#why-am-i-seeing-the-error-attributeerror-beta-object-has-no-attribute-prompt-caching-in-python
+    https://github.com/anthropics/anthropic-cookbook/blob/main/misc/prompt_caching.ipynb
+    """
+
+    def test__OpenAI__caching__expect_cache_miss_then_hit(self):
+        """
+        Tests that the first call results in a cache-miss and the second call results in a
+        cache-hit. The tokens written to the cache should be read on the second call.
+        """
+        client = OpenAI(
+            model_name=OPENAI_TEST_MODEL,
+            temperature=0.1,
+        )
+        length = random.randint(10_000, 15_000)
+        cache_content = Faker().text(max_nb_chars=length)
+        messages = [
+            system_message("You are a helpful assistant."),
+            system_message(
+                cache_content,
+                # cache_control={'type': 'ephemeral'},
+            ),
+            user_message("What is the first word of this text? Only output the first word."),
+        ]
+
+        # first run should result in a cache-miss & write
+        response = client(messages=messages)
+        assert response.response
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        # first run should result in a cache-miss
+        assert response.cache_read_tokens == 0
+        expected_total_tokens = (
+            response.input_tokens
+            + response.output_tokens
+        )
+        assert response.total_tokens == expected_total_tokens
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        # first run should result in a cache-miss
+        assert response.cache_read_cost == 0
+        expected_total_cost = (
+            response.input_cost
+            + response.output_cost
+        )
+        assert response.total_cost == expected_total_cost
+
+        # second run should result in a cache-hit
+        response = client(messages=messages)
+        assert response.response
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        # now there should be a cache hit
+        assert response.cache_read_tokens > 0
+        expected_total_tokens = (
+            response.input_tokens
+            + response.output_tokens
+            + response.cache_read_tokens
+        )
+        assert response.total_tokens == expected_total_tokens
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        # now there should be a cache hit
+        assert response.cache_read_cost > 0
+        expected_total_cost = (
+            response.input_cost
+            + response.output_cost
+            + response.cache_read_cost
+        )
+        assert response.total_cost == expected_total_cost
+
+    def test__OpenAI__caching__with_tools(self, complex_weather_tool: Tool, restaurant_tool: Tool):
+        # we need to make the text long enough to trigger the cache
+        text = "[THE FOLLOWING IS TEST DATA FOR TESTING PURPOSES ONLY; **INGNORE THE FOLLOWING TEXT**]"  # noqa: E501
+        text += Faker().text(max_nb_chars=15_000)
+        complex_weather_tool.parameters[-1].description = "\n\n" + text
+
+        client = OpenAITools(
+            model_name=OPENAI_TEST_MODEL,
+            tools=[complex_weather_tool, restaurant_tool],
+        )
+        messages=[
+            user_message("What's the weather like in Tokyo in Celsius with forecast?"),
+        ]
+        response = client(messages=messages)
+        assert response.tool_prediction
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        # first run should result in a cache-miss
+        assert response.cache_read_tokens == 0
+        expected_total_tokens = (
+            response.input_tokens
+            + response.output_tokens
+        )
+        assert response.total_tokens == expected_total_tokens
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        # first run should result in a cache-miss
+        assert response.cache_read_cost == 0
+        expected_total_cost = (
+            response.input_cost
+            + response.output_cost
+        )
+        assert response.total_cost == expected_total_cost
+
+        # second run should result in a cache-hit
+        messages=[
+            user_message("Search for expensive italian restaurants in New York?"),
+        ]
+        response = client(messages=messages)
+        assert response.tool_prediction
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        # now there should be a cache hit
+        assert response.cache_read_tokens > 0
+        expected_total_tokens = (
+            response.input_tokens
+            + response.output_tokens
+            + response.cache_read_tokens
+        )
+        assert response.total_tokens == expected_total_tokens
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        # now there should be a cache hit
+        assert response.cache_read_cost > 0
+        expected_total_cost = (
+            response.input_cost
+            + response.output_cost
+            + response.cache_read_cost
+        )
+        assert response.total_cost == expected_total_cost

@@ -172,3 +172,4 @@ cython_debug/
 .DS_Store
 .vscode/settings.json
 CLAUDE.md
+examples/sandbox.ipynb

@@ -1,4 +1,5 @@
 """Helper functions for OpenAI API."""
+from copy import deepcopy
 from functools import cache
 import json
 import os
@@ -26,12 +27,30 @@ load_dotenv()
 
 CHAT_MODEL_COST_PER_TOKEN = {
     # minor versions
-    'gpt-4o-2024-05-13': {'input': 5.00 / 1_000_000, 'output': 15.00 / 1_000_000},
-    'gpt-4o-2024-08-06': {'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000},
-    'gpt-4o-2024-11-20': {'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000},
-    'gpt-4o-mini-2024-07-18':  {'input': 0.15 / 1_000_000, 'output': 0.60 / 1_000_000},
-    'o1-2024-12-17': {'input': 15.00 / 1_000_000, 'output': 60.00 / 1_000_000},
-    'o3-mini-2025-01-31': {'input': 1.10 / 1_000_000, 'output': 4.40 / 1_000_000},
+    'gpt-4o-2024-05-13': {
+        'input': 5.00 / 1_000_000, 'output': 15.00 / 1_000_000,
+        'cached': 1.25 / 1_000_000,
+    },
+    'gpt-4o-2024-08-06': {
+        'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000,
+        'cached': 1.25 / 1_000_000,
+    },
+    'gpt-4o-2024-11-20': {
+        'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000,
+        'cached': 1.25 / 1_000_000,
+    },
+    'gpt-4o-mini-2024-07-18':  {
+        'input': 0.15 / 1_000_000, 'output': 0.60 / 1_000_000,
+        'cached': 0.075 / 1_000_000,
+    },
+    'o1-2024-12-17': {
+        'input': 15.00 / 1_000_000, 'output': 60.00 / 1_000_000,
+        'cached': 7.50 / 1_000_000,
+    },
+    'o3-mini-2025-01-31': {
+        'input': 1.10 / 1_000_000, 'output': 4.40 / 1_000_000,
+        'cached': 0.55 / 1_000_000,
+    },
     # LEGACY MODELS
     'gpt-4-turbo': {'input': 10.00 / 1_000_000, 'output': 30.00 / 1_000_000},
     'gpt-4-turbo-2024-04-09': {'input': 10.00 / 1_000_000, 'output': 30.00 / 1_000_000},
@@ -174,9 +193,10 @@ class OpenAI(Client):
                 the OPENAI_API_KEY environment variable.
             **model_kwargs: Additional parameters to pass to the API call
         """
-        if server_url is None and model_name not in CHAT_MODEL_COST_PER_TOKEN:
+        if server_url is None and model_name not in MODEL_COST_PER_TOKEN:
             raise ValueError(f"Model '{model_name}' is not supported.")
 
+        self.server_url = server_url
         self.client = AsyncOpenAI(
             base_url=server_url,
             api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
@@ -206,56 +226,99 @@ class OpenAI(Client):
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
         """
+        model_parameters = deepcopy(self.model_parameters)
         if self.response_format:
             start_time = time.time()
             completion = await self.client.beta.chat.completions.parse(
                 model=self.model,
                 messages=messages,
                 store=False,
-                **self.model_parameters,
+                **model_parameters,
             )
             end_time = time.time()
+            # these fields may not be available when using openai library for third-party providers
+            if (
+                hasattr(completion, 'usage')
+                and hasattr(completion.usage, 'prompt_tokens_details')
+                and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
+            ):
+                cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
+                cached_cost = cached_tokens * MODEL_COST_PER_TOKEN[self.model].get('cached', 0)
+            else:
+                cached_tokens = None
+                cached_cost = None
             yield StructuredOutputResponse(
                 parsed=completion.choices[0].message.parsed,
                 refusal=completion.choices[0].message.refusal,
                 input_tokens=completion.usage.prompt_tokens,
                 output_tokens=completion.usage.completion_tokens,
+                cache_read_tokens=cached_tokens,
                 input_cost=completion.usage.prompt_tokens * MODEL_COST_PER_TOKEN[self.model]['input'],  # noqa: E501
                 output_cost=completion.usage.completion_tokens * MODEL_COST_PER_TOKEN[self.model]['output'],  # noqa: E501
+                cache_read_cost=cached_cost,
                 duration_seconds=end_time - start_time,
             )
         else:
             chunks = []
+            input_tokens = 0
+            output_tokens = 0
+            cached_tokens = 0
+            # `stream_options={'include_usage': True}` is required to get usage information
+            # from API when streaming.
+            # However, stream_options may not be valid when using openai library for third-party
+            # providers (i.e. if server_url is None we are using the openai library)
+            if (
+                self.server_url is None  # if using openai library
+                and (
+                    # if either the user has not specified stream_options, or if they have and
+                    # 'include_usage' is not set
+                    'stream_options' not in model_parameters
+                    or 'include_usage' not in model_parameters['stream_options']
+                )
+            ):
+                model_parameters['stream_options'] = {'include_usage': True}
             start_time = time.time()
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 stream=True,
                 store=False,
-                **self.model_parameters,
+                **model_parameters,
             )
             async for chunk in response:
                 if chunk.choices and chunk.choices[0].delta.content:
                     parsed_chunk = _parse_completion_chunk(chunk)
                     yield parsed_chunk
                     chunks.append(parsed_chunk)
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    input_tokens += chunk.usage.prompt_tokens
+                    output_tokens += chunk.usage.completion_tokens
+                    # these fields may not be available when using openai library for third-party
+                    # providers
+                    if (
+                        hasattr(chunk, 'usage')
+                        and hasattr(chunk.usage, 'prompt_tokens_details')
+                        and hasattr(chunk.usage.prompt_tokens_details, 'cached_tokens')
+                    ):
+                        cached_tokens += chunk.usage.prompt_tokens_details.cached_tokens
+
             end_time = time.time()
-            if self.model not in MODEL_COST_PER_TOKEN:
-                input_tokens = len(str(messages)) // 4
-                output_tokens = sum(len(chunk.content) for chunk in chunks) // 4
-                total_input_cost = None
-                total_output_cost = None
+            if self.model in MODEL_COST_PER_TOKEN:
+                input_cost = input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
+                output_cost = output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
+                cache_cost = cached_tokens * MODEL_COST_PER_TOKEN[self.model].get('cached', 0)
             else:
-                input_tokens = num_tokens_from_messages(self.model, messages)
-                output_tokens = sum(num_tokens(self.model, chunk.content) for chunk in chunks)
-                total_input_cost=input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
-                total_output_cost=output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
+                input_cost = None
+                output_cost = None
+                cache_cost = None
             yield TextResponse(
                 response=''.join([chunk.content for chunk in chunks]),
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
-                input_cost=total_input_cost,
-                output_cost=total_output_cost,
+                cache_read_tokens=cached_tokens,
+                input_cost=input_cost,
+                output_cost=output_cost,
+                cache_read_cost=cache_cost,
                 duration_seconds=end_time - start_time,
             )
 
@@ -291,7 +354,7 @@ class OpenAITools(Client):
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
-        if server_url is None and model_name not in CHAT_MODEL_COST_PER_TOKEN:
+        if server_url is None and model_name not in MODEL_COST_PER_TOKEN:
             raise ValueError(f"Model '{model_name}' is not supported.")
 
         self.client = AsyncOpenAI(
@@ -318,6 +381,7 @@ class OpenAITools(Client):
         Args:
             messages: List of messages to send to the model.
         """
+        model_parameters = deepcopy(self.model_parameters)
         start = time.time()
         completion = await self.client.chat.completions.create(
             model=self.model,
@@ -326,15 +390,26 @@ class OpenAITools(Client):
             # i'm not sure it makes sense to stream chunks for tools, perhaps this will change
             # in the future; but seems overly complicated for a tool call.
             stream=False,
-            **self.model_parameters,
+            **model_parameters,
         )
         end = time.time()
         # Calculate costs
         input_tokens = completion.usage.prompt_tokens
         output_tokens = completion.usage.completion_tokens
+        input_cost = input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
+        output_cost = output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
 
-        input_cost = input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input']
-        output_cost = output_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['output']
+        # these fields may not be available when using openai library for third-party providers
+        if (
+            hasattr(completion, 'usage')
+            and hasattr(completion.usage, 'prompt_tokens_details')
+            and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
+        ):
+            cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
+            cached_cost = cached_tokens * MODEL_COST_PER_TOKEN[self.model].get('cached', 0)
+        else:
+            cached_tokens = None
+            cached_cost = None
 
         if completion.choices[0].message.tool_calls:
             message = None
@@ -353,7 +428,9 @@ class OpenAITools(Client):
             message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_read_tokens=cached_tokens,
             input_cost=input_cost,
             output_cost=output_cost,
+            cache_read_cost=cached_cost,
             duration_seconds=end - start,
         )
