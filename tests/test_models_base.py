@@ -1,5 +1,25 @@
 """Tests for the models_base module."""
-from sik_llms import Client, RegisteredClients
+from sik_llms import Client, RegisteredClients, system_message
+from sik_llms.models_base import assistant_message, user_message
+
+class TestMesssages:
+    """Tests for the message creation functions."""
+
+    def test_system_message(self):
+        message = system_message('test')
+        assert message == {'role': 'system', 'content': 'test'}
+
+    def test_system_message_with_kwargs(self):
+        message = system_message('test', foo='bar')
+        assert message == {'role': 'system', 'content': 'test', 'foo': 'bar'}
+
+    def test_user_message(self):
+        message = user_message('test')
+        assert message == {'role': 'user', 'content': 'test'}
+
+    def test_assistant_message(self):
+        message = assistant_message('test')
+        assert message == {'role': 'assistant', 'content': 'test'}
 
 
 class MockClient(Client):  # noqa: D101

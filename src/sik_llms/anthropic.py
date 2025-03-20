@@ -1,4 +1,5 @@
 """Helper functions for interacting with the Anthropic API."""
+from copy import deepcopy
 import os
 import time
 from collections.abc import AsyncGenerator
@@ -22,12 +23,23 @@ from sik_llms.models_base import (
 
 
 CHAT_MODEL_COST_PER_TOKEN = {
-    'claude-3-7-sonnet-20250219': {'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000},
+    'claude-3-7-sonnet-20250219': {
+        'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
+        'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
+    },
+    'claude-3-5-sonnet-20241022': {
+        'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
+        'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
+    },
+    'claude-3-5-haiku-20241022': {
+        'input': 0.80 / 1_000_000, 'output': 4.0 / 1_000_000,
+        'cache_write': 1.00 / 1_000_000, 'cache_read': 0.08 / 1_000_000,
+    },
 
-    'claude-3-5-haiku-20241022': {'input': 0.80 / 1_000_000, 'output': 4.0 / 1_000_000},
-    'claude-3-5-sonnet-20241022': {'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000},
-
-    'claude-3-opus-20240229': {'input': 15.00 / 1_000_000, 'output': 75.00 / 1_000_000},
+    'claude-3-opus-20240229': {
+        'input': 15.00 / 1_000_000, 'output': 75.00 / 1_000_000,
+        'cache_write': 18.75 / 1_000_000, 'cache_read': 1.50 / 1_000_000,
+    },
 }
 CHAT_MODEL_COST_PER_TOKEN_LATEST = {
     'claude-3-7-sonnet-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-7-sonnet-20250219'],
@@ -56,6 +68,7 @@ def num_tokens(model_name: str, content: str) -> int:
         messages=[{'role': 'user', 'content': content}],
     )
     return response.tokens
+
 
 def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
     """Returns the number of tokens for a list of messages."""
@@ -161,17 +174,24 @@ class Anthropic(Client):
             if 'top_k' in self.model_parameters:
                 self.model_parameters.pop('top_k')
 
-    def _convert_messages(self, messages: list[dict]) -> tuple[str, list[dict]]:
+    @staticmethod
+    def _convert_messages(messages: list[dict]) -> tuple[list[dict], list[dict]]:
         """Convert OpenAI-style messages to Anthropic format."""
-        system_content = None
+        system_messages = []
         anthropic_messages = []
 
-        for msg in messages:
+        for msg in deepcopy(messages):
             if msg['role'] == 'system':
-                system_content = msg['content']
+                _ = msg.pop('role')
+                text = msg.pop('content')
+                system_messages.append({
+                    'type': 'text',
+                    'text': text,
+                    **msg,
+                })
             else:
                 anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
-        return system_content, anthropic_messages
+        return system_messages, anthropic_messages
 
     async def stream(
             self,
@@ -237,24 +257,29 @@ class Anthropic(Client):
                 )
                 return
 
-        system_content, anthropic_messages = self._convert_messages(messages)
+        system_messages, anthropic_messages = Anthropic._convert_messages(messages)
         api_params = {
             'model': self.model,
             'messages': anthropic_messages,
             'stream': True,
             **self.model_parameters,
         }
-        if system_content:
-            api_params['system'] = system_content
+        if system_messages:
+            api_params['system'] = system_messages
         start_time = time.time()
         input_tokens = 0
         output_tokens = 0
+        cache_creation_input_tokens = 0
+        cache_read_input_tokens = 0
 
         chunks = []
         response = await self.client.messages.create(**api_params)
         async for chunk in response:
             if chunk.type == 'message_start':
-                input_tokens = chunk.message.usage.input_tokens
+                input_tokens += chunk.message.usage.input_tokens
+                output_tokens += chunk.message.usage.output_tokens
+                cache_creation_input_tokens += chunk.message.usage.cache_creation_input_tokens
+                cache_read_input_tokens += chunk.message.usage.cache_read_input_tokens
             elif chunk.type == 'message_delta' and hasattr(chunk, 'usage'):
                 output_tokens = chunk.usage.output_tokens
             parsed_chunk = _parse_completion_chunk(chunk)
@@ -277,6 +302,10 @@ class Anthropic(Client):
             output_tokens=output_tokens,
             input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input'],
             output_cost=output_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['output'],
+            cache_write_tokens=cache_creation_input_tokens,
+            cache_read_tokens=cache_read_input_tokens,
+            cache_write_cost=cache_creation_input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['cache_write'],  # noqa: E501
+            cache_read_cost=cache_read_input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['cache_read'],  # noqa: E501
             duration_seconds=end_time - start_time,
         )
 

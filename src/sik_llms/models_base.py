@@ -40,9 +40,11 @@ def assistant_message(content: str) -> dict:
     return {'role': 'assistant', 'content': content.strip()}
 
 
-def system_message(content: str) -> dict:
+def system_message(content: str, **kwargs: dict | None) -> dict:
     """Returns a system message."""
-    return {'role': 'system', 'content': content.strip()}
+    if not kwargs:
+        kwargs = {}
+    return {'role': 'system', 'content': content.strip(), **kwargs}
 
 
 class TextChunkEvent(BaseModel):
@@ -100,6 +102,7 @@ class ToolResultEvent(AgentEvent):
     arguments: dict[str, Any]
     result: object
 
+
 class TokenSummary(BaseModel):
     """Summary of a chat response."""
 
@@ -107,19 +110,35 @@ class TokenSummary(BaseModel):
     output_tokens: int
     input_cost: float | None = None
     output_cost: float | None = None
+
+    cache_write_tokens: int | None = None
+    cache_read_tokens: int | None = None
+    cache_write_cost: float | None = None
+    cache_read_cost: float | None = None
+
     duration_seconds: float
 
     @property
     def total_tokens(self) -> int:
         """Calculate the total number of tokens."""
-        return self.input_tokens + self.output_tokens
+        return (
+            self.input_tokens
+            + self.output_tokens
+            + (self.cache_write_tokens or 0)
+            + (self.cache_read_tokens or 0)
+        )
 
     @property
     def total_cost(self) -> float | None:
         """Calculate the total cost."""
-        if self.input_cost is None or self.output_cost is None:
+        if self.input_cost is None and self.output_cost is None and self.cache_write_cost is None and self.cache_read_cost is None:  # noqa: E501
             return None
-        return self.input_cost + self.output_cost
+        return (
+            (self.input_cost or 0)
+            + (self.output_cost or 0)
+            + (self.cache_write_cost or 0)
+            + (self.cache_read_cost or 0)
+        )
 
 
 class StructuredOutputResponse(TokenSummary):
