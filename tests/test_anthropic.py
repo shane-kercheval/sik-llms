@@ -41,7 +41,7 @@ class TestAnthropicSync:  # noqa: D101
         assert model.client is not None
         assert model.client.api_key == 'fake_key'
 
-    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
+    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")  # noqa: E501
     def test__Anthropic_instantiate___parameters(self):
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
