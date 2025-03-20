@@ -13,6 +13,7 @@ from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
 from dotenv import load_dotenv
 load_dotenv()
 
+
 @pytest.mark.asyncio
 class TestStructuredOutputs:
     """Test the OpenAI Structured Output Wrapper."""

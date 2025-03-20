@@ -101,7 +101,7 @@ def test__Registry__clean_type_name_with_enum():
 
 
 # Define test classes
-class TestEnum(Enum):  # noqa: D101
+class FakeColorEnum(Enum):  # noqa: D101
     RED = "red"
     GREEN = "green"
     BLUE = "blue"
@@ -355,7 +355,7 @@ class Test_get_json_schema_type:  # noqa: D101, N801
     # Special type tests
     def test_enum_types(self):
         """Test conversion of Enum types to JSON Schema types."""
-        type_name, props = get_json_schema_type(TestEnum)
+        type_name, props = get_json_schema_type(FakeColorEnum)
         assert type_name == 'string'
         assert 'enum' in props
         assert set(props['enum']) == {'red', 'green', 'blue'}
