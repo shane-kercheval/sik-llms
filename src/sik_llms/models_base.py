@@ -594,7 +594,8 @@ class Client(ABC):
         """
         Invoke the model asynchronously but does not stream via AsyncGenerator. Rather, it waits
         for the model to finish processing all messages and returns the last response which is
-        either a ResponseSummary (containing the entire content) or a ToolPredictionResponse.
+        either a TextResponse (containing the entire content), a ToolPredictionResponse, or
+        a StructuredOutputResponse.
 
         Args:
             messages:
