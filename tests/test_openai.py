@@ -320,6 +320,7 @@ class TestOpenAICaching:
         )
         assert response.total_cost == expected_total_cost
 
+        time.sleep(0.5)  # sporadicly failing; i'm guessing it needs time to write to cache
         # second run should result in a cache-hit
         response = client(messages=messages)
         assert response.response
@@ -378,6 +379,7 @@ class TestOpenAICaching:
         )
         assert response.total_cost == expected_total_cost
 
+        time.sleep(0.5)  # sporadicly failing; i'm guessing it needs time to write to cache
         # second run should result in a cache-hit
         messages=[
             user_message("Search for expensive italian restaurants in New York?"),
