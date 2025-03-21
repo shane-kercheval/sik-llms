@@ -15,6 +15,7 @@ load_dotenv()
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration  # these tests make API calls
 class TestStructuredOutputs:
     """Test the OpenAI Structured Output Wrapper."""
 

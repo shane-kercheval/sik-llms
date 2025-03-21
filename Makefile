@@ -13,6 +13,10 @@ linting:
 	uv run ruff check src/sik_llms
 	uv run ruff check tests
 
+quicktests:
+	# only runs a subset of tests that are generally faster
+	uv run pytest --durations=0 --durations-min=0.1 -k "not integration" tests
+
 unittests:
 	uv run pytest --durations=0 --durations-min=0.1 tests
 

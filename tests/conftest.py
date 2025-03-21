@@ -6,6 +6,22 @@ from sik_llms import Tool, Parameter
 from sik_llms.models_base import RegisteredClients
 
 
+def pytest_configure(config: pytest.Config):
+    config.addinivalue_line("markers", "skip_ci: mark test to be skipped in CI environments")
+    config.addinivalue_line("markers", "integration: mark test as an integration test that makes API calls")  # noqa: E501
+
+def pytest_runtest_setup(item: pytest.Item):
+    """
+    Skip tests marked with skip_ci in CI environments when SKIP_CI_TESTS environment variable is
+    set to true.
+    """
+    if (
+        os.environ.get("SKIP_CI_TESTS") == "true"
+        and any(marker.name == "skip_ci" for marker in item.iter_markers())
+    ):
+        pytest.skip("Skipping test in CI environment")
+
+
 OPENAI_TEST_MODEL = 'gpt-4o-mini'
 OPENAI_TEST_REASONING_MODEL = 'o3-mini'
 
@@ -19,7 +35,6 @@ class ClientConfig:
 
     client_type: RegisteredClients
     model_name: str
-
 
 
 @pytest.fixture

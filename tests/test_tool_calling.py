@@ -615,6 +615,7 @@ class TestPydanticModelToParameters:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration  # these tests make API calls
 class TestTools:
     """Test the Tools Wrapper."""
 
