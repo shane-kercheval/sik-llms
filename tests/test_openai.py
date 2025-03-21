@@ -130,67 +130,92 @@ class TestConvertMessages:
             {"role": "user", "content": "What is the capital of France?"},
         ]
 
-    def test__converted_messages__cached_content__no_system_message(self):
+    def test__converted_messages__cache_content__no_system_message(self):
+        messages = [
+            user_message("What is the capital of France?"),
+        ]
+        expected = [
+            {"role": "user", "content": "<cache_content>"},
+            {"role": "user", "content": "What is the capital of France?"},
+        ]
+        # list
+        converted = _convert_messages(
+            messages=messages,
+            cache_content=["<cache_content>"],
+        )
+        assert converted == expected
+        # str
+        converted = _convert_messages(
+            messages=messages,
+            cache_content="<cache_content>",
+        )
+        assert converted == expected
+
         converted = _convert_messages(
             messages=[
                 user_message("What is the capital of France?"),
             ],
-            cached_content=["<cached_content>"],
+            cache_content=["<cache_content 1>", "<cache_content 2>"],
         )
         assert converted == [
-            {"role": "user", "content": "<cached_content>"},
+            {"role": "user", "content": "<cache_content 1>"},
+            {"role": "user", "content": "<cache_content 2>"},
             {"role": "user", "content": "What is the capital of France?"},
         ]
 
+    def test__converted_messages__cache_content__no_user_message(self):
+        expected = [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "<cache_content>"},
+        ]
+        messages = [
+            system_message("You are a helpful assistant."),
+        ]
+        # list
         converted = _convert_messages(
-            messages=[
-                user_message("What is the capital of France?"),
-            ],
-            cached_content=["<cached_content 1>", "<cached_content 2>"],
+            messages=messages,
+            cache_content=["<cache_content>"],
         )
-        assert converted == [
-            {"role": "user", "content": "<cached_content 1>"},
-            {"role": "user", "content": "<cached_content 2>"},
-            {"role": "user", "content": "What is the capital of France?"},
-        ]
+        assert converted == expected
+        # str
+        converted = _convert_messages(
+            messages=messages,
+            cache_content="<cache_content>",
+        )
+        assert converted == expected
 
-    def test__converted_messages__cached_content__no_user_message(self):
         converted = _convert_messages(
             messages=[
                 system_message("You are a helpful assistant."),
             ],
-            cached_content=["<cached_content>"],
+            cache_content=["<cache_content 1>", "<cache_content 2>"],
         )
         assert converted == [
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "<cached_content>"},
+            {"role": "user", "content": "<cache_content 1>"},
+            {"role": "user", "content": "<cache_content 2>"},
         ]
 
-        converted = _convert_messages(
-            messages=[
-                system_message("You are a helpful assistant."),
-            ],
-            cached_content=["<cached_content 1>", "<cached_content 2>"],
-        )
-        assert converted == [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "<cached_content 1>"},
-            {"role": "user", "content": "<cached_content 2>"},
+    def test__converted_messages__cache_content__user_and_system_message(self):
+        messages = [
+            system_message("You are a helpful assistant."),
+            user_message("What is the capital of France?"),
         ]
-
-    def test__converted_messages__cached_content__user_and_system_message(self):
-        converted = _convert_messages(
-            messages=[
-                system_message("You are a helpful assistant."),
-                user_message("What is the capital of France?"),
-            ],
-            cached_content=["<cached_content>"],
-        )
-        assert converted == [
+        expected = [
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "<cached_content>"},
+            {"role": "user", "content": "<cache_content>"},
             {"role": "user", "content": "What is the capital of France?"},
         ]
+        converted = _convert_messages(
+            messages=messages,
+            cache_content=["<cache_content>"],
+        )
+        assert converted == expected
+        converted = _convert_messages(
+            messages=messages,
+            cache_content="<cache_content>",
+        )
+        assert converted == expected
 
         converted = _convert_messages(
             messages=[
@@ -200,13 +225,13 @@ class TestConvertMessages:
                 assistant_message("assistant message 1."),
                 user_message("assistant message 2."),
             ],
-            cached_content=["<cached_content 1>", "<cached_content 2>"],
+            cache_content=["<cache_content 1>", "<cache_content 2>"],
         )
         assert converted == [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "system", "content": "system message 2."},
-            {"role": "user", "content": "<cached_content 1>"},
-            {"role": "user", "content": "<cached_content 2>"},
+            {"role": "user", "content": "<cache_content 1>"},
+            {"role": "user", "content": "<cache_content 2>"},
             {"role": "user", "content": "What is the capital of France?"},
             {"role": "assistant", "content": "assistant message 1."},
             {"role": "user", "content": "assistant message 2."},
@@ -402,7 +427,7 @@ class TestOpenAICaching:
         client = create_client(
             model_name=OPENAI_TEST_MODEL,
             temperature=0.1,
-            cached_content=[cache_content] if use_init else None,
+            cache_content=[cache_content] if use_init else None,
         )
         if use_init:
             messages = [

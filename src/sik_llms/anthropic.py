@@ -115,7 +115,7 @@ def _parse_completion_chunk(chunk) -> TextChunkEvent | None:  # noqa: ANN001
 
 def _convert_messages(
         messages: list[dict],
-        cached_content: list[str] | None = None,
+        cache_content: list[str] | str | None = None,
     ) -> tuple[list[dict], list[dict]]:
     """
     Convert OpenAI-style messages to Anthropic format.
@@ -123,7 +123,7 @@ def _convert_messages(
     Args:
         messages:
             List of messages to convert.
-        cached_content:
+        cache_content:
             List of strings to cache for the model. These strings are inserted into the system
             message and are marked with `"cache_control": {"type": "ephemeral"}` according to
             the documentation here:
@@ -143,7 +143,7 @@ def _convert_messages(
             })
         else:
             anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
-    if cached_content:
+    if cache_content:
         # Based on this example: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
         # ```
         # system=[
@@ -158,10 +158,13 @@ def _convert_messages(
         #     }
         # ],
         # ```
-        for content in cached_content:
+        if isinstance(cache_content, str):
+            cache_content = [cache_content]
+
+        for content in cache_content:
             system_messages.append({
                 'type': 'text',
-                'text': content,
+                'text': content.strip(),
                 'cache_control': {'type': 'ephemeral'},
             })
     return system_messages, anthropic_messages
@@ -182,7 +185,7 @@ class Anthropic(Client):
             reasoning_effort: ReasoningEffort | None = None,
             thinking_budget_tokens: int | None = None,
             response_format: type[BaseModel] | None = None,
-            cached_content: list[str] | None = None,
+            cache_content: list[str] | str | None = None,
             **model_kwargs: dict,
     ) -> None:
         """
@@ -213,7 +216,7 @@ class Anthropic(Client):
                 Allows the user to specify a Pydantic model which will be used to parse the
                 response from the API. Behind the scenes, AnthropicTools is used to enable
                 "Structured Output" similar to OpenAI's functionality.
-            cached_content:
+            cache_content:
                 List of strings to cache for the model. These strings are inserted into the system
                 message and are marked with `"cache_control": {"type": "ephemeral"}` according to
                 the documentation here:
@@ -235,7 +238,7 @@ class Anthropic(Client):
         self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
         # remove any None values
         self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
-        self.cached_content = cached_content
+        self.cache_content = cache_content
 
         # Configure thinking based on reasoning_effort or thinking_budget_tokens
         thinking_config = None
@@ -332,7 +335,7 @@ class Anthropic(Client):
 
         system_messages, anthropic_messages = _convert_messages(
             messages,
-            cached_content=self.cached_content,
+            cache_content=self.cache_content,
         )
         api_params = {
             'model': self.model,

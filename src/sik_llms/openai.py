@@ -155,11 +155,13 @@ def _parse_completion_chunk(chunk) -> TextChunkEvent:  # noqa: ANN001
 
 def _convert_messages(
         messages: list[dict[str, str]],
-        cached_content: list[str] | None = None,
+        cache_content: list[str] | str | None = None,
     ) -> list[dict[str, str]]:
     """Converts messages to the format expected by the OpenAI API."""
     messages = deepcopy(messages)
-    if cached_content:
+    if cache_content:
+        if isinstance(cache_content, str):
+            cache_content = [cache_content]
         # find index after last system message but before the first user message
         # assumes system messages are always first
         for i, message in enumerate(messages):
@@ -168,7 +170,10 @@ def _convert_messages(
         else:
             i = len(messages)
 
-        cached_messages = [{'role': 'user', 'content': content} for content in cached_content]
+        cached_messages = [
+            {'role': 'user', 'content': content.strip()}
+            for content in cache_content
+        ]
         messages[i:i] = cached_messages
     return messages
 
@@ -189,7 +194,7 @@ class OpenAI(Client):
             model_name: str | None = None,
             reasoning_effort: ReasoningEffort | None = None,
             response_format: type[BaseModel] | None = None,
-            cached_content: str | None = None,
+            cache_content: list[str] | str | None = None,
             server_url: str | None = None,
             api_key: str | None = None,
             **model_kwargs: dict,
@@ -206,7 +211,7 @@ class OpenAI(Client):
                 The reasoning effort to use for the API call (reasoning model required).
             response_format:
                 Pydantic class defining structure of the response (i.e. structured output)
-            cached_content:
+            cache_content:
                 List of strings to cache for the model. These strings are inserted as the first
                 user message.
             server_url:
@@ -228,7 +233,7 @@ class OpenAI(Client):
         self.model_parameters = model_kwargs or {}
         self.reasoning_effort = reasoning_effort
         self.response_format = response_format
-        self.cached_content = cached_content
+        self.cache_content = cache_content
         if response_format:
             self.model_parameters['response_format'] = response_format
         if reasoning_effort:
@@ -250,7 +255,7 @@ class OpenAI(Client):
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
         """
-        messages = _convert_messages(messages, self.cached_content)
+        messages = _convert_messages(messages, self.cache_content)
         model_parameters = deepcopy(self.model_parameters)
         if self.response_format:
             start_time = time.time()

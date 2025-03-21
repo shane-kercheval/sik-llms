@@ -239,8 +239,27 @@ class TestConvertMessages:
         message_user = "Analyze the major themes in 'Pride and Prejudice'."
         messages = [user_message(message_user)]
         original_messages = deepcopy(messages)
+
+        # with list message_cache
         converted_system, converted_other = _convert_messages(
-            messages, cached_content=[message_cache],
+            messages, cache_content=[message_cache],
+        )
+        assert messages == original_messages  # test no side effects
+        assert len(converted_system) == 1
+        assert len(converted_other) == 1
+        assert converted_system == [{
+            'type': 'text',
+            'text': message_cache,
+            'cache_control': {'type': 'ephemeral'},
+        }]
+        assert converted_other == [{
+            'role': 'user',
+            'content': message_user,
+        }]
+
+        # with string message_cache
+        converted_system, converted_other = _convert_messages(
+            messages, cache_content=message_cache,
         )
         assert messages == original_messages  # test no side effects
         assert len(converted_system) == 1
@@ -279,7 +298,7 @@ class TestConvertMessages:
         ]
         original_messages = deepcopy(messages)
         converted_system, converted_other = _convert_messages(
-            messages, cached_content=[message_cache_1, message_cache_2],
+            messages, cache_content=[message_cache_1, message_cache_2],
         )
         assert messages == original_messages  # test no side effects
         assert len(converted_system) == 3
@@ -333,7 +352,7 @@ class TestAnthropicCaching:
         client = Anthropic(
             model_name=ANTHROPIC_TEST_MODEL,
             temperature=0.1,
-            cached_content=[cache_content] if use_init else None,
+            cache_content=[cache_content] if use_init else None,
         )
 
         if use_init:
