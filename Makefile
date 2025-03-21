@@ -13,14 +13,14 @@ linting:
 	uv run ruff check src/sik_llms
 	uv run ruff check tests
 
-unittests:
+quicktests:
 	# only runs a subset of tests that are generally faster
 	uv run pytest --durations=0 --durations-min=0.1 -k "not integration" tests
 
-all_test:
+unittests:
 	uv run pytest --durations=0 --durations-min=0.1 tests
 
-tests: linting all_test
+tests: linting unittests
 
 package-build:
 	rm -rf dist/*
