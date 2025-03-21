@@ -76,6 +76,7 @@ class ReasoningAgent(Client):
             tools: list[Tool] | None = None,
             tools_model_name: str | None = None,
             tools_client_type: str | RegisteredClients | None = None,
+            generate_final_response: bool = True,
             max_iterations: int = 5,
             **model_kwargs: dict,
         ):
@@ -97,6 +98,9 @@ class ReasoningAgent(Client):
                 The client type to use for the tools client. If tools are provided, and
                 tools_client_type is not specified, the tools client will use the same
                 client type as the reasoning agent.
+            generate_final_response:
+                Whether to generate the final answer using a summary model (using the same
+                model_name and client_type as the reasoning model).
             max_iterations:
                 Maximum number of iterations for thinking and tool use
             tool_executors:
@@ -121,6 +125,7 @@ class ReasoningAgent(Client):
 
         self.model_name = model_name
         self.client_type = client_type
+        self.generate_final_response = generate_final_response
 
         self.model_kwargs = model_kwargs.copy()
         if any(t.func is None for t in tools):
@@ -462,16 +467,17 @@ class ReasoningAgent(Client):
             assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
         ]
         final_answer = ""
-        async for chunk in self._get_summary_client().stream(summary_messages):
-            if isinstance(chunk, TextChunkEvent):
-                final_answer += chunk.content
-                yield chunk
-            elif isinstance(chunk, TextResponse):
-                # Update token usage stats
-                total_input_tokens += chunk.input_tokens
-                total_output_tokens += chunk.output_tokens
-                total_input_cost += chunk.input_cost
-                total_output_cost += chunk.output_cost
+        if self.generate_final_response:
+            async for chunk in self._get_summary_client().stream(summary_messages):
+                if isinstance(chunk, TextChunkEvent):
+                    final_answer += chunk.content
+                    yield chunk
+                elif isinstance(chunk, TextResponse):
+                    # Update token usage stats
+                    total_input_tokens += chunk.input_tokens
+                    total_output_tokens += chunk.output_tokens
+                    total_input_cost += chunk.input_cost
+                    total_output_cost += chunk.output_cost
 
         # Calculate total duration
         end_time = asyncio.get_event_loop().time()

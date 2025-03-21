@@ -296,10 +296,54 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool, model_name
     assert len(tool_result_events) > 0, "Should have tool result events"
     assert "65968" in tool_result_events[0].result, "Result should be 65968"
 
-    # Last result should be a ResponseSummary with the full response
+    # Last result should be a TextResponse with the full response
     last_result = results[-1]
-    assert isinstance(last_result, TextResponse), "Last result should be ResponseSummary"
+    assert isinstance(last_result, TextResponse), "Last result should be TextResponse"
     assert re.search(r'65[,]?968', last_result.response) is not None, "Final answer should contain 65968 or 65,968"  # noqa: E501
+
+    # Check token accounting
+    assert last_result.input_tokens > 0, "Should have input tokens"
+    assert last_result.output_tokens > 0, "Should have output tokens"
+    assert last_result.duration_seconds > 0, "Should have duration"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reasoning_agent__no_final_answer(calculator_tool: Tool):
+    """Test the ReasoningAgent with a calculator tool using GPT-4o-mini."""
+    # Create the reasoning agent
+    agent = ReasoningAgent(
+        model_name=OPENAI_TEST_MODEL,
+        tools=[calculator_tool],
+        max_iterations=2,
+        generate_final_response=False,
+        temperature=0,
+    )
+
+    results = []
+    async for result in agent.stream([user_message("What is 532 * 124?")]):
+        results.append(result)
+
+    # Check that we got the expected results
+    thinking_events = [r for r in results if isinstance(r, ThinkingEvent)]
+    assert len(thinking_events) > 0, "Should have thinking events"
+
+    error_events = [r for r in results if isinstance(r, ErrorEvent)]
+    assert len(error_events) == 0, "Should not have errors"
+
+    tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
+    assert len(tool_prediction_events) > 0, "Should have tool prediction events"
+    assert tool_prediction_events[0].name == "calculator", "Should use calculator tool"
+
+    tool_result_events = [r for r in results if isinstance(r, ToolResultEvent)]
+    assert len(tool_result_events) > 0, "Should have tool result events"
+    assert "65968" in tool_result_events[0].result, "Result should be 65968"
+
+    # Last result should be a TextResponse with the full response
+    last_result = results[-1]
+    assert isinstance(last_result, TextResponse), "Last result should be TextResponse"
+    # generate_final_response=False, so there should be no final answer that was generated
+    assert not last_result.response
 
     # Check token accounting
     assert last_result.input_tokens > 0, "Should have input tokens"
@@ -439,9 +483,9 @@ async def test_reasoning_agent_no_tools_needed(model_name: str):
     thinking_events = [r for r in results if isinstance(r, ThinkingEvent)]
     assert len(thinking_events) > 0, "Should have thinking events"
 
-    # Last result should be a ResponseSummary with a complete answer
+    # Last result should be a TextResponse with a complete answer
     last_result = results[-1]
-    assert isinstance(last_result, TextResponse), "Last result should be ResponseSummary"
+    assert isinstance(last_result, TextResponse), "Last result should be TextResponse"
 
     # There should be no tool predictions
     tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
@@ -488,7 +532,7 @@ async def test_reasoning_agent_with_lambda_function(model_name: str):
     async for result in agent.stream([user_message("What's the weather like in New York?")]):
         results.append(result)
     last_result = results[-1]
-    assert isinstance(last_result, TextResponse), "Last result should be ResponseSummary"
+    assert isinstance(last_result, TextResponse), "Last result should be TextResponse"
     assert "New York" in last_result.response
     assert "72°F" in last_result.response
 
