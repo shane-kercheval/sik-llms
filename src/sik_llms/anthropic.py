@@ -112,8 +112,22 @@ def _parse_completion_chunk(chunk) -> TextChunkEvent | None:  # noqa: ANN001
     # All other event types are ignored (content_block_start, message_start, message_delta, etc.)
     return None
 
-def _convert_messages(messages: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Convert OpenAI-style messages to Anthropic format."""
+def _convert_messages(
+        messages: list[dict],
+        cached_content: list[str] | None = None,
+    ) -> tuple[list[dict], list[dict]]:
+    """
+    Convert OpenAI-style messages to Anthropic format.
+
+    Args:
+        messages:
+            List of messages to convert.
+        cached_content:
+            List of strings to cache for the model. These strings are inserted into the system
+            message and are marked with `"cache_control": {"type": "ephemeral"}` according to
+            the documentation here:
+            https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+    """
     system_messages = []
     anthropic_messages = []
 
@@ -128,6 +142,27 @@ def _convert_messages(messages: list[dict]) -> tuple[list[dict], list[dict]]:
             })
         else:
             anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
+    if cached_content:
+        # Based on this example: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+        # ```
+        # system=[
+        #     {
+        #         "type": "text",
+        #         "text": "You are an AI assistant tasked with analyzing literary works. Your goal is to provide insightful commentary on themes, characters, and writing style.\n",  # noqa: E501
+        #     },
+        #     {
+        #         "type": "text",
+        #         "text": "<the entire contents of 'Pride and Prejudice'>",
+        #         "cache_control": {"type": "ephemeral"}
+        #     }
+        # ],
+        # ```
+        for content in cached_content:
+            system_messages.append({
+                'type': 'text',
+                'text': content,
+                'cache_control': {'type': 'ephemeral'},
+            })
     return system_messages, anthropic_messages
 
 
@@ -146,8 +181,45 @@ class Anthropic(Client):
             reasoning_effort: ReasoningEffort | None = None,
             thinking_budget_tokens: int | None = None,
             response_format: type[BaseModel] | None = None,
+            cached_content: list[str] | None = None,
             **model_kwargs: dict,
     ) -> None:
+        """
+        Initialize the Anthropic client.
+
+        Args:
+            model_name:
+                The model name to use for the API call (e.g. 'claude-3-7-sonnet-20250219').
+            api_key:
+                The API key to use for the API call. If not provided, the ANTHROPIC_API_KEY
+                environment variable will be used.
+            max_tokens:
+                The maximum number of tokens to generate in a single call.
+            reasoning_effort:
+                Refers to the "thinking budget" refered to here:
+
+                https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#implementing-extended-thinking
+
+                ReasoningEffort is a enum with values LOW, MEDIUM, and HIGH that correspond to
+                values are inspired by the documentation in the link above.
+
+                You can provide the exact number of tokens to use for thinking by using the
+                `thinking_budget_tokens` parameter instead.
+            thinking_budget_tokens:
+                The number of tokens to use for thinking. "The thinking budget is a target rather
+                than a strict limit - actual token usage may vary based on the task."
+            response_format:
+                Allows the user to specify a Pydantic model which will be used to parse the
+                response from the API. Behind the scenes, AnthropicTools is used to enable
+                "Structured Output" similar to OpenAI's functionality.
+            cached_content:
+                List of strings to cache for the model. These strings are inserted into the system
+                message and are marked with `"cache_control": {"type": "ephemeral"}` according to
+                the documentation here:
+                https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+            **model_kwargs:
+                Additional parameters to pass to the API call
+        """
         if model_name not in CHAT_MODEL_COST_PER_TOKEN:
             raise ValueError(f"Model '{model_name}' is not supported.")
         api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
@@ -162,6 +234,7 @@ class Anthropic(Client):
         self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
         # remove any None values
         self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
+        self.cached_content = cached_content
 
         # Configure thinking based on reasoning_effort or thinking_budget_tokens
         thinking_config = None
@@ -256,7 +329,10 @@ class Anthropic(Client):
                 )
                 return
 
-        system_messages, anthropic_messages = _convert_messages(messages)
+        system_messages, anthropic_messages = _convert_messages(
+            messages,
+            cached_content=self.cached_content,
+        )
         api_params = {
             'model': self.model,
             'messages': anthropic_messages,

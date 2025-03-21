@@ -130,12 +130,10 @@ class TestConvertMessages:
         assert messages == original_messages  # test no side effects
         assert not converted_system
         assert len(converted_other) == 1
-        assert converted_other == [
-        {
+        assert converted_other == [{
             'role': 'user',
             'content': message_user,
-        },
-        ]
+        }]
 
     def test__Anthropic___convert_messages__system__user(self):
         message_system = "You are a helpful assistant."
@@ -149,18 +147,14 @@ class TestConvertMessages:
         assert messages == original_messages  # test no side effects
         assert len(converted_system) == 1
         assert len(converted_other) == 1
-        assert converted_system == [
-        {
+        assert converted_system == [{
             'type': 'text',
             'text': message_system,
-        },
-        ]
-        assert converted_other == [
-        {
+        }]
+        assert converted_other == [{
             'role': 'user',
             'content': message_user,
-        },
-        ]
+        }]
 
     def test__Anthropic___convert_messages__system__user__assistant(self):
         message_system = "You are a helpful assistant."
@@ -177,12 +171,10 @@ class TestConvertMessages:
         assert messages == original_messages  # test no side effects
         assert len(converted_system) == 1
         assert len(converted_other) == 2
-        assert converted_system == [
-            {
-                'type': 'text',
-                'text': message_system,
-            },
-        ]
+        assert converted_system == [{
+            'type': 'text',
+            'text': message_system,
+        }]
         assert converted_other == [
             {
                 'role': 'user',
@@ -209,22 +201,104 @@ class TestConvertMessages:
         assert len(converted_system) == 2
         assert len(converted_other) == 1
         assert converted_system == [
-        {
-            'type': 'text',
-            'text': message_system,
-        },
-        {
+            {
+                'type': 'text',
+                'text': message_system,
+            },
+            {
+                'type': 'text',
+                'text': message_cache,
+                'cache_control': {'type': 'ephemeral'},
+            },
+        ]
+        assert converted_other == [{
+            'role': 'user',
+            'content': message_user,
+        }]
+
+    def test__Anthropic___convert_messages__no_system_with_cache_control__user__assistant(self):
+        # based on example from : https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+        # system=[
+        # {
+        #     "type": "text",
+        #     "text": "You are an AI assistant tasked with analyzing literary works. Your goal is to provide insightful commentary on themes, characters, and writing style.\n",  # noqa: E501
+        # },
+        # {
+        #     "type": "text",
+        #     "text": "<the entire contents of 'Pride and Prejudice'>",
+        #     "cache_control": {"type": "ephemeral"}
+        # }
+        # ],
+        # messages=[{"role": "user", "content": "Analyze the major themes in 'Pride and Prejudice'."}],  # noqa: E501
+        message_cache = "<the entire contents of 'Pride and Prejudice'>"
+        message_user = "Analyze the major themes in 'Pride and Prejudice'."
+        messages = [user_message(message_user)]
+        original_messages = deepcopy(messages)
+        converted_system, converted_other = _convert_messages(
+            messages, cached_content=[message_cache],
+        )
+        assert messages == original_messages  # test no side effects
+        assert len(converted_system) == 1
+        assert len(converted_other) == 1
+        assert converted_system == [{
             'type': 'text',
             'text': message_cache,
             'cache_control': {'type': 'ephemeral'},
-        },
-        ]
-        assert converted_other == [
-        {
+        }]
+        assert converted_other == [{
             'role': 'user',
             'content': message_user,
-        },
+        }]
+
+    def test__Anthropic___convert_messages__multiple_system_with_cache_control__user__assistant(self):  # noqa: E501
+        # based on example from : https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+        # system=[
+        # {
+        #     "type": "text",
+        #     "text": "You are an AI assistant tasked with analyzing literary works. Your goal is to provide insightful commentary on themes, characters, and writing style.\n",  # noqa: E501
+        # },
+        # {
+        #     "type": "text",
+        #     "text": "<the entire contents of 'Pride and Prejudice'>",
+        #     "cache_control": {"type": "ephemeral"}
+        # }
+        # ],
+        # messages=[{"role": "user", "content": "Analyze the major themes in 'Pride and Prejudice'."}],  # noqa: E501
+        message_system = "You are an AI assistant tasked with analyzing literary works."
+        message_cache_1 = "<the entire contents of 'Pride and Prejudice'>"
+        message_cache_2 = "<the entire contents of 'Treasure Island'>"
+        message_user = "Analyze the major themes in 'Pride and Prejudice'."
+        messages = [
+            system_message(message_system),
+            user_message(message_user),
         ]
+        original_messages = deepcopy(messages)
+        converted_system, converted_other = _convert_messages(
+            messages, cached_content=[message_cache_1, message_cache_2],
+        )
+        assert messages == original_messages  # test no side effects
+        assert len(converted_system) == 3
+        assert len(converted_other) == 1
+        assert converted_system == [
+            {
+                'type': 'text',
+                'text': message_system,
+            },
+            {
+                'type': 'text',
+                'text': message_cache_1,
+                'cache_control': {'type': 'ephemeral'},
+            },
+            {
+                'type': 'text',
+                'text': message_cache_2,
+                'cache_control': {'type': 'ephemeral'},
+            },
+        ]
+        assert converted_other == [{
+            'role': 'user',
+            'content': message_user,
+        }]
 
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
@@ -236,29 +310,43 @@ class TestAnthropicCaching:
     https://github.com/anthropics/anthropic-cookbook/blob/main/misc/prompt_caching.ipynb
     """
 
-    def test__Anthropic__caching__expect_cache_miss_then_hit(self):
+    @pytest.mark.parametrize('use_init', [True, False])
+    def test__Anthropic__cache_control__expect_cache_miss_then_hit(self, use_init: bool):
         """
         Tests that the first call results in a cache-miss and the second call results in a
         cache-hit. The tokens written to the cache should be read on the second call.
+
+        If use_init than we pass the cache content in the constructor, otherwise we create the
+        system message with the cache content directly.
         """
+        length = random.randint(15_000, 20_000)
+        first_word = Faker().words(nb=1)[0]
+        cache_content = f"{first_word} is the first word. {Faker().text(max_nb_chars=length)}"
+
         client = Anthropic(
             model_name=ANTHROPIC_TEST_MODEL,
             temperature=0.1,
+            cached_content=[cache_content] if use_init else None,
         )
-        length = random.randint(10_000, 15_000)
-        cache_content = Faker().text(max_nb_chars=length)
-        messages = [
-            system_message("You are a helpful assistant."),
-            system_message(
-                cache_content,
-                cache_control={'type': 'ephemeral'},
-            ),
-            user_message("What is the first word of this text? Only output the first word."),
-        ]
+
+        if use_init:
+            messages = [
+                system_message("You are a helpful assistant."),
+                user_message("What is the first word of this text? Only output the first word."),
+            ]
+        else:
+            messages = [
+                system_message("You are a helpful assistant."),
+                system_message(
+                    cache_content,
+                    cache_control={'type': 'ephemeral'},
+                ),
+                user_message("What is the first word of this text? Only output the first word."),
+            ]
 
         # first run should result in a cache-miss & write
         response = client(messages=messages)
-        assert response.response
+        assert first_word in response.response
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.cache_write_tokens > 0
@@ -283,7 +371,7 @@ class TestAnthropicCaching:
 
         # second run should result in a cache-hit
         response = client(messages=messages)
-        assert response.response
+        assert first_word in response.response
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.cache_write_tokens == 0
