@@ -120,6 +120,11 @@ class TestAnthropicAsync:  # noqa: D101
 class TestConvertMessages:
     """Test the _convert_messages method."""
 
+    def test__Anthropic___convert_messages__empty(self):
+        system_messages, other_messages = _convert_messages([])
+        assert not system_messages
+        assert not other_messages
+
     def test__Anthropic___convert_messages__no_system(self):
         message_user = "What is the capital of France?"
         messages = [
@@ -301,6 +306,8 @@ class TestConvertMessages:
         }]
 
 
+@pytest.mark.skip_ci  # caching sporadically fails; let's skip this in CI
+@pytest.mark.integration  # these tests make API calls
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 class TestAnthropicCaching:
     """
@@ -460,6 +467,7 @@ class TestAnthropicCaching:
         assert response.total_cost == expected_total_cost
 
 
+@pytest.mark.integration  # these tests make API calls
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 class TestAnthropicReasoning:
     """Test the Anthropic Wrapper with Reasoning."""

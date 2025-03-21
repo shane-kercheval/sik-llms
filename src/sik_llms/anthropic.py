@@ -112,6 +112,7 @@ def _parse_completion_chunk(chunk) -> TextChunkEvent | None:  # noqa: ANN001
     # All other event types are ignored (content_block_start, message_start, message_delta, etc.)
     return None
 
+
 def _convert_messages(
         messages: list[dict],
         cached_content: list[str] | None = None,

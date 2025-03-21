@@ -19,6 +19,8 @@ from sik_llms import (
     TextResponse,
     OpenAITools,
 )
+from sik_llms.models_base import assistant_message
+from sik_llms.openai import _convert_messages
 from tests.conftest import OPENAI_TEST_MODEL, OPENAI_TEST_REASONING_MODEL
 
 load_dotenv()
@@ -103,6 +105,112 @@ class TestOpenAIRegistration:
         assert client.client.api_key != 'None'
         assert client.client.base_url
         assert client
+
+
+class TestConvertMessages:
+    """Test the _convert_messages function."""
+
+    def test__convert_messages(self):
+        converted = _convert_messages(messages=[])
+        assert converted == []
+
+        converted = _convert_messages(messages=[
+            system_message("You are a helpful assistant."),
+        ])
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+        ]
+
+        converted = _convert_messages(messages=[
+            system_message("You are a helpful assistant."),
+            user_message("What is the capital of France?"),
+        ])
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is the capital of France?"},
+        ]
+
+    def test__converted_messages__cached_content__no_system_message(self):
+        converted = _convert_messages(
+            messages=[
+                user_message("What is the capital of France?"),
+            ],
+            cached_content=["<cached_content>"],
+        )
+        assert converted == [
+            {"role": "user", "content": "<cached_content>"},
+            {"role": "user", "content": "What is the capital of France?"},
+        ]
+
+        converted = _convert_messages(
+            messages=[
+                user_message("What is the capital of France?"),
+            ],
+            cached_content=["<cached_content 1>", "<cached_content 2>"],
+        )
+        assert converted == [
+            {"role": "user", "content": "<cached_content 1>"},
+            {"role": "user", "content": "<cached_content 2>"},
+            {"role": "user", "content": "What is the capital of France?"},
+        ]
+
+    def test__converted_messages__cached_content__no_user_message(self):
+        converted = _convert_messages(
+            messages=[
+                system_message("You are a helpful assistant."),
+            ],
+            cached_content=["<cached_content>"],
+        )
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "<cached_content>"},
+        ]
+
+        converted = _convert_messages(
+            messages=[
+                system_message("You are a helpful assistant."),
+            ],
+            cached_content=["<cached_content 1>", "<cached_content 2>"],
+        )
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "<cached_content 1>"},
+            {"role": "user", "content": "<cached_content 2>"},
+        ]
+
+    def test__converted_messages__cached_content__user_and_system_message(self):
+        converted = _convert_messages(
+            messages=[
+                system_message("You are a helpful assistant."),
+                user_message("What is the capital of France?"),
+            ],
+            cached_content=["<cached_content>"],
+        )
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "<cached_content>"},
+            {"role": "user", "content": "What is the capital of France?"},
+        ]
+
+        converted = _convert_messages(
+            messages=[
+                system_message("You are a helpful assistant."),
+                system_message("system message 2."),
+                user_message("What is the capital of France?"),
+                assistant_message("assistant message 1."),
+                user_message("assistant message 2."),
+            ],
+            cached_content=["<cached_content 1>", "<cached_content 2>"],
+        )
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "system", "content": "system message 2."},
+            {"role": "user", "content": "<cached_content 1>"},
+            {"role": "user", "content": "<cached_content 2>"},
+            {"role": "user", "content": "What is the capital of France?"},
+            {"role": "assistant", "content": "assistant message 1."},
+            {"role": "user", "content": "assistant message 2."},
+        ]
 
 
 class TestReasoningModelsDoNotSetCertainParameters:
@@ -224,6 +332,7 @@ class TestOpenAI:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration  # these tests make API calls
 class TestOpenAIReasoning:
     """Test the OpenAI Reasoning / ReasoningEffort."""
 
@@ -266,6 +375,8 @@ class TestOpenAIReasoning:
         assert response.duration_seconds > 0
 
 
+@pytest.mark.skip_ci  # caching sporadically fails; let's skip this in CI
+@pytest.mark.integration  # these tests make API calls
 class TestOpenAICaching:
     """
     Test the caching functionality of the OpenAI Wrapper.
@@ -278,25 +389,32 @@ class TestOpenAICaching:
     https://github.com/anthropics/anthropic-cookbook/blob/main/misc/prompt_caching.ipynb
     """
 
-    def test__OpenAI__caching__expect_cache_miss_then_hit(self):
+    @pytest.mark.parametrize('use_init', [True, False])
+    def test__OpenAI__caching__expect_cache_miss_then_hit(self, use_init: bool):
         """
         Tests that the first call results in a cache-miss and the second call results in a
         cache-hit. The tokens written to the cache should be read on the second call.
         """
-        client = OpenAI(
+        length = random.randint(15_000, 20_000)
+        first_word = Faker().words(nb=1)[0]
+        cache_content = f"{first_word} is the first word. {Faker().text(max_nb_chars=length)}"
+
+        client = create_client(
             model_name=OPENAI_TEST_MODEL,
             temperature=0.1,
+            cached_content=[cache_content] if use_init else None,
         )
-        length = random.randint(10_000, 15_000)
-        cache_content = Faker().text(max_nb_chars=length)
-        messages = [
-            system_message("You are a helpful assistant."),
-            system_message(
-                cache_content,
-                # cache_control={'type': 'ephemeral'},
-            ),
-            user_message("What is the first word of this text? Only output the first word."),
-        ]
+        if use_init:
+            messages = [
+                system_message("You are a helpful assistant."),
+                user_message("What is the first word of this text? Only output the first word."),
+            ]
+        else:
+            messages = [
+                system_message("You are a helpful assistant."),
+                user_message(cache_content),
+                user_message("What is the first word of this text? Only output the first word."),
+            ]
 
         # first run should result in a cache-miss & write
         response = client(messages=messages)

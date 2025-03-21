@@ -251,6 +251,7 @@ async def test__execute_tool__sync(model_name: str):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 @pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
@@ -307,6 +308,7 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool, model_name
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 @pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
@@ -404,6 +406,7 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 @pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
@@ -446,6 +449,7 @@ async def test_reasoning_agent_no_tools_needed(model_name: str):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 @pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
