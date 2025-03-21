@@ -236,6 +236,7 @@ class OpenAI(Client):
                 **model_parameters,
             )
             end_time = time.time()
+            input_tokens = completion.usage.prompt_tokens
             # these fields may not be available when using openai library for third-party providers
             if (
                 hasattr(completion, 'usage')
@@ -244,13 +245,14 @@ class OpenAI(Client):
             ):
                 cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
                 cached_cost = cached_tokens * MODEL_COST_PER_TOKEN[self.model].get('cached', 0)
+                input_tokens -= cached_tokens  # remove cached tokens from input tokens
             else:
                 cached_tokens = None
                 cached_cost = None
             yield StructuredOutputResponse(
                 parsed=completion.choices[0].message.parsed,
                 refusal=completion.choices[0].message.refusal,
-                input_tokens=completion.usage.prompt_tokens,
+                input_tokens=input_tokens,
                 output_tokens=completion.usage.completion_tokens,
                 cache_read_tokens=cached_tokens,
                 input_cost=completion.usage.prompt_tokens * MODEL_COST_PER_TOKEN[self.model]['input'],  # noqa: E501
@@ -301,8 +303,8 @@ class OpenAI(Client):
                         and hasattr(chunk.usage.prompt_tokens_details, 'cached_tokens')
                     ):
                         cached_tokens += chunk.usage.prompt_tokens_details.cached_tokens
-
             end_time = time.time()
+            input_tokens -= cached_tokens  # remove cached tokens from input tokens
             if self.model in MODEL_COST_PER_TOKEN:
                 input_cost = input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
                 output_cost = output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
@@ -396,9 +398,6 @@ class OpenAITools(Client):
         # Calculate costs
         input_tokens = completion.usage.prompt_tokens
         output_tokens = completion.usage.completion_tokens
-        input_cost = input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
-        output_cost = output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
-
         # these fields may not be available when using openai library for third-party providers
         if (
             hasattr(completion, 'usage')
@@ -407,9 +406,13 @@ class OpenAITools(Client):
         ):
             cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
             cached_cost = cached_tokens * MODEL_COST_PER_TOKEN[self.model].get('cached', 0)
+            input_tokens -= cached_tokens  # remove cached tokens from input tokens
         else:
             cached_tokens = None
             cached_cost = None
+
+        input_cost = input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
+        output_cost = output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
 
         if completion.choices[0].message.tool_calls:
             message = None
