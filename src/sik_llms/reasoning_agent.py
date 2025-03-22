@@ -128,7 +128,7 @@ class ReasoningAgent(Client):
         self.generate_final_response = generate_final_response
 
         self.model_kwargs = model_kwargs.copy()
-        if any(t.func is None for t in tools):
+        if tools and any(t.func is None for t in tools):
             raise ValueError("All tools must have a callable function")
         self.tools = tools or []
         self.max_iterations = max_iterations

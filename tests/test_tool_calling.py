@@ -152,7 +152,6 @@ class TestPydanticModelToParameters:
 
         openai_format = tool.to_openai()
         schema = openai_format['function']['parameters']['properties']
-        print(schema)
         # Verify no default values in schema
         assert 'default' not in schema['phone']
         assert 'street' in schema['address']['properties']

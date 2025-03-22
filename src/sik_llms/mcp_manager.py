@@ -123,6 +123,7 @@ class MCPClientManager:
                 print(f"Connected to {config.name}")
             except Exception as e:
                 print(f"Error connecting to {config.name}: {e}")
+                raise e
 
     async def connect_server(self, config: ServerConfig) -> None:
         """

@@ -394,27 +394,14 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.stochastic(samples=5, threshold=0.5)
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_MODEL,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
-        ),
-    ),
-])
-async def test_reasoning_agent_no_tools_needed(model_name: str):
+# @pytest.mark.stochastic(samples=5, threshold=0.5)
+@pytest.mark.parametrize('tools', [[], None])
+async def test_reasoning_agent_no_tools_needed(tools: list | None):
     """Test the ReasoningAgent with a question that doesn't need tools."""
     # Create the reasoning agent
     agent = ReasoningAgent(
-        model_name=model_name,
-        tools=[],  # No tools
+        model_name=OPENAI_TEST_MODEL,
+        tools=tools,  # No tools
         max_iterations=2,
         temperature=0,
     )
