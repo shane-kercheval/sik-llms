@@ -60,6 +60,7 @@ class TestPydanticModelToParameters:
             a_float: float
             a_bool: bool
             a_list: list[str]
+            list_floats: list[float]
             a_dict: dict[str, int]
 
         params = pydantic_model_to_parameters(AllTypes)
@@ -81,6 +82,8 @@ class TestPydanticModelToParameters:
         assert properties["a_bool"]["type"] == "boolean"
         assert properties["a_list"]["type"] == "array"
         assert properties["a_list"]["items"]["type"] == "string"
+        assert properties["list_floats"]["type"] == "array"
+        assert properties["list_floats"]["items"]["type"] == "number"
         assert properties["a_dict"]["type"] == "object"
         assert properties["a_dict"]["additionalProperties"]["type"] == "integer"
 

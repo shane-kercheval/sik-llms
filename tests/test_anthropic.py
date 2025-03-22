@@ -21,7 +21,7 @@ from sik_llms import (
     ThinkingChunkEvent,
 )
 from sik_llms.anthropic import _convert_messages
-from tests.conftest import ANTHROPIC_TEST_MODEL, ANTRHOPIC_THINKING_MODEL
+from tests.conftest import ANTHROPIC_TEST_MODEL, ANTRHOPIC_TEST_THINKING_MODEL
 load_dotenv()
 
 
@@ -526,7 +526,7 @@ class TestAnthropicReasoning:
         """Test that the extended thinking chunks have the correct content types."""
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
-            model_name=ANTRHOPIC_THINKING_MODEL,
+            model_name=ANTRHOPIC_TEST_THINKING_MODEL,
             reasoning_effort=ReasoningEffort.LOW,
         )
         # Use a prompt that should trigger some thinking content
@@ -551,7 +551,7 @@ class TestAnthropicReasoning:
         """Test that the extended thinking chunks have the correct content types."""
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
-            model_name=ANTRHOPIC_THINKING_MODEL,
+            model_name=ANTRHOPIC_TEST_THINKING_MODEL,
             thinking_budget_tokens=2000,
         )
         # Use a prompt that should trigger some thinking content
@@ -586,7 +586,7 @@ class TestAnthropicReasoning:
         """
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
-            model_name=ANTRHOPIC_THINKING_MODEL,
+            model_name=ANTRHOPIC_TEST_THINKING_MODEL,
             reasoning_effort=ReasoningEffort.LOW,
             temperature=0.5,
         )
@@ -612,7 +612,7 @@ class TestAnthropicReasoning:
         """Test that the extended thinking chunks have the correct content types."""
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
-            model_name=ANTRHOPIC_THINKING_MODEL,
+            model_name=ANTRHOPIC_TEST_THINKING_MODEL,
             thinking_budget_tokens=2000,
         )
         # Use a prompt that should trigger some thinking content
@@ -647,7 +647,7 @@ class TestAnthropicReasoning:
         """Test that the extended thinking chunks have the correct content types."""
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
-            model_name=ANTRHOPIC_THINKING_MODEL,
+            model_name=ANTRHOPIC_TEST_THINKING_MODEL,
         )
         # Use a prompt that should trigger some thinking content
         has_thinking_content = False

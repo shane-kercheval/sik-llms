@@ -140,19 +140,28 @@ class ReasoningAgent(Client):
         if self.tools:
             tools_description = "Here are the available tools:\n\n"
             for tool in self.tools:
-                tools_description += f"- `{tool.name}`:\n"
+                tools_description += f"### `{tool.name.strip()}`:\n\n"
+                tools_description += f"[Name]: \"{tool.name.strip()}\"\n"
                 if tool.description:
-                    tools_description += f"  - Description: {tool.description}\n"
+                    # if multiline description, add block
+                    if "\n" in tool.description:
+                        tools_description += f"[Description]:\n{tool.description.strip()}\n"
+                    else:
+                        tools_description += f"[Description]: {tool.description.strip()}\n"
                 if tool.parameters:
-                    tools_description += "  - Parameters:\n"
+                    tools_description += "[Parameters]:\n"
                     for param in tool.parameters:
                         required_str = "(required)" if param.required else "(optional)"
-                        param_description = f": {param.description}" or ''
-                        tools_description += f"    - `{param.name}` {required_str}{param_description}\n"  # noqa: E501
+                        if param.description:
+                            param_description = f": {param.description.strip()}"
+                        else:
+                            param_description = ""
+                        tools_description += f"  - `{param.name}` {required_str}{param_description}\n"  # noqa: E501
+                tools_description += "\n"
         else:
             tools_description = "No tools available."
 
-        return PROMPT__REASONING_AGENT.replace('{{tools_description}}', tools_description)
+        return PROMPT__REASONING_AGENT.replace('{{tools_description}}', tools_description.strip())
 
     def _get_reasoning_client(self) -> Client:
         """Get the reasoning client."""
@@ -448,6 +457,20 @@ class ReasoningAgent(Client):
                         assistant_message(error_message),
                         user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),  # noqa: E501
                     ])
+            else:
+                # Handle unknown reasoning action
+                error_message = f"Error: Unknown reasoning action '{reasoning_step.next_action}'"
+                yield ErrorEvent(
+                    content=error_message,
+                    metadata={
+                        'reasoning_step': reasoning_step,
+                        'iteration': iteration,
+                    },
+                )
+                reasoning_messages.extend([
+                    assistant_message(error_message),
+                    user_message("Adjust your response based on the error message."),
+                ])
 
         if iteration >= self.max_iterations and (not reasoning_step or reasoning_step.next_action != ReasoningAction.FINISHED):  # noqa: E501
             yield ErrorEvent(
@@ -461,13 +484,14 @@ class ReasoningAgent(Client):
         # Generate the final streaming response using the regular model (not structured output)
         # Create a new model instance without structured output for streaming
         # Prepare the final prompt with all the reasoning history
-        summary_messages = [
-            system_message(PROMPT__ANSWER_AGENT),
-            assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),  # noqa: E501
-            assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
-        ]
         final_answer = ""
         if self.generate_final_response:
+            summary_messages = [
+                system_message(PROMPT__ANSWER_AGENT),
+                assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),  # noqa: E501
+                assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
+                user_message("Please provide the final answer based on your reasoning process above, and any additional explanation if you deem it necessary, which I will deliver to the end-user."),  # noqa: E501
+            ]
             async for chunk in self._get_summary_client().stream(summary_messages):
                 if isinstance(chunk, TextChunkEvent):
                     final_answer += chunk.content

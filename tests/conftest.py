@@ -1,6 +1,7 @@
 """Fixtures for testing the sik_llms module."""
 from dataclasses import dataclass
 import os
+from pathlib import Path
 import pytest
 from sik_llms import Tool, Parameter
 from sik_llms.models_base import RegisteredClients
@@ -26,7 +27,7 @@ OPENAI_TEST_MODEL = 'gpt-4o-mini'
 OPENAI_TEST_REASONING_MODEL = 'o3-mini'
 
 ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku-latest'
-ANTRHOPIC_THINKING_MODEL = 'claude-3-7-sonnet-latest'
+ANTRHOPIC_TEST_THINKING_MODEL = 'claude-3-7-sonnet-latest'
 
 
 @dataclass
@@ -38,12 +39,57 @@ class ClientConfig:
 
 
 @pytest.fixture
-def project_root():
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+def project_root() -> str:
+    """Get the root directory of the project."""
+    return Path(__file__).parent
+
 
 @pytest.fixture
 def test_files_path(project_root: str) -> str:
-    return os.path.join(project_root, 'tests', 'test_files')
+    """Get the path to the test_files directory."""
+    return project_root / 'test_files'
+
+
+@pytest.fixture
+def mcp_fake_server_config(test_files_path: str) -> dict:
+    return {
+        "mcpServers": {
+            "fake-server-text": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--directory",
+                    str(test_files_path),
+                    "mcp",
+                    "run",
+                    "mcp_fake_server_text.py",
+                ],
+            },
+            "fake-server-calculator": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--directory",
+                    str(test_files_path),
+                    "mcp",
+                    "run",
+                    "mcp_fake_server_calculator.py",
+                ],
+            },
+            "fake-server-misc": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--directory",
+                    str(test_files_path),
+                    "mcp",
+                    "run",
+                    "mcp_fake_server_misc.py",
+                ],
+            },
+        },
+    }
+
 
 
 @pytest.fixture
@@ -61,6 +107,7 @@ def simple_weather_tool() -> Tool:
             ),
         ],
     )
+
 
 @pytest.fixture
 def complex_weather_tool() -> Tool:
