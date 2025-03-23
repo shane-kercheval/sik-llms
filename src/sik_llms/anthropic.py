@@ -8,6 +8,8 @@ from anthropic import AsyncAnthropic, Anthropic as SyncAnthropic
 from pydantic import BaseModel
 from sik_llms.models_base import (
     Client,
+    ImageContent,
+    ImageSourceType,
     ModelProvider,
     ModelInfo,
     ErrorEvent,
@@ -141,7 +143,7 @@ def _parse_completion_chunk(chunk) -> TextChunkEvent | None:  # noqa: ANN001
     return None
 
 
-def _convert_messages(
+def _convert_messages(  # noqa: PLR0912
         messages: list[dict],
         cache_content: list[str] | str | None = None,
     ) -> tuple[list[dict], list[dict]]:
@@ -169,8 +171,37 @@ def _convert_messages(
                 'text': text,
                 **msg,
             })
-        else:
-            anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
+        else:  # noqa: PLR5501
+            if isinstance(msg['content'], list):
+                content = []
+                for item in msg['content']:
+                    if isinstance(item, str):
+                        content.append({
+                            "type": "text",
+                            "text": item.strip(),
+                        })
+                    elif isinstance(item, ImageContent):
+                        if item.source_type == ImageSourceType.URL:
+                            content.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "url",
+                                    "url": item.data,
+                                },
+                            })
+                        elif item.source_type == ImageSourceType.BASE64:
+                            content.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": item.media_type,
+                                    "data": item.data,
+                                },
+                            })
+                anthropic_messages.append({'role': msg['role'], 'content': content})
+            else:
+                anthropic_messages.append({'role': msg['role'], 'content': msg['content']})
+
     if cache_content:
         # Based on this example: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
         # ```
