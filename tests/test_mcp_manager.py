@@ -234,3 +234,44 @@ async def test_reasoning_agent_with_calculator(mcp_fake_server_config: dict, mod
         assert last_result.input_tokens > 0, "Should have input tokens"
         assert last_result.output_tokens > 0, "Should have output tokens"
         assert last_result.duration_seconds > 0, "Should have duration"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.stochastic(samples=5, threshold=0.5)
+async def test_reasoning_agent__tool_raises_exception(mcp_error_server_config: dict):
+    """Test the ReasoningAgent with a calculator tool using GPT-4o-mini."""
+    async with MCPClientManager(mcp_error_server_config) as manager:
+        agent = ReasoningAgent(
+            model_name=OPENAI_TEST_MODEL,
+            tools=manager.get_tools(),
+            max_iterations=2,
+            temperature=0,
+        )
+
+        results = []
+        async for result in agent.stream([user_message("This is a test. Call the `error_async` tool and pass in 'test' as the `text` parameter.")]):  # noqa: E501
+            results.append(result)
+
+        # Check that we got the expected results
+        thinking_events = [r for r in results if isinstance(r, ThinkingEvent)]
+        assert len(thinking_events) > 0, "Should have thinking events"
+
+        error_events = [r for r in results if isinstance(r, ErrorEvent)]
+        assert len(error_events) > 0, "Should have errors"
+        assert "Error executing tool" in error_events[0].content
+
+        tool_prediction_events = [r for r in results if isinstance(r, ToolPredictionEvent)]
+        assert len(tool_prediction_events) > 0, "Should have tool prediction events"
+        assert tool_prediction_events[0].name == "error_async"
+
+        tool_result_events = [r for r in results if isinstance(r, ToolResultEvent)]
+        assert len(tool_result_events) == 0, "Should not have tool result events since the tool raised an exception"  # noqa: E501
+
+        # Last result should be a TextResponse with summary
+        last_result = results[-1]
+        assert last_result.input_tokens > 0, "Should have input tokens"
+        assert last_result.output_tokens > 0, "Should have output tokens"
+        assert last_result.duration_seconds > 0, "Should have duration"
+
+

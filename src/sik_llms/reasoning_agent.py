@@ -271,12 +271,12 @@ class ReasoningAgent(Client):
             # Update token usage
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
-            total_cache_read_tokens += response.cache_read_tokens
-            total_cache_write_tokens += response.cache_write_tokens
+            total_cache_read_tokens += response.cache_read_tokens or 0
+            total_cache_write_tokens += response.cache_write_tokens or 0
             total_input_cost += response.input_cost
             total_output_cost += response.output_cost
-            total_cache_read_cost += response.cache_read_cost
-            total_cache_write_cost += response.cache_write_cost
+            total_cache_read_cost += response.cache_read_cost or 0
+            total_cache_write_cost += response.cache_write_cost or 0
 
             # Parse the reasoning step
             reasoning_step: ReasoningStep = response.parsed
@@ -364,12 +364,12 @@ class ReasoningAgent(Client):
                     # Update token usage
                     total_input_tokens += tool_response.input_tokens
                     total_output_tokens += tool_response.output_tokens
-                    total_cache_read_tokens += tool_response.cache_read_tokens
-                    total_cache_write_tokens += tool_response.cache_write_tokens
+                    total_cache_read_tokens += tool_response.cache_read_tokens or 0
+                    total_cache_write_tokens += tool_response.cache_write_tokens or 0
                     total_input_cost += tool_response.input_cost
                     total_output_cost += tool_response.output_cost
-                    total_cache_read_cost += tool_response.cache_read_cost
-                    total_cache_write_cost += tool_response.cache_write_cost
+                    total_cache_read_cost += tool_response.cache_read_cost or 0
+                    total_cache_write_cost += tool_response.cache_write_cost or 0
 
                     if tool_response.tool_prediction:
                         # Use the tool name and arguments from the prediction
@@ -517,12 +517,12 @@ class ReasoningAgent(Client):
                     # Update token usage stats
                     total_input_tokens += chunk.input_tokens
                     total_output_tokens += chunk.output_tokens
-                    total_cache_read_tokens += chunk.cache_read_tokens
-                    total_cache_write_tokens += chunk.cache_write_tokens
+                    total_cache_read_tokens += chunk.cache_read_tokens or 0
+                    total_cache_write_tokens += chunk.cache_write_tokens or 0
                     total_input_cost += chunk.input_cost
                     total_output_cost += chunk.output_cost
-                    total_cache_read_cost += chunk.cache_read_cost
-                    total_cache_write_cost += chunk.cache_write_cost
+                    total_cache_read_cost += chunk.cache_read_cost or 0
+                    total_cache_write_cost += chunk.cache_write_cost or 0
 
         # Calculate total duration
         end_time = asyncio.get_event_loop().time()
