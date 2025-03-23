@@ -473,13 +473,18 @@ class ReasoningAgent(Client):
                 ])
 
         if iteration >= self.max_iterations and (not reasoning_step or reasoning_step.next_action != ReasoningAction.FINISHED):  # noqa: E501
+            error_message = f"Maximum iterations ({self.max_iterations}) reached."
             yield ErrorEvent(
-                content=f"Maximum iterations ({self.max_iterations}) reached. Generating best answer with current information.",  # noqa: E501
+                content=error_message,  # noqa: E501
                 metadata={
                     'max_iterations': self.max_iterations,
                     'iteration': iteration,
                 },
             )
+            reasoning_history.append({
+                'iteration': iteration,
+                'error': error_message,
+            })
 
         # Generate the final streaming response using the regular model (not structured output)
         # Create a new model instance without structured output for streaming
