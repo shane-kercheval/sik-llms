@@ -230,8 +230,12 @@ class ReasoningAgent(Client):
         # Track the total usage stats
         total_input_tokens = 0
         total_output_tokens = 0
+        total_cache_read_tokens = 0
+        total_cache_write_tokens = 0
         total_input_cost = 0
         total_output_cost = 0
+        total_cache_read_cost = 0
+        total_cache_write_cost = 0
         # Get the last message from the user; treat the previous messages as text/context
         if len(messages) == 0:
             raise ValueError("No messages provided.")
@@ -267,8 +271,12 @@ class ReasoningAgent(Client):
             # Update token usage
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
+            total_cache_read_tokens += response.cache_read_tokens
+            total_cache_write_tokens += response.cache_write_tokens
             total_input_cost += response.input_cost
             total_output_cost += response.output_cost
+            total_cache_read_cost += response.cache_read_cost
+            total_cache_write_cost += response.cache_write_cost
 
             # Parse the reasoning step
             reasoning_step: ReasoningStep = response.parsed
@@ -352,12 +360,16 @@ class ReasoningAgent(Client):
 
                     # Get the tools client for this specific tool
                     tools_client = self._get_tools_client(tool_name)
-                    tool_response = tools_client(tool_messages)
+                    tool_response = await tools_client.run_async(tool_messages)
                     # Update token usage
                     total_input_tokens += tool_response.input_tokens
                     total_output_tokens += tool_response.output_tokens
+                    total_cache_read_tokens += tool_response.cache_read_tokens
+                    total_cache_write_tokens += tool_response.cache_write_tokens
                     total_input_cost += tool_response.input_cost
                     total_output_cost += tool_response.output_cost
+                    total_cache_read_cost += tool_response.cache_read_cost
+                    total_cache_write_cost += tool_response.cache_write_cost
 
                     if tool_response.tool_prediction:
                         # Use the tool name and arguments from the prediction
@@ -505,8 +517,12 @@ class ReasoningAgent(Client):
                     # Update token usage stats
                     total_input_tokens += chunk.input_tokens
                     total_output_tokens += chunk.output_tokens
+                    total_cache_read_tokens += chunk.cache_read_tokens
+                    total_cache_write_tokens += chunk.cache_write_tokens
                     total_input_cost += chunk.input_cost
                     total_output_cost += chunk.output_cost
+                    total_cache_read_cost += chunk.cache_read_cost
+                    total_cache_write_cost += chunk.cache_write_cost
 
         # Calculate total duration
         end_time = asyncio.get_event_loop().time()
@@ -517,7 +533,11 @@ class ReasoningAgent(Client):
             response=final_answer,
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
+            cache_read_tokens=total_cache_read_tokens,
+            cache_write_tokens=total_cache_write_tokens,
             input_cost=total_input_cost,
             output_cost=total_output_cost,
+            cache_read_cost=total_cache_read_cost,
+            cache_write_cost=total_cache_write_cost,
             duration_seconds=duration,
         )

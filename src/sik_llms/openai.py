@@ -144,7 +144,8 @@ def num_tokens_from_messages(model_name: str, messages: list[dict]) -> int:
 
 
 def _parse_completion_chunk(chunk) -> TextChunkEvent:  # noqa: ANN001
-    assert chunk.object == 'chat.completion.chunk'
+    if chunk.object != 'chat.completion.chunk':
+        raise ValueError(f"Unexpected object type: {chunk.object}")
     log_prob = None
     if chunk.choices[0].logprobs:
         log_prob = chunk.choices[0].logprobs.content[0].logprob

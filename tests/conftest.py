@@ -91,6 +91,24 @@ def mcp_fake_server_config(test_files_path: str) -> dict:
     }
 
 
+@pytest.fixture
+def mcp_error_server_config(test_files_path: str) -> dict:
+    return {
+        "mcpServers": {
+            "fake-server-error": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--directory",
+                    str(test_files_path),
+                    "mcp",
+                    "run",
+                    "mcp_fake_server_error.py",
+                ],
+            },
+        },
+    }
+
 
 @pytest.fixture
 def simple_weather_tool() -> Tool:

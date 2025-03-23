@@ -81,7 +81,7 @@ async def test_mcp_manager(mcp_fake_server_config: dict):
 
 
 @pytest.mark.asyncio
-async def test_mcp_tool_calling(mcp_fake_server_config: dict):
+async def test_mcp_tool_calling__async(mcp_fake_server_config: dict):
     async with MCPClientManager(mcp_fake_server_config) as manager:
         ####
         # Calling the tool from the .func method of Tool object should behave the same as calling
@@ -99,6 +99,60 @@ async def test_mcp_tool_calling(mcp_fake_server_config: dict):
         assert isinstance(result_tool_call.content[0], TextContent)
         assert result_tool_call.isError is False
         assert result_tool_call.content[0].text == 'fdsa'
+
+@pytest.mark.asyncio
+async def test_mcp_tool_calling__sync(mcp_fake_server_config: dict):
+    async with MCPClientManager(mcp_fake_server_config) as manager:
+        ####
+        # calculator in mcp_fake_server_calculator.py is a sync function
+        ####
+        args = {'expression': '2 + 2'}
+
+        tool = manager.get_tool('calculator')
+        result = await tool.func(**args)
+        assert result == '4'
+
+        result_tool_call = await manager.call_tool('calculator', args)
+        assert isinstance(result_tool_call, CallToolResult)
+        assert isinstance(result_tool_call.content[0], TextContent)
+        assert result_tool_call.isError is False
+        assert result_tool_call.content[0].text == '4'
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_calling__error_async(mcp_error_server_config: dict):
+    async with MCPClientManager(mcp_error_server_config) as manager:
+        ####
+        # calculator in mcp_fake_server_calculator.py is a sync function
+        ####
+        args = {'text': 'this is text'}
+        tool = manager.get_tool('error_async')
+        with pytest.raises(Exception, match="An error occurred"):
+            _ = await tool.func(**args)
+
+        result_tool_call = await manager.call_tool('error_async', args)
+        assert isinstance(result_tool_call, CallToolResult)
+        assert isinstance(result_tool_call.content[0], TextContent)
+        assert result_tool_call.isError is True
+        assert "An error occurred" in result_tool_call.content[0].text
+
+
+@pytest.mark.asyncio
+async def test_mcp_tool_calling__error_sync(mcp_error_server_config: dict):
+    async with MCPClientManager(mcp_error_server_config) as manager:
+        ####
+        # calculator in mcp_fake_server_calculator.py is a sync function
+        ####
+        args = {'text': 'this is text'}
+        tool = manager.get_tool('error_sync')
+        with pytest.raises(Exception, match="An error occurred"):
+            _ = await tool.func(**args)
+
+        result_tool_call = await manager.call_tool('error_async', args)
+        assert isinstance(result_tool_call, CallToolResult)
+        assert isinstance(result_tool_call.content[0], TextContent)
+        assert result_tool_call.isError is True
+        assert "An error occurred" in result_tool_call.content[0].text
 
 
 @pytest.mark.asyncio
@@ -123,6 +177,7 @@ async def test_reasoning_agent_with_mcp__test_prompt(
         ]
         for tool in expected_tools:
             assert tool in prompt
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration

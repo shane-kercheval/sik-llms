@@ -246,7 +246,7 @@ class MCPClientManager:
         async def wrapper(**kwargs: object) -> str:
             result = await self.call_tool(tool_name, kwargs)
             if result.isError:
-                raise result.content[0].text
+                raise Exception(result.content[0].text)
             return result.content[0].text
 
         tool_description = mcp_tool.description.strip() if mcp_tool.description else None
