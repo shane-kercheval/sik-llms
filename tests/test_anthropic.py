@@ -45,6 +45,7 @@ class TestAnthropicSync:  # noqa: D101
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
             model_name=ANTHROPIC_TEST_MODEL,
+            api_key='fake_key',
             temperature=0.5,
             max_tokens=100,
         )
@@ -57,6 +58,7 @@ class TestAnthropicSync:  # noqa: D101
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
             model_name=ANTHROPIC_TEST_MODEL,
+            api_key='fake_key',
         )
         assert isinstance(model, Anthropic)
         assert model.model == ANTHROPIC_TEST_MODEL
