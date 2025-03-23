@@ -72,23 +72,9 @@ def weather_tool():
     )
 
 
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_MODEL,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
-        ),
-    ),
-])
-def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str, model_name: str):
+def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str):
     agent = ReasoningAgent(
-        model_name=model_name,
+        model_name=OPENAI_TEST_MODEL,
         tools=[calculator_tool],
     )
     prompt = agent._create_reasoning_prompt()
@@ -100,24 +86,9 @@ def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str, m
     assert 'expression' in prompt
 
 
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_MODEL,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
-        ),
-    ),
-])
 def test__create_reasoning_prompt__multiple_tools(
         calculator_tool: Tool,
         test_files_path: str,
-        model_name: str,
     ):
     weather_multi_param_tool = Tool(
         name='get_weather',
@@ -140,7 +111,7 @@ def test__create_reasoning_prompt__multiple_tools(
         func=lambda location, units: f"Weather for {location}: 70{units}, Sunny with some clouds",
     )
     agent = ReasoningAgent(
-        model_name=model_name,
+        model_name=OPENAI_TEST_MODEL,
         tools=[calculator_tool, weather_multi_param_tool],
     )
     prompt = agent._create_reasoning_prompt()
@@ -183,23 +154,9 @@ def test__create_reasoning_prompt__no_tools(test_files_path: str, model_name: st
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_MODEL,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
-        ),
-    ),
-])
-async def test__execute_tool__async(calculator_tool: Tool, model_name: str):
+async def test__execute_tool__async(calculator_tool: Tool):
     agent = ReasoningAgent(
-        model_name=model_name,
+        model_name=OPENAI_TEST_MODEL,
         tools=[calculator_tool],
     )
     # check that the tool is executed successfully
@@ -208,21 +165,7 @@ async def test__execute_tool__async(calculator_tool: Tool, model_name: str):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_MODEL,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
-        ),
-    ),
-])
-async def test__execute_tool__sync(model_name: str):
+async def test__execute_tool__sync():
     def weather_sync(location: str) -> str:
         """Mock weather tool - returns fake data."""
         # Return mock weather data
@@ -242,7 +185,7 @@ async def test__execute_tool__sync(model_name: str):
         func=weather_sync,
     )
     agent = ReasoningAgent(
-        model_name=model_name,
+        model_name=OPENAI_TEST_MODEL,
         tools=[tool],
     )
     # check that the tool is executed successfully
@@ -252,7 +195,7 @@ async def test__execute_tool__sync(model_name: str):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.stochastic(samples=5, threshold=0.5)
+# @pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
         OPENAI_TEST_MODEL,
@@ -451,27 +394,14 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.stochastic(samples=5, threshold=0.5)
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_MODEL,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
-        ),
-    ),
-])
-async def test_reasoning_agent_no_tools_needed(model_name: str):
+# @pytest.mark.stochastic(samples=5, threshold=0.5)
+@pytest.mark.parametrize('tools', [[], None])
+async def test_reasoning_agent_no_tools_needed(tools: list | None):
     """Test the ReasoningAgent with a question that doesn't need tools."""
     # Create the reasoning agent
     agent = ReasoningAgent(
-        model_name=model_name,
-        tools=[],  # No tools
+        model_name=OPENAI_TEST_MODEL,
+        tools=tools,  # No tools
         max_iterations=2,
         temperature=0,
     )

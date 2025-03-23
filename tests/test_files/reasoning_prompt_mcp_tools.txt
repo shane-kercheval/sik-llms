@@ -14,7 +14,64 @@ You are a reasoning agent that solves problems step-by-step.
 
 ## Tools
 
-{{tools_description}}
+Here are the available tools:
+
+### `reverse_text`:
+
+[Name]: "reverse_text"
+[Description]:
+Reverse the input text.
+
+Args:
+    text: The text to reverse
+[Parameters]:
+  - `text` (required)
+
+### `count_characters`:
+
+[Name]: "count_characters"
+[Description]:
+Count the number of words in a text.
+
+Args:
+    text: The text to analyze
+[Parameters]:
+  - `text` (required)
+
+### `calculator_sum`:
+
+[Name]: "calculator_sum"
+[Description]:
+Calculate the sum of a list of numbers.
+
+Args:
+    numbers: List of numbers to sum
+[Parameters]:
+  - `numbers` (required)
+
+### `calculator`:
+
+[Name]: "calculator"
+[Description]:
+Calculate the expresion.
+
+Args:
+    expression: a string with a simple arithmetic expression
+[Parameters]:
+  - `expression` (required)
+
+### `get_weather`:
+
+[Name]: "get_weather"
+[Description]:
+Get the weather for a location.
+
+Args:
+    location: The city and country for weather info.
+    units: The temperature unit to use (celsius or fahrenheit).
+[Parameters]:
+  - `location` (required)
+  - `units` (required): Enum for weather units.
 
 ## Instructions
 

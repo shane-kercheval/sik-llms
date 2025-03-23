@@ -128,7 +128,7 @@ class ReasoningAgent(Client):
         self.generate_final_response = generate_final_response
 
         self.model_kwargs = model_kwargs.copy()
-        if any(t.func is None for t in tools):
+        if tools and any(t.func is None for t in tools):
             raise ValueError("All tools must have a callable function")
         self.tools = tools or []
         self.max_iterations = max_iterations
@@ -140,19 +140,28 @@ class ReasoningAgent(Client):
         if self.tools:
             tools_description = "Here are the available tools:\n\n"
             for tool in self.tools:
-                tools_description += f"- `{tool.name}`:\n"
+                tools_description += f"### `{tool.name.strip()}`:\n\n"
+                tools_description += f"[Name]: \"{tool.name.strip()}\"\n"
                 if tool.description:
-                    tools_description += f"  - Description: {tool.description}\n"
+                    # if multiline description, add block
+                    if "\n" in tool.description:
+                        tools_description += f"[Description]:\n{tool.description.strip()}\n"
+                    else:
+                        tools_description += f"[Description]: {tool.description.strip()}\n"
                 if tool.parameters:
-                    tools_description += "  - Parameters:\n"
+                    tools_description += "[Parameters]:\n"
                     for param in tool.parameters:
                         required_str = "(required)" if param.required else "(optional)"
-                        param_description = f": {param.description}" or ''
-                        tools_description += f"    - `{param.name}` {required_str}{param_description}\n"  # noqa: E501
+                        if param.description:
+                            param_description = f": {param.description.strip()}"
+                        else:
+                            param_description = ""
+                        tools_description += f"  - `{param.name}` {required_str}{param_description}\n"  # noqa: E501
+                tools_description += "\n"
         else:
             tools_description = "No tools available."
 
-        return PROMPT__REASONING_AGENT.replace('{{tools_description}}', tools_description)
+        return PROMPT__REASONING_AGENT.replace('{{tools_description}}', tools_description.strip())
 
     def _get_reasoning_client(self) -> Client:
         """Get the reasoning client."""
@@ -221,8 +230,12 @@ class ReasoningAgent(Client):
         # Track the total usage stats
         total_input_tokens = 0
         total_output_tokens = 0
+        total_cache_read_tokens = 0
+        total_cache_write_tokens = 0
         total_input_cost = 0
         total_output_cost = 0
+        total_cache_read_cost = 0
+        total_cache_write_cost = 0
         # Get the last message from the user; treat the previous messages as text/context
         if len(messages) == 0:
             raise ValueError("No messages provided.")
@@ -258,8 +271,12 @@ class ReasoningAgent(Client):
             # Update token usage
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
+            total_cache_read_tokens += response.cache_read_tokens or 0
+            total_cache_write_tokens += response.cache_write_tokens or 0
             total_input_cost += response.input_cost
             total_output_cost += response.output_cost
+            total_cache_read_cost += response.cache_read_cost or 0
+            total_cache_write_cost += response.cache_write_cost or 0
 
             # Parse the reasoning step
             reasoning_step: ReasoningStep = response.parsed
@@ -343,12 +360,16 @@ class ReasoningAgent(Client):
 
                     # Get the tools client for this specific tool
                     tools_client = self._get_tools_client(tool_name)
-                    tool_response = tools_client(tool_messages)
+                    tool_response = await tools_client.run_async(tool_messages)
                     # Update token usage
                     total_input_tokens += tool_response.input_tokens
                     total_output_tokens += tool_response.output_tokens
+                    total_cache_read_tokens += tool_response.cache_read_tokens or 0
+                    total_cache_write_tokens += tool_response.cache_write_tokens or 0
                     total_input_cost += tool_response.input_cost
                     total_output_cost += tool_response.output_cost
+                    total_cache_read_cost += tool_response.cache_read_cost or 0
+                    total_cache_write_cost += tool_response.cache_write_cost or 0
 
                     if tool_response.tool_prediction:
                         # Use the tool name and arguments from the prediction
@@ -448,26 +469,46 @@ class ReasoningAgent(Client):
                         assistant_message(error_message),
                         user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),  # noqa: E501
                     ])
+            else:
+                # Handle unknown reasoning action
+                error_message = f"Error: Unknown reasoning action '{reasoning_step.next_action}'"
+                yield ErrorEvent(
+                    content=error_message,
+                    metadata={
+                        'reasoning_step': reasoning_step,
+                        'iteration': iteration,
+                    },
+                )
+                reasoning_messages.extend([
+                    assistant_message(error_message),
+                    user_message("Adjust your response based on the error message."),
+                ])
 
         if iteration >= self.max_iterations and (not reasoning_step or reasoning_step.next_action != ReasoningAction.FINISHED):  # noqa: E501
+            error_message = f"Maximum iterations ({self.max_iterations}) reached."
             yield ErrorEvent(
-                content=f"Maximum iterations ({self.max_iterations}) reached. Generating best answer with current information.",  # noqa: E501
+                content=error_message,
                 metadata={
                     'max_iterations': self.max_iterations,
                     'iteration': iteration,
                 },
             )
+            reasoning_history.append({
+                'iteration': iteration,
+                'error': error_message,
+            })
 
         # Generate the final streaming response using the regular model (not structured output)
         # Create a new model instance without structured output for streaming
         # Prepare the final prompt with all the reasoning history
-        summary_messages = [
-            system_message(PROMPT__ANSWER_AGENT),
-            assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),  # noqa: E501
-            assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
-        ]
         final_answer = ""
         if self.generate_final_response:
+            summary_messages = [
+                system_message(PROMPT__ANSWER_AGENT),
+                assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),  # noqa: E501
+                assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
+                user_message("Please provide the final answer based on your reasoning process above, and any additional explanation if you deem it necessary, which I will deliver to the end-user."),  # noqa: E501
+            ]
             async for chunk in self._get_summary_client().stream(summary_messages):
                 if isinstance(chunk, TextChunkEvent):
                     final_answer += chunk.content
@@ -476,8 +517,12 @@ class ReasoningAgent(Client):
                     # Update token usage stats
                     total_input_tokens += chunk.input_tokens
                     total_output_tokens += chunk.output_tokens
+                    total_cache_read_tokens += chunk.cache_read_tokens or 0
+                    total_cache_write_tokens += chunk.cache_write_tokens or 0
                     total_input_cost += chunk.input_cost
                     total_output_cost += chunk.output_cost
+                    total_cache_read_cost += chunk.cache_read_cost or 0
+                    total_cache_write_cost += chunk.cache_write_cost or 0
 
         # Calculate total duration
         end_time = asyncio.get_event_loop().time()
@@ -488,7 +533,11 @@ class ReasoningAgent(Client):
             response=final_answer,
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
+            cache_read_tokens=total_cache_read_tokens,
+            cache_write_tokens=total_cache_write_tokens,
             input_cost=total_input_cost,
             output_cost=total_output_cost,
+            cache_read_cost=total_cache_read_cost,
+            cache_write_cost=total_cache_write_cost,
             duration_seconds=duration,
         )
