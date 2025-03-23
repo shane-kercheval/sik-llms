@@ -65,10 +65,10 @@ class TestOpenAIRegistration:
         assert isinstance(response, TextResponse)
         assert 'Paris' in response.response
 
-    async def test__openai__compatible_server_instantiate___parameters_max_tokens(self):
+    async def test__openai__compatible_server_instantiate___parameters_max_completion_tokens(self):
         model_config = {
             'server_url': 'http://localhost:8000',
-            'max_tokens': 10,
+            'max_completion_tokens': 10,
         }
         client = Client.instantiate(
             client_type=RegisteredClients.OPENAI,
@@ -77,7 +77,7 @@ class TestOpenAIRegistration:
         )
         assert isinstance(client, OpenAI)
         assert client.model == 'openai-compatible-server'
-        assert client.model_parameters['max_tokens'] == 10
+        assert client.model_parameters['max_completion_tokens'] == 10
 
     async def test__openai__tools_instantiate(self):
         client = Client.instantiate(

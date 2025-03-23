@@ -3,6 +3,8 @@ from enum import Enum
 from sik_llms.models_base import (
     Client,
     RegisteredClients,
+    ModelProvider,
+    ModelInfo,
     user_message,
     assistant_message,
     system_message,
@@ -26,21 +28,26 @@ from sik_llms.models_base import (
 from sik_llms.openai import (
     OpenAI,
     OpenAITools,
-    CHAT_MODEL_COST_PER_TOKEN as OPENAI_CHAT_MODEL_COST_PER_TOKEN,
+    SUPPORTED_OPENAI_MODELS,
 )
 from sik_llms.anthropic import (
     Anthropic,
     AnthropicTools,
-    CHAT_MODEL_COST_PER_TOKEN as ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN,
+    SUPPORTED_ANTHROPIC_MODELS,
 )
 from sik_llms.reasoning_agent import ReasoningAgent
+
+SUPPORTED_MODELS: dict[str, ModelInfo] = {
+    **SUPPORTED_OPENAI_MODELS,
+    **SUPPORTED_ANTHROPIC_MODELS,
+}
 
 def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
     if client_type:
         return client_type
-    if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
+    if model_name in SUPPORTED_OPENAI_MODELS:
         return RegisteredClients.OPENAI
-    if model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
+    if model_name in SUPPORTED_ANTHROPIC_MODELS:
         return RegisteredClients.ANTHROPIC
     raise ValueError(f"Unknown model name '{model_name}'")
 
@@ -79,6 +86,8 @@ __all__ = [  # noqa: RUF022
     'create_client',
     'Client',
     'RegisteredClients',
+    'ModelProvider',
+    'ModelInfo',
     'user_message',
     'assistant_message',
     'system_message',

@@ -1,5 +1,6 @@
 """Base classes and utilities for models."""
 import asyncio
+from datetime import date
 import inspect
 import types
 import nest_asyncio
@@ -10,6 +11,14 @@ from copy import deepcopy
 from enum import Enum, auto
 from typing import Any, Literal, TypeVar, Union, get_args, get_origin
 from sik_llms.utilities import Registry, get_json_schema_type
+
+
+class ModelProvider(Enum):
+    """Enum for model providers."""
+
+    OPENAI = 'OpenAI'
+    ANTHROPIC = 'Anthropic'
+    OTHER = 'Other'
 
 
 class RegisteredClients(Enum):
@@ -28,6 +37,22 @@ class ReasoningEffort(Enum):
     LOW = 'low'
     MEDIUM = 'medium'
     HIGH = 'high'
+
+
+class ModelInfo(BaseModel):
+    """Information about the model."""
+
+    model: str
+    provider: ModelProvider
+    max_output_tokens: int
+    context_window_size: int
+    pricing: dict[str, float] | None = None
+    supports_reasoning: bool = False
+    supports_tools: bool = False
+    supports_structured_output: bool = False
+    supports_images: bool = False
+    knowledge_cutoff_date: date | None = None
+    metadata: dict[str, Any] | None = None
 
 
 def user_message(content: str) -> dict:

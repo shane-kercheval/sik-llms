@@ -41,7 +41,6 @@ class TestAnthropicSync:  # noqa: D101
         assert model.client is not None
         assert model.client.api_key == 'fake_key'
 
-    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")  # noqa: E501
     def test__Anthropic_instantiate___parameters(self):
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
@@ -53,6 +52,15 @@ class TestAnthropicSync:  # noqa: D101
         assert model.model == ANTHROPIC_TEST_MODEL
         assert model.model_parameters['temperature'] == 0.5
         assert model.model_parameters['max_tokens'] == 100
+
+    def test__Anthropic_instantiate___default_max_tokens(self):
+        model = Client.instantiate(
+            client_type=RegisteredClients.ANTHROPIC,
+            model_name=ANTHROPIC_TEST_MODEL,
+        )
+        assert isinstance(model, Anthropic)
+        assert model.model == ANTHROPIC_TEST_MODEL
+        assert model.model_parameters['max_tokens'] > 0
 
 
 @pytest.mark.asyncio
@@ -498,7 +506,7 @@ class TestAnthropicReasoning:
     def test__Anthropic_instantiate__with_reasoning_effort(self, reasoning_effort: ReasoningEffort):  # noqa: E501
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
-            model_name=ANTHROPIC_TEST_MODEL,
+            model_name=ANTRHOPIC_TEST_THINKING_MODEL,
             reasoning_effort=reasoning_effort,
             max_tokens=4000,
         )
@@ -511,7 +519,7 @@ class TestAnthropicReasoning:
     def test__Anthropic_instantiate__with_thinking_budget(self):
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
-            model_name=ANTHROPIC_TEST_MODEL,
+            model_name=ANTRHOPIC_TEST_THINKING_MODEL,
             thinking_budget_tokens=12000,
             max_tokens=4000,
         )

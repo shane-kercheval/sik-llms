@@ -54,10 +54,12 @@ class TestClientRegistration:
             'MockClient',
             model_name='test-model',
             temperature=0.7,
+            max_tokens=1000,
         )
         assert isinstance(client, RegisteredMockClient)
         assert client.model_name == 'test-model'
         assert client.kwargs['temperature'] == 0.7
+        assert client.kwargs['max_tokens'] == 1000
 
         # Test instantiation with enum registration
         client = Client.instantiate(
@@ -66,7 +68,8 @@ class TestClientRegistration:
             max_tokens=100,
         )
         assert client.model == 'gpt-4o'
-        assert client.model_parameters['max_tokens'] == 100
+        # openai deprecated max_tokens in favor of max_completion_tokens
+        assert client.model_parameters['max_completion_tokens'] == 100
 
     def test_model_kwargs_not_modified(self):
         original_kwargs = {'temperature': 0.7, 'max_tokens': 100}

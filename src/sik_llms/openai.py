@@ -1,5 +1,6 @@
 """Helper functions for OpenAI API."""
 from copy import deepcopy
+from datetime import date
 from functools import cache
 import json
 import os
@@ -10,6 +11,8 @@ from pydantic import BaseModel
 import tiktoken
 from tiktoken import Encoding
 from sik_llms.models_base import (
+    ModelInfo,
+    ModelProvider,
     Tool,
     ToolPredictionResponse,
     ToolPrediction,
@@ -24,67 +27,89 @@ from sik_llms.models_base import (
 from dotenv import load_dotenv
 load_dotenv()
 
+# Define all OpenAI models
+OPENAI_MODEL_INFOS = [
+    ModelInfo(
+        model='gpt-4o-mini-2024-07-18',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=16_384,
+        context_window_size=128_000,
+        pricing={
+            'input': 0.15 / 1_000_000, 'output': 0.60 / 1_000_000,
+            'cached': 0.075 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2023, month=9, day=30),
+    ),
 
-CHAT_MODEL_COST_PER_TOKEN = {
-    # minor versions
-    'gpt-4o-2024-05-13': {
-        'input': 5.00 / 1_000_000, 'output': 15.00 / 1_000_000,
-        'cached': 1.25 / 1_000_000,
-    },
-    'gpt-4o-2024-08-06': {
-        'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000,
-        'cached': 1.25 / 1_000_000,
-    },
-    'gpt-4o-2024-11-20': {
-        'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000,
-        'cached': 1.25 / 1_000_000,
-    },
-    'gpt-4o-mini-2024-07-18':  {
-        'input': 0.15 / 1_000_000, 'output': 0.60 / 1_000_000,
-        'cached': 0.075 / 1_000_000,
-    },
-    'o1-2024-12-17': {
-        'input': 15.00 / 1_000_000, 'output': 60.00 / 1_000_000,
-        'cached': 7.50 / 1_000_000,
-    },
-    'o3-mini-2025-01-31': {
-        'input': 1.10 / 1_000_000, 'output': 4.40 / 1_000_000,
-        'cached': 0.55 / 1_000_000,
-    },
-    # LEGACY MODELS
-    'gpt-4-turbo': {'input': 10.00 / 1_000_000, 'output': 30.00 / 1_000_000},
-    'gpt-4-turbo-2024-04-09': {'input': 10.00 / 1_000_000, 'output': 30.00 / 1_000_000},
-    'gpt-4-0125-preview': {'input': 0.01 / 1_000, 'output': 0.03 / 1_000},
-    'gpt-3.5-turbo': {'input': 0.50 / 1_000_000, 'output': 1.50 / 1_000_000},
-    'gpt-3.5-turbo-0125': {'input': 0.50 / 1_000_000, 'output': 1.50 / 1_000_000},
-    'gpt-4-0613': {'input': 0.03 / 1_000, 'output': 0.06 / 1_000},
-}
-CHAT_MODEL_COST_PER_TOKEN_PRIMARY = {
-    'gpt-4o-mini': CHAT_MODEL_COST_PER_TOKEN['gpt-4o-mini-2024-07-18'],
-    'gpt-4o': CHAT_MODEL_COST_PER_TOKEN['gpt-4o-2024-11-20'],
-    'o1': CHAT_MODEL_COST_PER_TOKEN['o1-2024-12-17'],
-    'o3-mini': CHAT_MODEL_COST_PER_TOKEN['o3-mini-2025-01-31'],
-}
-CHAT_MODEL_COST_PER_TOKEN.update(CHAT_MODEL_COST_PER_TOKEN_PRIMARY)
+    ModelInfo(
+        model='gpt-4o-2024-08-06',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=16_384,
+        context_window_size=128_000,
+        pricing={
+            'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000,
+            'cached': 1.25 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2023, month=9, day=30),
+    ),
+    ModelInfo(
+        model='gpt-4o-2024-11-20',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=16_384,
+        context_window_size=128_000,
+        pricing={
+            'input': 2.50 / 1_000_000, 'output': 10.00 / 1_000_000,
+            'cached': 1.25 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2023, month=9, day=30),
+    ),
 
+    ModelInfo(
+        model='o3-mini-2025-01-31',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=100_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 1.10 / 1_000_000, 'output': 4.40 / 1_000_000,
+            'cached': 0.55 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2023, month=9, day=30),
+    ),
+    ModelInfo(
+        model='o1-2024-12-17',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=100_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 15.00 / 1_000_000, 'output': 60.00 / 1_000_000,
+            'cached': 7.50 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2023, month=9, day=30),
+    ),
+]
 
-EMBEDDING_MODEL_COST_PER_TOKEN = {
-    # "Prices are per 1,000 tokens. You can think of tokens as pieces of words, where 1,000 tokens
-    # is about 750 words. This paragraph is 35 tokens."
-    # https://openai.com/pricing
-    # https://platform.openai.com/docs/models
-    ####
-    # Embedding models
-    ####
-    # LATEST MODELS
-    # https://openai.com/blog/new-embedding-models-and-api-updates
-    'text-embedding-3-small': 0.02 / 1_000_000,
-    'text-embedding-3-large': 0.13 / 1_000_000,
-    # LEGACY MODELS
-    'text-embedding-ada-002': 0.1 / 1_000_000,
-}
-
-MODEL_COST_PER_TOKEN = CHAT_MODEL_COST_PER_TOKEN | EMBEDDING_MODEL_COST_PER_TOKEN
+SUPPORTED_OPENAI_MODELS = {model.model: model for model in OPENAI_MODEL_INFOS}
+SUPPORTED_OPENAI_MODELS['gpt-4o-mini'] = SUPPORTED_OPENAI_MODELS['gpt-4o-mini-2024-07-18']
+SUPPORTED_OPENAI_MODELS['gpt-4o'] = SUPPORTED_OPENAI_MODELS['gpt-4o-2024-11-20']
+SUPPORTED_OPENAI_MODELS['o3-mini'] = SUPPORTED_OPENAI_MODELS['o3-mini-2025-01-31']
+SUPPORTED_OPENAI_MODELS['o1'] = SUPPORTED_OPENAI_MODELS['o1-2024-12-17']
 
 
 @cache
@@ -203,6 +228,12 @@ class OpenAI(Client):
         """
         Initialize the wrapper.
 
+        NOTE: max_tokens is deprecated in favor of max_completion_tokens and, if used, will be
+        renamed to max_completion_tokens.
+
+        If not provided, `max_completion_tokens` will be set to 8_000 for OpenAI models (i.e.
+        we do not set it if the openai api is being used for a different provider/models).
+
         Args:
             client:
                 An instance of the AsyncOpenAI client.
@@ -222,7 +253,8 @@ class OpenAI(Client):
                 the OPENAI_API_KEY environment variable.
             **model_kwargs: Additional parameters to pass to the API call
         """
-        if server_url is None and model_name not in MODEL_COST_PER_TOKEN:
+        model_info = SUPPORTED_OPENAI_MODELS.get(model_name)
+        if server_url is None and not model_info:
             raise ValueError(f"Model '{model_name}' is not supported.")
 
         self.server_url = server_url
@@ -248,6 +280,15 @@ class OpenAI(Client):
             self.model_parameters.pop('temperature', None)
             self.model_parameters.pop('top_p', None)
 
+        # NOTE: max_tokens is deprecated in favor of max_completion_tokens
+        # NOTE that they do have different meanings so popping is not technically correct; but yolo
+        max_tokens = self.model_parameters.pop('max_tokens', None)
+        if max_tokens:
+            self.model_parameters['max_completion_tokens'] = max_tokens
+        # if we're using an openai model, let's set default max_completion_tokens
+        if 'max_completion_tokens' not in self.model_parameters and model_info:
+            self.model_parameters['max_completion_tokens'] = min(8_000, model_info.max_output_tokens)  # noqa: E501
+
     async def stream(
             self,
             messages: list[dict],
@@ -256,9 +297,14 @@ class OpenAI(Client):
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
         """
+        model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
+        pricing_lookup = model_info.pricing if model_info else None
+
         messages = _convert_messages(messages, self.cache_content)
         model_parameters = deepcopy(self.model_parameters)
         if self.response_format:
+            if not model_info or not model_info.supports_structured_output:
+                raise ValueError(f"Structured output is not supported for this model: `{self.model}`")  # noqa: E501
             start_time = time.time()
             completion = await self.client.beta.chat.completions.parse(
                 model=self.model,
@@ -275,7 +321,7 @@ class OpenAI(Client):
                 and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
             ):
                 cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
-                cached_cost = cached_tokens * MODEL_COST_PER_TOKEN[self.model].get('cached', 0)
+                cached_cost = cached_tokens * pricing_lookup.get('cached', 0)
                 input_tokens -= cached_tokens  # remove cached tokens from input tokens
             else:
                 cached_tokens = None
@@ -286,8 +332,8 @@ class OpenAI(Client):
                 input_tokens=input_tokens,
                 output_tokens=completion.usage.completion_tokens,
                 cache_read_tokens=cached_tokens,
-                input_cost=completion.usage.prompt_tokens * MODEL_COST_PER_TOKEN[self.model]['input'],  # noqa: E501
-                output_cost=completion.usage.completion_tokens * MODEL_COST_PER_TOKEN[self.model]['output'],  # noqa: E501
+                input_cost=completion.usage.prompt_tokens * pricing_lookup['input'],
+                output_cost=completion.usage.completion_tokens * pricing_lookup['output'],
                 cache_read_cost=cached_cost,
                 duration_seconds=end_time - start_time,
             )
@@ -336,10 +382,10 @@ class OpenAI(Client):
                         cached_tokens += chunk.usage.prompt_tokens_details.cached_tokens
             end_time = time.time()
             input_tokens -= cached_tokens  # remove cached tokens from input tokens
-            if self.model in MODEL_COST_PER_TOKEN:
-                input_cost = input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
-                output_cost = output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
-                cache_cost = cached_tokens * MODEL_COST_PER_TOKEN[self.model].get('cached', 0)
+            if pricing_lookup:
+                input_cost = input_tokens * pricing_lookup['input']
+                output_cost = output_tokens * pricing_lookup['output']
+                cache_cost = cached_tokens * pricing_lookup.get('cached', 0)
             else:
                 input_cost = None
                 output_cost = None
@@ -387,7 +433,13 @@ class OpenAITools(Client):
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
-        if server_url is None and model_name not in MODEL_COST_PER_TOKEN:
+        if (
+            server_url is None  # using OpenAI provider
+            and (
+                model_name not in SUPPORTED_OPENAI_MODELS
+                or not SUPPORTED_OPENAI_MODELS[model_name].supports_tools
+            )
+        ):
             raise ValueError(f"Model '{model_name}' is not supported.")
 
         self.client = AsyncOpenAI(
@@ -414,6 +466,9 @@ class OpenAITools(Client):
         Args:
             messages: List of messages to send to the model.
         """
+        model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
+        pricing_lookup = model_info.pricing if model_info else None
+
         model_parameters = deepcopy(self.model_parameters)
         start = time.time()
         completion = await self.client.chat.completions.create(
@@ -430,20 +485,21 @@ class OpenAITools(Client):
         input_tokens = completion.usage.prompt_tokens
         output_tokens = completion.usage.completion_tokens
         # these fields may not be available when using openai library for third-party providers
+        cached_tokens = None
+        cached_cost = None
         if (
             hasattr(completion, 'usage')
             and hasattr(completion.usage, 'prompt_tokens_details')
             and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
         ):
             cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
-            cached_cost = cached_tokens * MODEL_COST_PER_TOKEN[self.model].get('cached', 0)
+            if pricing_lookup:
+                cached_cost = cached_tokens * pricing_lookup.get('cached', 0)
             input_tokens -= cached_tokens  # remove cached tokens from input tokens
-        else:
-            cached_tokens = None
-            cached_cost = None
 
-        input_cost = input_tokens * MODEL_COST_PER_TOKEN[self.model]['input']
-        output_cost = output_tokens * MODEL_COST_PER_TOKEN[self.model]['output']
+        if pricing_lookup:
+            input_cost = input_tokens * pricing_lookup['input']
+            output_cost = output_tokens * pricing_lookup['output']
 
         if completion.choices[0].message.tool_calls:
             message = None

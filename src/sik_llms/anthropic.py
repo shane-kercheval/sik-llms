@@ -1,5 +1,6 @@
 """Helper functions for interacting with the Anthropic API."""
 from copy import deepcopy
+from datetime import date
 import os
 import time
 from collections.abc import AsyncGenerator
@@ -7,6 +8,8 @@ from anthropic import AsyncAnthropic, Anthropic as SyncAnthropic
 from pydantic import BaseModel
 from sik_llms.models_base import (
     Client,
+    ModelProvider,
+    ModelInfo,
     ErrorEvent,
     TextChunkEvent,
     TextResponse,
@@ -21,35 +24,60 @@ from sik_llms.models_base import (
     pydantic_model_to_tool,
 )
 
+ANTHROPIC_MODEL_LOOKUPS = [
+    ModelInfo(
+        model='claude-3-5-haiku-20241022',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=8_192,
+        context_window_size=200_000,
+        pricing={
+            'input': 0.80 / 1_000_000, 'output': 4.0 / 1_000_000,
+            'cache_write': 1.00 / 1_000_000, 'cache_read': 0.08 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2024, month=7, day=31),
+    ),
 
-CHAT_MODEL_COST_PER_TOKEN = {
-    'claude-3-7-sonnet-20250219': {
-        'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
-        'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
-    },
-    'claude-3-5-sonnet-20241022': {
-        'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
-        'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
-    },
-    'claude-3-5-haiku-20241022': {
-        'input': 0.80 / 1_000_000, 'output': 4.0 / 1_000_000,
-        'cache_write': 1.00 / 1_000_000, 'cache_read': 0.08 / 1_000_000,
-    },
+    ModelInfo(
+        model='claude-3-5-sonnet-20241022',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=8_192,
+        context_window_size=200_000,
+        pricing={
+            'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
+            'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2024, month=4, day=30),
+    ),
 
-    'claude-3-opus-20240229': {
-        'input': 15.00 / 1_000_000, 'output': 75.00 / 1_000_000,
-        'cache_write': 18.75 / 1_000_000, 'cache_read': 1.50 / 1_000_000,
-    },
-}
-CHAT_MODEL_COST_PER_TOKEN_LATEST = {
-    'claude-3-7-sonnet-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-7-sonnet-20250219'],
-
-    'claude-3-5-haiku-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-5-haiku-20241022'],
-    'claude-3-5-sonnet-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-5-sonnet-20241022'],
-
-    'claude-3-opus-latest': CHAT_MODEL_COST_PER_TOKEN['claude-3-opus-20240229'],
-}
-CHAT_MODEL_COST_PER_TOKEN.update(CHAT_MODEL_COST_PER_TOKEN_LATEST)
+    ModelInfo(
+        model='claude-3-7-sonnet-20250219',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=8_192,
+        context_window_size=200_000,
+        pricing={
+            'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
+            'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        supports_reasoning=True,
+        knowledge_cutoff_date=date(year=2024, month=11, day=30),
+        metadata={
+            'max_output_extended_thinking': 64_000,
+        },
+    ),
+]
+SUPPORTED_ANTHROPIC_MODELS = {model.model: model for model in ANTHROPIC_MODEL_LOOKUPS}
+SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-20241022']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-20241022']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-20250219']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-latest']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-latest']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-latest']  # noqa: E501
 
 
 # Default thinking budget tokens for each reasoning effort level
@@ -177,11 +205,10 @@ class Anthropic(Client):
     messages.create method and parsing the response.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0912
             self,
             model_name: str,
             api_key: str | None = None,
-            max_tokens: int = 1_000,
             reasoning_effort: ReasoningEffort | None = None,
             thinking_budget_tokens: int | None = None,
             response_format: type[BaseModel] | None = None,
@@ -191,14 +218,14 @@ class Anthropic(Client):
         """
         Initialize the Anthropic client.
 
+        If not provided, `max_tokens` will be set to 8_000.
+
         Args:
             model_name:
                 The model name to use for the API call (e.g. 'claude-3-7-sonnet-20250219').
             api_key:
                 The API key to use for the API call. If not provided, the ANTHROPIC_API_KEY
                 environment variable will be used.
-            max_tokens:
-                The maximum number of tokens to generate in a single call.
             reasoning_effort:
                 Refers to the "thinking budget" refered to here:
 
@@ -224,41 +251,53 @@ class Anthropic(Client):
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
-        if model_name not in CHAT_MODEL_COST_PER_TOKEN:
+        model_info = SUPPORTED_ANTHROPIC_MODELS.get(model_name)
+        if not model_info:
             raise ValueError(f"Model '{model_name}' is not supported.")
         api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set")
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model_name
-        if not max_tokens:
-            max_tokens = 1_000
 
         self.response_format = response_format
-        self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
         # remove any None values
-        self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
+        self.model_parameters = {k: v for k, v in model_kwargs.items() if v is not None}
+        if not self.model_parameters.get('max_tokens'):
+            self.model_parameters['max_tokens'] = min(8_000, model_info.max_output_tokens)
+
         self.cache_content = cache_content
 
         # Configure thinking based on reasoning_effort or thinking_budget_tokens
         thinking_config = None
-        if reasoning_effort:
-            thinking_budget = REASONING_EFFORT_BUDGET[reasoning_effort]
-            self.model_parameters['max_tokens'] += thinking_budget
-            thinking_config = {
-                'type': 'enabled',
-                'budget_tokens': thinking_budget,
-            }
-        elif thinking_budget_tokens:
+        if reasoning_effort or thinking_budget_tokens:
+            if reasoning_effort and thinking_budget_tokens:
+                raise ValueError("Only one of reasoning_effort or thinking_budget_tokens can be set.")  # noqa: E501
+            if not model_info.supports_reasoning:
+                raise ValueError(f"Model '{model_name}' does not support reasoning.")
+
+            if reasoning_effort:
+                # if reasoning_effort is set then thinking_budget_tokens is not set
+                thinking_budget_tokens = REASONING_EFFORT_BUDGET[reasoning_effort]
             if thinking_budget_tokens < 1024:
                 raise ValueError("thinking_budget_tokens must be at least 1024")
+
+            thinking_tokens_limit = model_info.metadata.get('max_output_extended_thinking')
+            if not thinking_tokens_limit:
+                raise ValueError(f"Model '{model_name}' supports reasoning but does not have an extended thinking limit.")  # noqa: E501
+            if thinking_budget_tokens > thinking_tokens_limit:
+                raise ValueError(f"thinking_budget_tokens exceeds the model's extended thinking limit: {thinking_tokens_limit}")  # noqa: E501
+
             self.model_parameters['max_tokens'] += thinking_budget_tokens
+            self.model_parameters['max_tokens'] = min(
+                self.model_parameters['max_tokens'],
+                thinking_tokens_limit,
+            )
+            # Add thinking budget to max_tokens
             thinking_config = {
                 'type': 'enabled',
                 'budget_tokens': thinking_budget_tokens,
             }
-
-        if thinking_config:
             self.model_parameters['thinking'] = thinking_config
             # From docs: "Thinking isn't compatible with temperature, top_p, or top_k modifications
             # as well as forced tool use."
@@ -268,6 +307,7 @@ class Anthropic(Client):
                 self.model_parameters.pop('top_p')
             if 'top_k' in self.model_parameters:
                 self.model_parameters.pop('top_k')
+
 
     async def stream(
             self,
@@ -288,7 +328,6 @@ class Anthropic(Client):
                 max_tokens=self.model_parameters.get('max_tokens', 5000),
                 temperature=0.2,
             )
-
             # Call functions client
             try:
                 parsed = None
@@ -375,16 +414,17 @@ class Anthropic(Client):
             if isinstance(chunk, TextChunkEvent) or (isinstance(chunk, ThinkingChunkEvent) and not chunk.is_redacted):  # noqa: E501
                 processed_chunks.append(chunk.content)
 
+        pricing_lookup = SUPPORTED_ANTHROPIC_MODELS[self.model].pricing
         yield TextResponse(
             response=''.join(processed_chunks),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input'],
-            output_cost=output_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['output'],
+            input_cost=input_tokens * pricing_lookup['input'],
+            output_cost=output_tokens * pricing_lookup['output'],
             cache_write_tokens=cache_creation_input_tokens,
             cache_read_tokens=cache_read_input_tokens,
-            cache_write_cost=cache_creation_input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['cache_write'],  # noqa: E501
-            cache_read_cost=cache_read_input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['cache_read'],  # noqa: E501
+            cache_write_cost=cache_creation_input_tokens * pricing_lookup['cache_write'],
+            cache_read_cost=cache_read_input_tokens * pricing_lookup['cache_read'],
             duration_seconds=end_time - start_time,
         )
 
@@ -399,7 +439,6 @@ class AnthropicTools(Client):
             tools: list[Tool],
             tool_choice: ToolChoice = ToolChoice.REQUIRED,
             cache_tools: bool = False,
-            max_tokens: int = 1_000,
             **model_kwargs: dict,
     ) -> None:
         """
@@ -415,22 +454,22 @@ class AnthropicTools(Client):
             cache_tools:
                 If True, caching will be used according to:
                 https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#caching-tool-definitions
-            max_tokens:
-                The maximum number of tokens to generate in a single call.
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
+        model_info = SUPPORTED_ANTHROPIC_MODELS.get(model_name)
+        if not model_info:
+            raise ValueError(f"Model '{model_name}' is not supported.")
+
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set")
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model_name
-        if not max_tokens:
-            max_tokens = 1_000
 
-        self.model_parameters = {'max_tokens': max_tokens, **model_kwargs}
-        # remove any None values
-        self.model_parameters = {k: v for k, v in self.model_parameters.items() if v is not None}
+        self.model_parameters = {k: v for k, v in model_kwargs.items() if v is not None}
+        if not self.model_parameters.get('max_tokens'):
+            self.model_parameters['max_tokens'] = min(8_000, model_info.max_output_tokens)
 
         tools = [t.to_anthropic() for t in tools]
         if tool_choice == ToolChoice.REQUIRED:
@@ -477,6 +516,7 @@ class AnthropicTools(Client):
         else:
             raise ValueError(f"Unexpected content type: {response.content[0].type}")
 
+        pricing_lookup = SUPPORTED_ANTHROPIC_MODELS[self.model].pricing
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
         cache_creation_input_tokens = response.usage.cache_creation_input_tokens
@@ -486,11 +526,11 @@ class AnthropicTools(Client):
             message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            input_cost=input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['input'],
-            output_cost=output_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['output'],
+            input_cost=input_tokens * pricing_lookup['input'],
+            output_cost=output_tokens * pricing_lookup['output'],
             cache_write_tokens=cache_creation_input_tokens,
             cache_read_tokens=cache_read_input_tokens,
-            cache_write_cost=cache_creation_input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['cache_write'],  # noqa: E501
-            cache_read_cost=cache_read_input_tokens * CHAT_MODEL_COST_PER_TOKEN[self.model]['cache_read'],  # noqa: E501
+            cache_write_cost=cache_creation_input_tokens * pricing_lookup['cache_write'],
+            cache_read_cost=cache_read_input_tokens * pricing_lookup['cache_read'],
             duration_seconds=end_time - start_time,
         )
