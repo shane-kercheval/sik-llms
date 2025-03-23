@@ -1,30 +1,27 @@
 """Simple fake FastMCP server."""
-from enum import Enum
 from mcp.server.fastmcp import FastMCP
-# Initialize FastMCP server
 mcp = FastMCP("fake-server-error")
 
 
 @mcp.tool()
-async def error_async(text: str) -> str:
+async def error_async(text: str) -> str:  # noqa: ARG001
     """
     Get the weather for a location.
 
     Args:
-        location: The city and country for weather info.
-        units: The temperature unit to use (celsius or fahrenheit).
+        text: the text to return.
     """
     raise Exception("An error occurred")
 
 
 @mcp.tool()
-def error_sync(text: str) -> str:
+def error_sync(text: str) -> str:  # noqa: ARG001
     """
     Get the weather for a location.
 
     Args:
         location: The city and country for weather info.
-        units: The temperature unit to use (celsius or fahrenheit).
+        text: the text to return.
     """
     raise Exception("An error occurred")
 
