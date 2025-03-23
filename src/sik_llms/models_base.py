@@ -1,7 +1,9 @@
 """Base classes and utilities for models."""
 import asyncio
+import base64
 from datetime import date
 import inspect
+from pathlib import Path
 import types
 import nest_asyncio
 from pydantic import BaseModel, Field, field_validator
@@ -55,9 +57,98 @@ class ModelInfo(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-def user_message(content: str) -> dict:
-    """Returns a user message."""
-    return {'role': 'user', 'content': content.strip()}
+class ImageSourceType(Enum):
+    """Enum for image source types."""
+
+    URL = "url"
+    BASE64 = "base64"
+
+class ImageContent(BaseModel):
+    """Represents an image that can be sent to an LLM API."""
+
+    source_type: ImageSourceType
+    data: str  # URL, base64 string, or file path
+    media_type: str | None = None  # e.g. "image/jpeg", "image/png"
+
+    @classmethod
+    def from_url(cls, url: str) -> "ImageContent":
+        """Create an ImageContent object from a URL."""
+        return cls(
+            source_type=ImageSourceType.URL,
+            data=url,
+            media_type=None,  # Can be inferred from URL if needed
+        )
+
+    @classmethod
+    def from_path(cls, path: str | Path) -> "ImageContent":
+        """Create ImageContent from a local file path."""
+        path = Path(path)
+        with open(path, "rb") as f:
+            base64_data = base64.b64encode(f.read()).decode("utf-8")
+        # Map common file extensions to media types
+        media_types = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+        }
+        media_type = media_types.get(path.suffix.lower(), 'image/jpeg')  # Default to JPEG
+        return cls(
+            source_type=ImageSourceType.BASE64,
+            data=base64_data,
+            media_type=media_type,
+        )
+
+    @classmethod
+    def from_bytes(cls, bytes_data: bytes, media_type: str) -> "ImageContent":
+        """Create an ImageContent object from bytes data."""
+        return cls(
+            source_type=ImageSourceType.BASE64,
+            data=base64.b64encode(bytes_data).decode("utf-8"),
+            media_type=media_type,
+        )
+
+
+def user_message(content: str | list[str | ImageContent]) -> dict:
+    """
+    Returns a user message that can include text and images.
+
+    Args:
+        content: Either a string for text-only messages, or a list containing
+                strings and ImageContent objects for mixed content.
+
+    Returns:
+        A dictionary with 'role' and 'content' keys formatted for API consumption.
+
+    Raises:
+        TypeError: If content is not str or list, or if list items are not str or ImageContent
+        ValueError: If content structure is invalid (e.g., nested lists)
+    """
+    if content is None:
+        raise TypeError("Content cannot be None")
+
+    if isinstance(content, str):
+        return {'role': 'user', 'content': content.strip()}
+
+    if not isinstance(content, list):
+        raise TypeError(f"Content must be string or list, not {type(content)}")
+
+    # Validate and process list content
+    processed_content = []
+    for item in content:
+        if isinstance(item, str):
+            processed_content.append(item.strip())
+        elif isinstance(item, ImageContent):
+            processed_content.append(item)
+        elif isinstance(item, list):
+            raise ValueError("Nested lists are not allowed in content")
+        else:
+            raise TypeError(
+                f"Content list items must be string or ImageContent, not {type(item)}",
+            )
+
+    return {'role': 'user', 'content': processed_content}
 
 
 def assistant_message(content: str) -> dict:

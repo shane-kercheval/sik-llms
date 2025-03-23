@@ -21,6 +21,7 @@ from sik_llms import (
     ThinkingChunkEvent,
 )
 from sik_llms.anthropic import _convert_messages
+from sik_llms.models_base import ImageContent, ImageSourceType
 from tests.conftest import ANTHROPIC_TEST_MODEL, ANTRHOPIC_TEST_THINKING_MODEL
 load_dotenv()
 
@@ -334,6 +335,185 @@ class TestConvertMessages:
             'content': message_user,
         }]
 
+
+    def test_complete_conversation(self):
+        """Test conversion of a complete conversation with system, user, and assistant messages."""
+        message_system = "You are a helpful assistant."
+        message_user = "What is the capital of France?"
+        message_assistant = "The capital of France is Paris."
+
+        messages = [
+            system_message(message_system),
+            user_message(message_user),
+            assistant_message(message_assistant),
+        ]
+        original_messages = deepcopy(messages)
+        converted_system, converted_other = _convert_messages(messages)
+        assert messages == original_messages  # test no side effects
+        assert len(converted_system) == 1
+        assert len(converted_other) == 2
+        assert converted_system == [{
+            'type': 'text',
+            'text': message_system,
+        }]
+        assert converted_other == [
+            {'role': 'user', 'content': message_user},
+            {'role': 'assistant', 'content': message_assistant},
+        ]
+
+    def test_image_url_conversion(self):
+        """Test conversion of messages containing URL images."""
+        image = ImageContent.from_url("https://example.com/image.jpg")
+        messages = [
+            user_message([
+                "What's in this image?",
+                image,
+            ]),
+        ]
+
+        converted_system, converted_other = _convert_messages(messages)
+        assert not converted_system
+        assert converted_other == [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "url",
+                        "url": "https://example.com/image.jpg",
+                    },
+                },
+            ],
+        }]
+
+    def test_image_base64_conversion(self):
+        """Test conversion of messages containing base64 images."""
+        image = ImageContent(
+            source_type=ImageSourceType.BASE64,
+            data="base64data",
+            media_type="image/jpeg",
+        )
+        messages = [
+            user_message([
+                "What's in this image?",
+                image,
+            ]),
+        ]
+
+        converted_system, converted_other = _convert_messages(messages)
+        assert not converted_system
+        assert converted_other == [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "What's in this image?"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": "base64data",
+                    },
+                },
+            ],
+        }]
+
+    def test_cache_content_basic(self):
+        """Test basic cache content insertion."""
+        message_cache = "<cached content>"
+        messages = [user_message("Analyze this.")]
+
+        converted_system, converted_other = _convert_messages(
+            messages=messages,
+            cache_content=message_cache,
+        )
+
+        assert len(converted_system) == 1
+        assert converted_system == [{
+            'type': 'text',
+            'text': message_cache,
+            'cache_control': {'type': 'ephemeral'},
+        }]
+        assert converted_other == [{'role': 'user', 'content': "Analyze this."}]
+
+    def test_cache_content_multiple(self):
+        """Test multiple cache content items."""
+        message_system = "You are an assistant."
+        message_cache_1 = "<cache 1>"
+        message_cache_2 = "<cache 2>"
+        messages = [
+            system_message(message_system),
+            user_message("Analyze this."),
+        ]
+
+        converted_system, _ = _convert_messages(
+            messages=messages,
+            cache_content=[message_cache_1, message_cache_2],
+        )
+
+        assert len(converted_system) == 3
+        assert converted_system == [
+            {'type': 'text', 'text': message_system},
+            {
+                'type': 'text',
+                'text': message_cache_1,
+                'cache_control': {'type': 'ephemeral'},
+            },
+            {
+                'type': 'text',
+                'text': message_cache_2,
+                'cache_control': {'type': 'ephemeral'},
+            },
+        ]
+
+    def test_combined_features(self):
+        """Test combining images, cache, and regular messages."""
+        image1 = ImageContent.from_url("https://example.com/image1.jpg")
+        image2 = ImageContent.from_url("https://example.com/image2.jpg")
+        cache_content = ["Context 1", "Context 2"]
+
+        messages = [
+            system_message("You are an image analyst."),
+            user_message(["First image:", image1]),
+            assistant_message("I see a landscape."),
+            user_message(["Second image:", image2, "Compare them."]),
+        ]
+
+        converted_system, converted_other = _convert_messages(
+            messages=messages,
+            cache_content=cache_content,
+        )
+
+        assert len(converted_system) == 3  # system + 2 cache messages
+        assert len(converted_other) == 3  # 2 user messages + 1 assistant message
+        assert all(msg.get('cache_control') == {'type': 'ephemeral'}
+                  for msg in converted_system[1:])
+        assert isinstance(converted_other[0]['content'], list)  # first image message
+        assert isinstance(converted_other[2]['content'], list)  # second image message
+        assert converted_other[1]['content'] == "I see a landscape."  # assistant message
+
+    def test_content_stripping(self):
+        """Test that text content is properly stripped in all contexts."""
+        image = ImageContent.from_url("https://example.com/image.jpg")
+        messages = [
+            system_message("  System message with spaces  "),
+            user_message([
+                "  Text with spaces  ",
+                image,
+                "\nText with newlines\n",
+            ]),
+        ]
+        cache_content = "  Cached content with spaces  "
+
+        converted_system, converted_other = _convert_messages(
+            messages=messages,
+            cache_content=cache_content,
+        )
+
+        assert converted_system[0]['text'] == "System message with spaces"
+        assert converted_system[1]['text'] == "Cached content with spaces"
+        assert converted_other[0]['content'][0]['text'] == "Text with spaces"
+        assert converted_other[0]['content'][2]['text'] == "Text with newlines"
 
 @pytest.mark.skip_ci  # caching sporadically fails; let's skip this in CI
 @pytest.mark.integration  # these tests make API calls

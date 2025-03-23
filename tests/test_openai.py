@@ -19,7 +19,7 @@ from sik_llms import (
     TextResponse,
     OpenAITools,
 )
-from sik_llms.models_base import assistant_message
+from sik_llms.models_base import ImageContent, ImageSourceType, assistant_message
 from sik_llms.openai import _convert_messages
 from tests.conftest import OPENAI_TEST_MODEL, OPENAI_TEST_REASONING_MODEL
 
@@ -236,6 +236,199 @@ class TestConvertMessages:
             {"role": "assistant", "content": "assistant message 1."},
             {"role": "user", "content": "assistant message 2."},
         ]
+
+    def test_basic_messages(self):
+        """Test basic message conversion without images or caching."""
+        converted = _convert_messages(messages=[])
+        assert converted == []
+
+        converted = _convert_messages(messages=[
+            system_message("You are a helpful assistant."),
+        ])
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+        ]
+
+        converted = _convert_messages(messages=[
+            system_message("You are a helpful assistant."),
+            user_message("What is the capital of France?"),
+        ])
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is the capital of France?"},
+        ]
+
+    def test_image_conversion_url(self):
+        """Test conversion of messages containing URL images."""
+        image = ImageContent.from_url("https://example.com/image.jpg")
+        messages = [
+            user_message([
+                "What's in this image?",
+                image,
+            ]),
+        ]
+
+        converted = _convert_messages(messages=messages)
+        assert converted == [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What's in this image?",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "https://example.com/image.jpg"},
+                },
+            ],
+        }]
+
+    def test_image_conversion_base64(self):
+        """Test conversion of messages containing base64 images."""
+        image = ImageContent(
+            source_type=ImageSourceType.BASE64,
+            data="base64data",
+            media_type="image/jpeg",
+        )
+        messages = [
+            user_message([
+                "What's in this image?",
+                image,
+            ]),
+        ]
+
+        converted = _convert_messages(messages=messages)
+        assert converted == [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What's in this image?",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/jpeg;base64,base64data"},
+                },
+            ],
+        }]
+
+    def test_multiple_images_and_text(self):
+        """Test conversion of messages containing multiple images and text segments."""
+        image1 = ImageContent.from_url("https://example.com/image1.jpg")
+        image2 = ImageContent.from_url("https://example.com/image2.jpg")
+        messages = [
+            user_message([
+                "Here are two images.",
+                image1,
+                "This is the first image above and second image below.",
+                image2,
+                "What are the differences between them?",
+            ]),
+        ]
+
+        converted = _convert_messages(messages=messages)
+        expected_content = [
+            {"type": "text", "text": "Here are two images."},
+            {"type": "image_url", "image_url": {"url": "https://example.com/image1.jpg"}},
+            {"type": "text", "text": "This is the first image above and second image below."},
+            {"type": "image_url", "image_url": {"url": "https://example.com/image2.jpg"}},
+            {"type": "text", "text": "What are the differences between them?"},
+        ]
+        assert converted == [{"role": "user", "content": expected_content}]
+
+    def test_cache_content_basic(self):
+        """Test cache content insertion with basic messages."""
+        messages = [
+            user_message("What is the capital of France?"),
+        ]
+        cache_content = "Cached information about France."
+
+        converted = _convert_messages(messages=messages, cache_content=cache_content)
+        assert converted == [
+            {"role": "user", "content": "Cached information about France."},
+            {"role": "user", "content": "What is the capital of France?"},
+        ]
+
+    def test_cache_content_with_system_message(self):
+        """Test cache content insertion with system messages."""
+        messages = [
+            system_message("You are a helpful assistant."),
+            user_message("What is the capital of France?"),
+        ]
+        cache_content = ["Cached info 1", "Cached info 2"]
+
+        converted = _convert_messages(messages=messages, cache_content=cache_content)
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Cached info 1"},
+            {"role": "user", "content": "Cached info 2"},
+            {"role": "user", "content": "What is the capital of France?"},
+        ]
+
+    def test_cache_and_images_combined(self):
+        """Test combining both cache content and images in messages."""
+        image = ImageContent.from_url("https://example.com/image.jpg")
+        messages = [
+            system_message("You are a helpful assistant."),
+            user_message([
+                "What's in this image?",
+                image,
+            ]),
+        ]
+        cache_content = "Background information about images."
+
+        converted = _convert_messages(messages=messages, cache_content=cache_content)
+        assert converted == [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Background information about images."},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What's in this image?"},
+                    {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}},
+                ],
+            },
+        ]
+
+    def test_complex_conversation_with_images_and_cache(self):
+        """Test a complex conversation with multiple messages, images, and cache content."""
+        image1 = ImageContent.from_url("https://example.com/image1.jpg")
+        image2 = ImageContent.from_url("https://example.com/image2.jpg")
+        messages = [
+            system_message("You are an image analysis assistant."),
+            user_message(["Here's the first image:", image1]),
+            assistant_message("I see a landscape photo."),
+            user_message(["And here's another:", image2, "Compare them."]),
+        ]
+        cache_content = ["Image analysis guidelines.", "Additional context."]
+
+        converted = _convert_messages(messages=messages, cache_content=cache_content)
+        assert len(converted) == 6  # system + 2 cache + user + assistant + user
+        assert converted[0]["role"] == "system"
+        assert converted[1]["role"] == "user"  # First cache message
+        assert converted[2]["role"] == "user"  # Second cache message
+        assert isinstance(converted[3]["content"], list)  # First image message
+        assert converted[4]["role"] == "assistant"
+        assert isinstance(converted[5]["content"], list)  # Second image message
+
+    def test_message_content_stripping(self):
+        """Test that text content is properly stripped in all contexts."""
+        image = ImageContent.from_url("https://example.com/image.jpg")
+        messages = [
+            system_message("  System message with spaces  "),
+            user_message([
+                "  Text with spaces  ",
+                image,
+                "\nText with newlines\n",
+            ]),
+        ]
+        cache_content = "  Cached content with spaces  "
+
+        converted = _convert_messages(messages=messages, cache_content=cache_content)
+        assert converted[0]["content"] == "System message with spaces"
+        assert converted[1]["content"] == "Cached content with spaces"
+        assert converted[2]["content"][0]["text"] == "Text with spaces"
+        assert converted[2]["content"][2]["text"] == "Text with newlines"
 
 
 class TestReasoningModelsDoNotSetCertainParameters:

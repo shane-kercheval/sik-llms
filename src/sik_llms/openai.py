@@ -11,6 +11,8 @@ from pydantic import BaseModel
 import tiktoken
 from tiktoken import Encoding
 from sik_llms.models_base import (
+    ImageContent,
+    ImageSourceType,
     ModelInfo,
     ModelProvider,
     Tool,
@@ -180,16 +182,17 @@ def _parse_completion_chunk(chunk) -> TextChunkEvent:  # noqa: ANN001
     )
 
 def _convert_messages(
-        messages: list[dict[str, str]],
+        messages: list[dict[str, str | list[str | ImageContent]]],
         cache_content: list[str] | str | None = None,
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, str | list[dict]]]:
     """Converts messages to the format expected by the OpenAI API."""
     messages = deepcopy(messages)
+
+    # Handle cache content first
     if cache_content:
         if isinstance(cache_content, str):
             cache_content = [cache_content]
         # find index after last system message but before the first user message
-        # assumes system messages are always first
         for i, message in enumerate(messages):
             if message.get('role') == 'user':
                 break
@@ -201,7 +204,34 @@ def _convert_messages(
             for content in cache_content
         ]
         messages[i:i] = cached_messages
-    return messages
+
+    # Handle image content
+    converted_messages = []
+    for message in messages:
+        if isinstance(message['content'], list):
+            converted_content = []
+            for item in message['content']:
+                if isinstance(item, str):
+                    converted_content.append({
+                        "type": "text",
+                        "text": item.strip(),
+                    })
+                elif isinstance(item, ImageContent):
+                    if item.source_type == ImageSourceType.URL:
+                        converted_content.append({
+                            "type": "image_url",
+                            "image_url": {"url": item.data},
+                        })
+                    elif item.source_type == ImageSourceType.BASE64:
+                        converted_content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{item.media_type};base64,{item.data}",
+                            },
+                        })
+            message = {**message, 'content': converted_content}  # noqa: PLW2901
+        converted_messages.append(message)
+    return converted_messages
 
 
 @Client.register(RegisteredClients.OPENAI)

@@ -1,6 +1,18 @@
 """Tests for the models_base module."""
-from sik_llms import Client, RegisteredClients, system_message
-from sik_llms.models_base import assistant_message, user_message
+import pytest
+from pathlib import Path
+import base64
+from unittest.mock import mock_open, patch
+from sik_llms import (
+    Client,
+    RegisteredClients,
+    system_message,
+    assistant_message,
+    user_message,
+    ImageContent,
+    ImageSourceType,
+)
+
 
 class TestMesssages:
     """Tests for the message creation functions."""
@@ -20,6 +32,119 @@ class TestMesssages:
     def test_assistant_message(self):
         message = assistant_message('test')
         assert message == {'role': 'assistant', 'content': 'test'}
+
+    def test_simple_text_message(self):
+        """Test creating a message with just text."""
+        text = "Hello, how are you?"
+        message = user_message(text)
+
+        assert message == {
+            'role': 'user',
+            'content': 'Hello, how are you?',
+        }
+
+    def test_text_message_with_whitespace(self):
+        """Test that whitespace is stripped from text messages."""
+        text = "  Hello, how are you?  \n"
+        message = user_message(text)
+
+        assert message == {
+            'role': 'user',
+            'content': 'Hello, how are you?',
+        }
+
+    def test_empty_text_message(self):
+        """Test handling empty text message."""
+        text = ""
+        message = user_message(text)
+
+        assert message == {
+            'role': 'user',
+            'content': '',
+        }
+
+    def test_message_with_single_image(self):
+        """Test creating a message with one image."""
+        image = ImageContent.from_url("https://example.com/image.jpg")
+        message = user_message([image])
+
+        assert message == {
+            'role': 'user',
+            'content': [image],
+        }
+
+    def test_message_with_text_and_image(self):
+        """Test creating a message with text and image."""
+        image = ImageContent.from_url("https://example.com/image.jpg")
+        content = ["What's in this image?", image]
+        message = user_message(content)
+
+        assert message == {
+            'role': 'user',
+            'content': content,
+        }
+
+    def test_message_with_multiple_images(self):
+        """Test creating a message with multiple images."""
+        image1 = ImageContent.from_url("https://example.com/image1.jpg")
+        image2 = ImageContent.from_url("https://example.com/image2.jpg")
+        text = "Compare these images"
+        content = [text, image1, image2]
+        message = user_message(content)
+
+        assert message == {
+            'role': 'user',
+            'content': content,
+        }
+
+    def test_message_with_complex_content(self):
+        """Test creating a message with text before, between, and after images."""
+        image1 = ImageContent.from_url("https://example.com/image1.jpg")
+        image2 = ImageContent.from_url("https://example.com/image2.jpg")
+        content = [
+            "Here are two images.",
+            image1,
+            "This is the first image above and second image below.",
+            image2,
+            "What are the differences between them?",
+        ]
+        message = user_message(content)
+
+        assert message == {
+            'role': 'user',
+            'content': content,
+        }
+
+    def test_message_with_whitespace_in_list(self):
+        """Test that whitespace is stripped from text items in content list."""
+        image = ImageContent.from_url("https://example.com/image.jpg")
+        content = ["  First text  ", image, "\nSecond text\n"]
+        message = user_message(content)
+
+        assert message == {
+            'role': 'user',
+            'content': ["First text", image, "Second text"],
+        }
+
+    def test_invalid_content_type(self):
+        """Test handling invalid content types."""
+        with pytest.raises(TypeError):
+            user_message(123)
+
+    def test_invalid_list_content(self):
+        """Test handling invalid items in content list."""
+        with pytest.raises(TypeError):
+            user_message([1, 2, 3])
+
+    def test_nested_lists(self):
+        """Test that nested lists are not allowed."""
+        with pytest.raises(ValueError):  # noqa: PT011
+            user_message([["nested"], "content"])
+
+    def test_none_content(self):
+        """Test handling None content."""
+        with pytest.raises(TypeError):
+            user_message(None)
 
 
 class MockClient(Client):  # noqa: D101
@@ -94,3 +219,97 @@ class TestClientRegistration:
         original_kwargs['max_tokens'] = 200
         assert client.kwargs['temperature'] == 0.7
         assert client.kwargs['max_tokens'] == 100
+
+
+class TestImageContent:
+    """Tests for the ImageContent class."""
+
+    def test_from_url(self):
+        """Test creating ImageContent from URL."""
+        url = "https://example.com/image.jpg"
+        image = ImageContent.from_url(url)
+        assert image.source_type == ImageSourceType.URL
+        assert image.data == url
+        assert image.media_type is None
+
+    @pytest.mark.parametrize(('file_extension', 'expected_media_type'), [
+        ("jpg", "image/jpeg"),
+        ("jpeg", "image/jpeg"),
+        ("png", "image/png"),
+        ("gif", "image/gif"),
+    ])
+    def test_from_path(self, file_extension: str, expected_media_type: str):
+        """Test creating ImageContent from file path with different extensions."""
+        test_data = b"fake image data"
+        expected_base64 = base64.b64encode(test_data).decode("utf-8")
+        mock_path = Path(f"test_image.{file_extension}")
+        with patch("builtins.open", mock_open(read_data=test_data)):
+            image = ImageContent.from_path(mock_path)
+        assert image.source_type == ImageSourceType.BASE64
+        assert image.data == expected_base64
+        assert image.media_type == expected_media_type
+
+    def test_from_path_string(self):
+        """Test creating ImageContent from string path."""
+        test_data = b"fake image data"
+        expected_base64 = base64.b64encode(test_data).decode("utf-8")
+        with patch("builtins.open", mock_open(read_data=test_data)):
+            image = ImageContent.from_path("test_image.jpg")
+        assert image.source_type == ImageSourceType.BASE64
+        assert image.data == expected_base64
+        assert image.media_type == "image/jpeg"
+
+    def test_from_bytes(self):
+        """Test creating ImageContent from bytes."""
+        test_data = b"fake image data"
+        media_type = "image/jpeg"
+        expected_base64 = base64.b64encode(test_data).decode("utf-8")
+        image = ImageContent.from_bytes(test_data, media_type)
+        assert image.source_type == ImageSourceType.BASE64
+        assert image.data == expected_base64
+        assert image.media_type == media_type
+
+    def test_from_path_file_not_found(self):
+        """Test error handling when file not found."""
+        with pytest.raises(FileNotFoundError):
+            ImageContent.from_path("nonexistent_image.jpg")
+
+    def test_model_validation(self):
+        """Test Pydantic model validation."""
+        # Valid data
+        data = {
+            "source_type": ImageSourceType.URL,
+            "data": "https://example.com/image.jpg",
+            "media_type": "image/jpeg",
+        }
+        image = ImageContent(**data)
+        assert image.source_type == ImageSourceType.URL
+        assert image.data == "https://example.com/image.jpg"
+        assert image.media_type == "image/jpeg"
+        # Invalid source_type
+        with pytest.raises(ValueError):  # noqa: PT011
+            ImageContent(
+                source_type="invalid",
+                data="https://example.com/image.jpg",
+            )
+
+    @pytest.mark.parametrize(('test_input', 'expected'), [
+        (b"test data", "dGVzdCBkYXRh"),  # Known base64 encoding
+        (b"", ""),  # Empty bytes
+        (b"123", "MTIz"),  # Numbers
+        (b"!@#$%", "IUAjJCU="),  # Special characters
+    ])
+    def test_base64_encoding(self, test_input: bytes, expected: str):
+        """Test base64 encoding with various inputs."""
+        image = ImageContent.from_bytes(test_input, "image/jpeg")
+        assert image.data == expected
+
+    def test_large_file_handling(self):
+        """Test handling of large file (simulate with mock)."""
+        large_data = b"x" * 1024 * 1024  # 1MB of data
+        expected_base64 = base64.b64encode(large_data).decode("utf-8")
+        with patch("builtins.open", mock_open(read_data=large_data)):
+            image = ImageContent.from_path("large_image.jpg")
+        assert image.source_type == ImageSourceType.BASE64
+        assert image.data == expected_base64
+        assert len(image.data) > 1024 * 1024  # Base64 encoding makes it larger
