@@ -475,7 +475,7 @@ class ReasoningAgent(Client):
         if iteration >= self.max_iterations and (not reasoning_step or reasoning_step.next_action != ReasoningAction.FINISHED):  # noqa: E501
             error_message = f"Maximum iterations ({self.max_iterations}) reached."
             yield ErrorEvent(
-                content=error_message,  # noqa: E501
+                content=error_message,
                 metadata={
                     'max_iterations': self.max_iterations,
                     'iteration': iteration,
