@@ -22,12 +22,8 @@ from sik_llms.models_base import (
     assistant_message,
     user_message,
 )
-from sik_llms.openai import (
-    CHAT_MODEL_COST_PER_TOKEN as OPENAI_CHAT_MODEL_COST_PER_TOKEN,
-)
-from sik_llms.anthropic import (
-    CHAT_MODEL_COST_PER_TOKEN as ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN,
-)
+from sik_llms.openai import SUPPORTED_OPENAI_MODELS
+from sik_llms.anthropic import SUPPORTED_ANTHROPIC_MODELS
 
 
 PROMPT__REASONING_AGENT = resources.read_text('sik_llms.prompts', 'reasoning_prompt.txt')
@@ -53,9 +49,9 @@ class ReasoningStep(BaseModel):
 def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
     if client_type:
         return client_type
-    if model_name in OPENAI_CHAT_MODEL_COST_PER_TOKEN:
+    if model_name in SUPPORTED_OPENAI_MODELS:
         return RegisteredClients.OPENAI
-    if model_name in ANTHROPIC_CHAT_MODEL_COST_PER_TOKEN:
+    if model_name in SUPPORTED_ANTHROPIC_MODELS:
         return RegisteredClients.ANTHROPIC
     raise ValueError(f"Unknown model name '{model_name}' or client when trying to infer client type")  # noqa: E501
 
