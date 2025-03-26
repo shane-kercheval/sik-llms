@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 import json
 from contextlib import AsyncExitStack
+import os
+import sys
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.types import CallToolResult
@@ -38,18 +40,21 @@ class ToolInfo:
 class MCPClientManager:
     """Manages connections to MCP servers."""
 
-    def __init__(self, configs: str | Path | dict):
+    def __init__(self, configs: str | Path | dict, silent: bool = True):
         """
         Initialize the client manager.
 
         Args:
             configs:
                 str or Path to the location of the config file, or the configs dictionary itself.
+            silent:
+                If True, suppress all output during connection
         """
         self.configs = configs
         self.servers: dict[str, ClientSession] = {}
         self.tool_map: dict[str, ToolInfo] = {}
         self.exit_stack = AsyncExitStack()
+        self.silent = silent
 
     async def __aenter__(self):
         await self.connect_servers()
@@ -130,9 +135,18 @@ class MCPClientManager:
         Raises:
             ValueError: If a tool name conflicts with an existing tool from another server.
         """
+        # Create a null error log if silent mode is enabled
+        errlog = open(os.devnull, 'w') if self.silent else sys.stderr  # noqa: ASYNC230, SIM115
+        # Pass the custom error log to stdio_client
         stdio_transport = await self.exit_stack.enter_async_context(
-            stdio_client(config.get_params()),
+            stdio_client(config.get_params(), errlog=errlog),
         )
+
+        # Close the error log when we're done with it
+        if self.silent:
+            self.exit_stack.callback(errlog.close)
+
+        # Rest of the method remains the same...
         session = await self.exit_stack.enter_async_context(
             ClientSession(stdio_transport[0], stdio_transport[1]),
         )
