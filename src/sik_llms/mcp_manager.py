@@ -120,9 +120,7 @@ class MCPClientManager:
         for config in configs:
             try:
                 await self.connect_server(config)
-                print(f"Connected to {config.name}")
             except Exception as e:
-                print(f"Error connecting to {config.name}: {e}")
                 raise e
 
     async def connect_server(self, config: ServerConfig) -> None:
@@ -164,7 +162,6 @@ class MCPClientManager:
         properties = mcp_tool.inputSchema.get('properties', {})
         required_props = mcp_tool.inputSchema.get('required', [])
         definitions = mcp_tool.inputSchema.get('$defs', {})
-        print(mcp_tool.inputSchema)
 
         # Map JSON schema types to Python types
         type_mapping = {
