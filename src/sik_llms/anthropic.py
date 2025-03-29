@@ -25,6 +25,7 @@ from sik_llms.models_base import (
     ToolChoice,
     pydantic_model_to_tool,
 )
+from sik_llms.utilities import get_json_schema_type
 
 ANTHROPIC_MODEL_LOOKUPS = [
     ModelInfo(
@@ -460,6 +461,81 @@ class Anthropic(Client):
         )
 
 
+def _tool_to_anthropic_schema(tool: Tool) -> dict[str, object]:  # noqa: PLR0912
+    """
+    Convert the tool to the format expected by Anthropic API.
+
+    Follows JSON Schema best practices:
+    - Removes default values for consistency with OpenAI implementation
+    - Sets additionalProperties: false to prevent unexpected properties
+    - Preserves dictionary type constraints for proper typing
+    """
+    properties = {}
+    required = []
+
+    for param in tool.parameters:
+        # Handle union types (any_of) by creating multiple schema options
+        if param.any_of:
+            any_of_schemas = []
+            for union_type in param.any_of:
+                json_type, extra_props = get_json_schema_type(union_type)
+                # Remove any default values from extra_props
+                if 'default' in extra_props:
+                    del extra_props['default']
+                any_of_schemas.append({"type": json_type, **extra_props})
+            param_dict = {"anyOf": any_of_schemas}
+        else:
+            # Convert Python types to JSON Schema types
+            json_type, extra_props = get_json_schema_type(param.param_type)
+            # Remove any default values from extra_props
+            if 'default' in extra_props:
+                del extra_props['default']
+            param_dict = {"type": json_type, **extra_props}
+
+        # Add description to improve usability for the LLM
+        if param.description:
+            param_dict["description"] = param.description
+
+        # Add enum values if provided
+        if param.valid_values:
+            param_dict["enum"] = param.valid_values
+
+        # Special handling for object types:
+        if json_type == 'object':
+            # If this is a dictionary type with value type constraints, preserve them
+            if 'additionalProperties' in extra_props and isinstance(extra_props['additionalProperties'], dict):  # noqa: E501
+                param_dict['additionalProperties'] = extra_props['additionalProperties']
+            else:
+                param_dict['additionalProperties'] = False
+
+            # For nested objects, ensure all properties are required (similar to OpenAI)
+            if param_dict.get('properties'):
+                param_dict['required'] = list(param_dict['properties'].keys())
+
+        properties[param.name] = param_dict
+        if param.required:
+            required.append(param.name)
+
+    parameters_dict = {
+        'type': 'object',
+        'properties': properties,
+    }
+    if required:
+        parameters_dict['required'] = required
+    parameters_dict['additionalProperties'] = False
+
+    # Assemble the complete tool schema
+    result = {
+        'name': tool.name,
+        **({'description': tool.description} if tool.description else {}),
+        'input_schema': parameters_dict,
+    }
+
+    # # Remove any remaining default values that might be nested deeply in the schema
+    # _remove_defaults_recursively(result)
+    return result  # noqa: RET504
+
+
 @Client.register(RegisteredClients.ANTHROPIC_TOOLS)
 class AnthropicTools(Client):
     """Wrapper for Anthropic API which provides a simple interface for using functions."""
@@ -502,7 +578,7 @@ class AnthropicTools(Client):
         if not self.model_parameters.get('max_tokens'):
             self.model_parameters['max_tokens'] = min(8_000, model_info.max_output_tokens)
 
-        tools = [t.to_anthropic() for t in tools]
+        tools = [_tool_to_anthropic_schema(t) for t in tools]
         if tool_choice == ToolChoice.REQUIRED:
             tool_choice = 'any'
         elif tool_choice == ToolChoice.AUTO:

@@ -27,6 +27,8 @@ from sik_llms.models_base import (
     ToolChoice,
 )
 from dotenv import load_dotenv
+
+from sik_llms.utilities import _remove_defaults_recursively, get_json_schema_type
 load_dotenv()
 
 # Define all OpenAI models
@@ -180,6 +182,7 @@ def _parse_completion_chunk(chunk) -> TextChunkEvent:  # noqa: ANN001
         content=chunk.choices[0].delta.content,
         logprob=log_prob,
     )
+
 
 def _convert_messages(
         messages: list[dict[str, str | list[str | ImageContent]]],
@@ -432,6 +435,93 @@ class OpenAI(Client):
             )
 
 
+def _tool_to_openai_schema(tool: Tool) -> dict[str, object]:
+    """
+    Convert the tool to the format expected by OpenAI API.
+
+    OpenAI's function calling API has specific requirements for JSON Schema:
+    - No default values are allowed anywhere in the schema
+    - Nested objects require all properties to be listed as required
+    - additionalProperties must be set to false
+    """
+    properties = {}
+    required = []
+
+    for param in tool.parameters:
+        # Handle union types (any_of) by creating multiple schema options
+        if param.any_of:
+            any_of_schemas = []
+            for union_type in param.any_of:
+                json_type, extra_props = get_json_schema_type(union_type)
+                # OpenAI API rejects schemas with default values, so we must remove them
+                if 'default' in extra_props:
+                    del extra_props['default']
+                any_of_schemas.append({"type": json_type, **extra_props})
+            param_dict = {"anyOf": any_of_schemas}
+        else:
+            # Convert Python types to JSON Schema types
+            json_type, extra_props = get_json_schema_type(param.param_type)
+            # OpenAI API rejects schemas with default values, so we must remove them
+            if 'default' in extra_props:
+                del extra_props['default']
+            param_dict = {"type": json_type, **extra_props}
+
+        # Add description to improve usability for the LLM
+        if param.description:
+            param_dict["description"] = param.description
+
+        # Add enum/valid_values to constrain possible inputs
+        if param.valid_values:
+            param_dict["enum"] = param.valid_values
+
+        # Special handling for object types:
+        # 1. OpenAI requires additionalProperties: false
+        # 2. For nested objects, all properties must be listed as required
+        if json_type == 'object' and 'properties' in param_dict:
+            # Prevent arbitrary properties from being added to objects
+            param_dict['additionalProperties'] = False
+            # OpenAI requires all properties of nested objects to be listed as required
+            if param_dict['properties']:
+                param_dict['required'] = list(param_dict['properties'].keys())
+
+        properties[param.name] = param_dict
+
+        # Only add genuinely required parameters to the top-level required list
+        # This preserves the semantic meaning of "required" while maintaining compatibility
+        if param.required:
+            required.append(param.name)
+
+    # Create the parameters object schema
+    parameters_dict = {
+        'type': 'object',
+        'properties': properties,
+    }
+    if required:
+        parameters_dict['required'] = required
+    # Prevent arbitrary parameters from being added
+    parameters_dict['additionalProperties'] = False
+
+    # "strict" mode enforces all required parameters must be provided
+    # Only enable it if all properties are required to avoid unnecessary constraints
+    strict = all(param.required for param in tool.parameters or [])
+
+    # Assemble the complete function schema
+    result = {
+        'type': 'function',
+        'function': {
+            'name': tool.name,
+            'strict': strict,
+            **({'description': tool.description} if tool.description else {}),
+            'parameters': parameters_dict,
+        },
+    }
+    # Remove any remaining default values that might be nested deeply in the schema
+    # This ensures complete compatibility with OpenAI's requirements
+    _remove_defaults_recursively(result)
+    return result
+
+
+
 @Client.register(RegisteredClients.OPENAI_TOOLS)
 class OpenAITools(Client):
     """Wrapper for OpenAI API function/tool calling."""
@@ -487,7 +577,7 @@ class OpenAITools(Client):
             self.model_parameters['tool_choice'] = 'auto'
         else:
             raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
-        self.model_parameters['tools'] = [t.to_openai() for t in tools]
+        self.model_parameters['tools'] = [_tool_to_openai_schema(t) for t in tools]
 
     async def stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[ToolPredictionResponse | None]:  # noqa: E501
         """

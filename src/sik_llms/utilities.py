@@ -237,3 +237,33 @@ def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noq
 
     # Raise ValueError for unhandled types
     raise ValueError(f"Unsupported type annotation: {annotation}")
+
+
+def _remove_defaults_recursively(obj) -> None:  # noqa: ANN001
+    """
+    Remove default values recursively from a schema object (when converting Tools to JSON Schema).
+
+    This is necessary because:
+    1. OpenAI's API rejects schemas containing default values anywhere
+    2. Pydantic models generate default values at various nesting levels
+    3. Simply checking at the top level isn't sufficient for complex nested schemas
+    """
+    if isinstance(obj, dict):
+        # Remove default property if present - required by OpenAI API
+        if 'default' in obj:
+            del obj['default']
+
+        # Process all nested dictionary values to handle deeply nested objects
+        for _, value in list(obj.items()):
+            if isinstance(value, dict | list):
+                _remove_defaults_recursively(value)
+
+        # Ensure all object types have additionalProperties: false (OpenAI requirement)
+        if obj.get('type') == 'object' and 'properties' in obj:
+            obj['additionalProperties'] = False
+
+    elif isinstance(obj, list):
+        # Process all list items to handle arrays of objects or schemas
+        for item in obj:
+            if isinstance(item, dict | list):
+                _remove_defaults_recursively(item)

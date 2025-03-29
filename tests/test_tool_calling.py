@@ -16,7 +16,9 @@ from sik_llms import (
     RegisteredClients,
     ToolChoice,
 )
+from sik_llms.anthropic import _tool_to_anthropic_schema
 from sik_llms.models_base import pydantic_model_to_parameters
+from sik_llms.openai import _tool_to_openai_schema
 from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL, ClientConfig
 
 load_dotenv()
@@ -72,7 +74,7 @@ class TestPydanticModelToParameters:
         )
 
         # Get the OpenAI format
-        openai_format = tool.to_openai()
+        openai_format = _tool_to_openai_schema(tool)
         properties = openai_format["function"]["parameters"]["properties"]
 
         # Check each type conversion
@@ -88,7 +90,7 @@ class TestPydanticModelToParameters:
         assert properties["a_dict"]["additionalProperties"]["type"] == "integer"
 
         # Do the same check for Anthropic format
-        anthropic_format = tool.to_anthropic()
+        anthropic_format = _tool_to_anthropic_schema(tool)
         properties = anthropic_format["input_schema"]["properties"]
 
         assert properties["a_str"]["type"] == "string"
@@ -150,7 +152,7 @@ class TestPydanticModelToParameters:
             description='Test nested defaults',
         )
 
-        openai_format = tool.to_openai()
+        openai_format = _tool_to_openai_schema(tool)
         schema = openai_format['function']['parameters']['properties']
         # Verify no default values in schema
         assert 'default' not in schema['phone']
@@ -198,7 +200,7 @@ class TestPydanticModelToParameters:
             description="Test app settings",
         )
 
-        openai_format = tool.to_openai()
+        openai_format = _tool_to_openai_schema(tool)
 
         # Verify no defaults exist anywhere in the schema
         def check_no_defaults(obj) -> None:  # noqa: ANN001
@@ -481,7 +483,7 @@ class TestPydanticModelToParameters:
             func=lambda color: f"Color set to {color}",
         )
 
-        openai_format = tool.to_openai()
+        openai_format = _tool_to_openai_schema(tool)
         assert openai_format["function"]["parameters"]["properties"]["color"]["type"] == "string"
         assert openai_format["function"]["parameters"]["properties"]["color"]["enum"] == ["red", "green", "blue"]  # noqa: E501
         assert openai_format["function"]["parameters"]["properties"]["color"]["description"] == "Color selection"  # noqa: E501
@@ -503,7 +505,7 @@ class TestPydanticModelToParameters:
             func=lambda id: f"Item {id}",  # noqa: A006
         )
 
-        openai_format = tool.to_openai()
+        openai_format = _tool_to_openai_schema(tool)
         assert "anyOf" in openai_format["function"]["parameters"]["properties"]["id"]
         assert len(openai_format["function"]["parameters"]["properties"]["id"]["anyOf"]) == 2
         assert openai_format["function"]["parameters"]["properties"]["id"]["description"] == "ID value"  # noqa: E501
@@ -525,7 +527,7 @@ class TestPydanticModelToParameters:
         )
 
         # Convert to OpenAI format
-        openai_format = tool.to_openai()
+        openai_format = _tool_to_openai_schema(tool)
         properties = openai_format["function"]["parameters"]["properties"]
 
         # Check that no properties have default values
@@ -556,7 +558,7 @@ class TestPydanticModelToParameters:
             func=lambda color: f"Color set to {color}",
         )
 
-        anthropic_format = tool.to_anthropic()
+        anthropic_format = _tool_to_anthropic_schema(tool)
         assert anthropic_format["name"] == "set_color"
         assert anthropic_format["description"] == "Set a color"
         assert anthropic_format["input_schema"]["properties"]["color"]["type"] == "string"
@@ -580,7 +582,7 @@ class TestPydanticModelToParameters:
             func=lambda id: f"Item {id}",  # noqa: A006
         )
 
-        anthropic_format = tool.to_anthropic()
+        anthropic_format = _tool_to_anthropic_schema(tool)
         assert "anyOf" in anthropic_format["input_schema"]["properties"]["id"]
         assert len(anthropic_format["input_schema"]["properties"]["id"]["anyOf"]) == 2
         assert anthropic_format["input_schema"]["properties"]["id"]["description"] == "ID value"
@@ -601,7 +603,7 @@ class TestPydanticModelToParameters:
         )
 
         # Convert to Anthropic format
-        anthropic_format = tool.to_anthropic()
+        anthropic_format = _tool_to_anthropic_schema(tool)
         properties = anthropic_format["input_schema"]["properties"]
 
         # Check that no properties have default values
