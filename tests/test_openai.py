@@ -478,6 +478,46 @@ class TestReasoningModelsDoNotSetCertainParameters:
 class TestOpenAI:
     """Test the OpenAI Completion Wrapper."""
 
+    @pytest.mark.parametrize(
+        'model_name',
+        [
+            # versioned models
+            'gpt-4.1-2025-04-14',
+            'gpt-4.1-mini-2025-04-14',
+            'gpt-4.1-nano-2025-04-14',
+            'gpt-4o-mini-2024-07-18',
+            'gpt-4o-2024-08-06',
+            'gpt-4o-2024-11-20',
+            'o3-mini-2025-01-31',
+            'o1-2024-12-17',
+            # primary models
+            'gpt-4.1',
+            'gpt-4.1-mini',
+            'gpt-4.1-nano',
+            'gpt-4o',
+            'gpt-4o-mini',
+            'o3-mini',
+            'o1',
+        ],
+    )
+    async def test__all_models(self, model_name: str):
+        # Create an instance of the wrapper
+        client = OpenAI(model_name=model_name)
+        messages = [
+            system_message("You are a helpful assistant."),
+            user_message("Respond with exactly \"42\"."),
+        ]
+        response = await client.run_async(messages=messages)
+        assert isinstance(response, TextResponse)
+        assert '42' in response.response
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.total_tokens > 0
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        assert response.total_cost > 0
+        assert response.duration_seconds > 0
+
     @pytest.mark.stochastic(samples=10, threshold=0.8)
     async def test__async_openai(self):
         # Create an instance of the wrapper
