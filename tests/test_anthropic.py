@@ -26,6 +26,43 @@ from tests.conftest import ANTHROPIC_TEST_MODEL, ANTRHOPIC_TEST_THINKING_MODEL
 load_dotenv()
 
 
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
+class TestAnthropic:
+    """Test the Anthropic Completion Wrapper."""
+
+    @pytest.mark.parametrize(
+        'model_name',
+        [
+            # versioned models
+            'claude-3-5-haiku-20241022',
+            'claude-3-5-sonnet-20241022',
+            'claude-3-7-sonnet-20250219',
+            # primary models
+            'claude-3-5-haiku-latest',
+            'claude-3-5-sonnet-latest',
+            'claude-3-7-sonnet-latest',
+        ],
+    )
+    async def test__all_models(self, model_name: str):
+        # Create an instance of the wrapper
+        client = Anthropic(model_name=model_name)
+        messages = [
+            system_message("You are a helpful assistant."),
+            user_message("Respond with exactly \"42\"."),
+        ]
+        response = await client.run_async(messages=messages)
+        assert isinstance(response, TextResponse)
+        assert '42' in response.response
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.total_tokens > 0
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        assert response.total_cost > 0
+        assert response.duration_seconds > 0
+
+
 class TestAnthropicSync:  # noqa: D101
 
     def test__Anthropic_registration(self):

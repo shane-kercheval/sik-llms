@@ -33,6 +33,54 @@ load_dotenv()
 
 # Define all OpenAI models
 OPENAI_MODEL_INFOS = [
+    ####
+    # GPT-4.1
+    ####
+    ModelInfo(
+        model='gpt-4.1-2025-04-14',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=32_768,
+        context_window_size=1_047_576,
+        pricing={
+            'input': 2.00 / 1_000_000, 'output': 8.00 / 1_000_000,
+            'cached': 0.50 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2024, month=5, day=31),
+    ),
+    ModelInfo(
+        model='gpt-4.1-mini-2025-04-14',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=32_768,
+        context_window_size=1_047_576,
+        pricing={
+            'input': 0.40 / 1_000_000, 'output': 1.60 / 1_000_000,
+            'cached': 0.10 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2024, month=5, day=31),
+    ),
+    ModelInfo(
+        model='gpt-4.1-nano-2025-04-14',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=32_768,
+        context_window_size=1_047_576,
+        pricing={
+            'input': 0.10 / 1_000_000, 'output': 0.40 / 1_000_000,
+            'cached': 0.025 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2024, month=5, day=31),
+    ),
+    ####
+    # GPT-4o
+    ####
     ModelInfo(
         model='gpt-4o-mini-2024-07-18',
         provider=ModelProvider.OPENAI,
@@ -76,7 +124,9 @@ OPENAI_MODEL_INFOS = [
         supports_images=True,
         knowledge_cutoff_date=date(year=2023, month=9, day=30),
     ),
-
+    ####
+    # o3
+    ####
     ModelInfo(
         model='o3-mini-2025-01-31',
         provider=ModelProvider.OPENAI,
@@ -92,6 +142,9 @@ OPENAI_MODEL_INFOS = [
         supports_images=True,
         knowledge_cutoff_date=date(year=2023, month=9, day=30),
     ),
+    ####
+    # o1
+    ####
     ModelInfo(
         model='o1-2024-12-17',
         provider=ModelProvider.OPENAI,
@@ -110,8 +163,11 @@ OPENAI_MODEL_INFOS = [
 ]
 
 SUPPORTED_OPENAI_MODELS = {model.model: model for model in OPENAI_MODEL_INFOS}
-SUPPORTED_OPENAI_MODELS['gpt-4o-mini'] = SUPPORTED_OPENAI_MODELS['gpt-4o-mini-2024-07-18']
+SUPPORTED_OPENAI_MODELS['gpt-4.1'] = SUPPORTED_OPENAI_MODELS['gpt-4.1-2025-04-14']
+SUPPORTED_OPENAI_MODELS['gpt-4.1-mini'] = SUPPORTED_OPENAI_MODELS['gpt-4.1-mini-2025-04-14']
+SUPPORTED_OPENAI_MODELS['gpt-4.1-nano'] = SUPPORTED_OPENAI_MODELS['gpt-4.1-nano-2025-04-14']
 SUPPORTED_OPENAI_MODELS['gpt-4o'] = SUPPORTED_OPENAI_MODELS['gpt-4o-2024-11-20']
+SUPPORTED_OPENAI_MODELS['gpt-4o-mini'] = SUPPORTED_OPENAI_MODELS['gpt-4o-mini-2024-07-18']
 SUPPORTED_OPENAI_MODELS['o3-mini'] = SUPPORTED_OPENAI_MODELS['o3-mini-2025-01-31']
 SUPPORTED_OPENAI_MODELS['o1'] = SUPPORTED_OPENAI_MODELS['o1-2024-12-17']
 
