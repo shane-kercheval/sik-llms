@@ -27,6 +27,7 @@ load_dotenv()
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 class TestAnthropic:
     """Test the Anthropic Completion Wrapper."""
 
@@ -60,6 +61,7 @@ class TestAnthropic:
         assert response.output_cost > 0
         assert response.total_cost > 0
         assert response.duration_seconds > 0
+
 
 class TestAnthropicSync:  # noqa: D101
 
