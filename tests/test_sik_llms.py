@@ -1,5 +1,6 @@
 """Test public functions from sik_llms module."""
 import os
+from time import perf_counter
 import pytest
 from sik_llms import (
     create_client,
@@ -31,6 +32,43 @@ async def test__create_client__openai() -> None:
     response = client(messages=[user_message("What is the capital of France?")])
     assert isinstance(response, TextResponse)
     assert 'Paris' in response.response
+
+
+@pytest.mark.asyncio
+async def test__run_async() -> None:
+    """Tests that model can be called from run_async."""
+    client = create_client(model_name=OPENAI_TEST_MODEL)
+    response = await client.run_async(messages=[user_message("What is the capital of France?")])
+    assert isinstance(response, TextResponse)
+    assert response.response
+    assert 'Paris' in response.response
+    assert response.total_tokens > 0
+    assert response.total_cost > 0
+    assert response.duration_seconds > 0
+
+
+@pytest.mark.asyncio
+async def test__sample() -> None:
+    """Tests that model can be called from run_async."""
+    client = create_client(model_name=OPENAI_TEST_MODEL, temperature=0.5)
+    start_time = perf_counter()
+    responses = await client.sample(
+        messages=[user_message("What is the capital of France?")],
+        n=3,
+    )
+    total_duration = perf_counter() - start_time
+    assert isinstance(responses, list)
+    assert len(responses) == 3
+    assert isinstance(responses[0], TextResponse)
+    for response in responses:
+        assert response.response
+        assert 'Paris' in response.response
+        assert response.total_tokens > 0
+        assert response.total_cost > 0
+        assert response.duration_seconds > 0
+    assert total_duration > 0
+    assert total_duration < sum(response.duration_seconds for response in responses), \
+        "Total duration should be less than the sum of individual durations because of concurrency"
 
 
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")

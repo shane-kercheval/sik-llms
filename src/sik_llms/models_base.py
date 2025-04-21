@@ -470,6 +470,28 @@ class Client(ABC):
 
     registry = Registry()
 
+    @abstractmethod
+    async def stream(
+        self,
+        messages: list[dict[str, object]],
+    ) -> AsyncGenerator[
+            TextChunkEvent | TextResponse | ToolPredictionResponse | StructuredOutputResponse,
+            None,
+        ]:
+        """
+        Streams asynchronously.
+
+        For chat models, this method should return an async generator that yields ResponseChunk
+        objects. The last response should be a ResponseSummary object.
+
+        For tools models, this method should return a ToolPredictionResponse object.
+
+        Args:
+            messages:
+                List of messages to send to the model (i.e. model input).
+        """
+        pass
+
     def __call__(
             self,
             messages: list[dict[str, object]],
@@ -526,41 +548,34 @@ class Client(ABC):
         Args:
             messages:
                 List of messages to send to the model (i.e. model input).
-            model_name:
-                The model name to use for the API call (e.g. 'gpt-4o-mini').
-            **model_kwargs:
-                Additional parameters to pass to the API call (e.g. temperature, max_tokens).
         """
         last_response = None
         async for response in self.stream(messages):
             last_response = response
         return last_response
 
-    @abstractmethod
-    async def stream(
+    async def sample(
         self,
         messages: list[dict[str, object]],
-    ) -> AsyncGenerator[
-            TextChunkEvent | TextResponse | ToolPredictionResponse | StructuredOutputResponse,
-            None,
-        ]:
+        n: int = 2,
+    ) -> list[TextResponse | ToolPredictionResponse | StructuredOutputResponse]:
         """
-        Streams asynchronously.
+        Generate multiple responses from the model concurrently given the same input messages.
 
-        For chat models, this method should return an async generator that yields ResponseChunk
-        objects. The last response should be a ResponseSummary object.
-
-        For tools models, this method should return a ToolPredictionResponse object.
+        This method creates n concurrent tasks to generate different responses
+        from the model using the same input.
 
         Args:
             messages:
                 List of messages to send to the model (i.e. model input).
-            model_name:
-                The model name to use for the API call (e.g. 'gpt-4o-mini').
-            **model_kwargs:
-                Additional parameters to pass to the API call (e.g. temperature, max_tokens).
+            n:
+                Number of responses to generate. Defaults to 1.
         """
-        pass
+        async def get_response():  # noqa: ANN202
+            return await self.run_async(messages)
+
+        tasks = [get_response() for _ in range(n)]
+        return await asyncio.gather(*tasks)
 
     @classmethod
     def register(cls, client_type: str | RegisteredClients):

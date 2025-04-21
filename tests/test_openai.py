@@ -1,7 +1,7 @@
 """Test the OpenAI Wrapper."""
 import asyncio
 import random
-import time
+from time import perf_counter
 from faker import Faker
 import pytest
 from dotenv import load_dotenv
@@ -567,19 +567,19 @@ class TestOpenAI:
         messages = [{"role": "user", "content": "Say hello in one word."}]
 
         async def execute_request(i: int):  # noqa: ANN202
-            start = time.time()
+            start = perf_counter()
             result = None
             async for chunk in client.stream(messages=messages):
                 if hasattr(chunk, 'content') and isinstance(chunk.content, str):
                     result = chunk
-            end = time.time()
+            end = perf_counter()
             return {"index": i, "time": end - start, "result": result}
 
         # Execute all requests asynchronously/concurrently
-        start_time = time.time()
+        start_time = perf_counter()
         tasks = [execute_request(i) for i in range(num_requests)]
         results = await asyncio.gather(*tasks)
-        actual_time = time.time() - start_time
+        actual_time = perf_counter() - start_time
 
         times = [r["time"] for r in results]
         sequential_time = sum(times)

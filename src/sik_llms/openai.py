@@ -4,7 +4,7 @@ from datetime import date
 from functools import cache
 import json
 import os
-import time
+from time import perf_counter
 from collections.abc import AsyncGenerator
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -394,14 +394,14 @@ class OpenAI(Client):
         if self.response_format:
             if not model_info or not model_info.supports_structured_output:
                 raise ValueError(f"Structured output is not supported for this model: `{self.model}`")  # noqa: E501
-            start_time = time.time()
+            start_time = perf_counter()
             completion = await self.client.beta.chat.completions.parse(
                 model=self.model,
                 messages=messages,
                 store=False,
                 **model_parameters,
             )
-            end_time = time.time()
+            end_time = perf_counter()
             input_tokens = completion.usage.prompt_tokens
             # these fields may not be available when using openai library for third-party providers
             if (
@@ -445,7 +445,7 @@ class OpenAI(Client):
                 )
             ):
                 model_parameters['stream_options'] = {'include_usage': True}
-            start_time = time.time()
+            start_time = perf_counter()
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -469,7 +469,7 @@ class OpenAI(Client):
                         and hasattr(chunk.usage.prompt_tokens_details, 'cached_tokens')
                     ):
                         cached_tokens += chunk.usage.prompt_tokens_details.cached_tokens
-            end_time = time.time()
+            end_time = perf_counter()
             input_tokens -= cached_tokens  # remove cached tokens from input tokens
             if pricing_lookup:
                 input_cost = input_tokens * pricing_lookup['input']
@@ -646,7 +646,7 @@ class OpenAITools(Client):
         pricing_lookup = model_info.pricing if model_info else None
 
         model_parameters = deepcopy(self.model_parameters)
-        start = time.time()
+        start = perf_counter()
         completion = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -656,7 +656,7 @@ class OpenAITools(Client):
             stream=False,
             **model_parameters,
         )
-        end = time.time()
+        end = perf_counter()
         # Calculate costs
         input_tokens = completion.usage.prompt_tokens
         output_tokens = completion.usage.completion_tokens

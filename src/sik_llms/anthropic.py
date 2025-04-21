@@ -2,7 +2,7 @@
 from copy import deepcopy
 from datetime import date
 import os
-import time
+from time import perf_counter
 from collections.abc import AsyncGenerator
 from anthropic import AsyncAnthropic, Anthropic as SyncAnthropic
 from pydantic import BaseModel
@@ -416,7 +416,7 @@ class Anthropic(Client):
         }
         if system_messages:
             api_params['system'] = system_messages
-        start_time = time.time()
+        start_time = perf_counter()
         input_tokens = 0
         output_tokens = 0
         cache_creation_input_tokens = 0
@@ -436,7 +436,7 @@ class Anthropic(Client):
             if parsed_chunk and parsed_chunk.content:
                 yield parsed_chunk
                 chunks.append(parsed_chunk)
-        end_time = time.time()
+        end_time = perf_counter()
 
         # Process content for summary based on content types
         processed_chunks = []
@@ -604,9 +604,9 @@ class AnthropicTools(Client):
         }
         if system_content:
             api_params['system'] = system_content
-        start_time = time.time()
+        start_time = perf_counter()
         response = await self.client.messages.create(**api_params)
-        end_time = time.time()
+        end_time = perf_counter()
 
         tool_prediction = None
         message = None
