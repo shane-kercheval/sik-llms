@@ -560,22 +560,41 @@ class Client(ABC):
         n: int = 2,
     ) -> list[TextResponse | ToolPredictionResponse | StructuredOutputResponse]:
         """
-        Generate multiple responses from the model concurrently given the same input messages.
-
-        This method creates n concurrent tasks to generate different responses
-        from the model using the same input.
+        Generate `n` responses from the model concurrently given the same input messages.
 
         Args:
             messages:
                 List of messages to send to the model (i.e. model input).
             n:
-                Number of responses to generate. Defaults to 1.
+                Number of responses to generate.
         """
         async def get_response():  # noqa: ANN202
             return await self.run_async(messages)
 
         tasks = [get_response() for _ in range(n)]
         return await asyncio.gather(*tasks)
+
+    async def generate_multiple(
+        self,
+        messages: list[list[dict[str, object]]],
+    ) -> list[TextResponse | ToolPredictionResponse | StructuredOutputResponse]:
+        """
+        Generate `n` responses from the model concurrently given `n` different input messages.
+
+        Args:
+            messages:
+                List of list of messages. Each inner list represents a separate set of messages to
+                send to the model.
+        """
+        if not (isinstance(messages, list) and all(isinstance(m, list) for m in messages)):
+            raise TypeError("Messages must be a list of lists")
+
+        async def get_response(message_set: list[dict[str, object]]):  # noqa: ANN202
+            return await self.run_async(message_set)
+
+        tasks = [get_response(message_set) for message_set in messages]
+        return await asyncio.gather(*tasks)
+
 
     @classmethod
     def register(cls, client_type: str | RegisteredClients):

@@ -71,6 +71,45 @@ async def test__sample() -> None:
         "Total duration should be less than the sum of individual durations because of concurrency"
 
 
+@pytest.mark.asyncio
+async def test__generate_multiple__requires_list_of_list() -> None:
+    client = create_client(model_name=OPENAI_TEST_MODEL, temperature=0.1)
+    with pytest.raises(TypeError):
+        _ = await client.generate_multiple(
+            # This should be a list of lists, but we are passing a single list
+            messages=[user_message("What is the capital of France? Return only the city name.")],
+        )
+
+
+@pytest.mark.asyncio
+async def test__generate_multiple() -> None:
+    """Tests that model can be called from run_async."""
+    client = create_client(model_name=OPENAI_TEST_MODEL, temperature=0.1)
+    start_time = perf_counter()
+    responses = await client.generate_multiple(
+        messages=[
+            [user_message("What is the capital of France? Return only the city name.")],
+            [user_message("What is the capital of Italy? Return only the city name.")],
+        ],
+    )
+    total_duration = perf_counter() - start_time
+    assert isinstance(responses, list)
+    assert len(responses) == 2
+    assert isinstance(responses[0], TextResponse)
+    for i, response in enumerate(responses):
+        assert response.response
+        if i == 0:
+            assert 'Paris' in response.response
+        else:
+            assert 'Rome' in response.response
+        assert response.total_tokens > 0
+        assert response.total_cost > 0
+        assert response.duration_seconds > 0
+    assert total_duration > 0
+    assert total_duration < sum(response.duration_seconds for response in responses), \
+        "Total duration should be less than the sum of individual durations because of concurrency"
+
+
 @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
 @pytest.mark.asyncio
 async def test__create_client__anthropic() -> None:
