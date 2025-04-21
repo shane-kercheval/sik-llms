@@ -80,10 +80,9 @@ async def test__generate_multiple__requires_list_of_list() -> None:
             messages=[user_message("What is the capital of France? Return only the city name.")],
         )
 
-
 @pytest.mark.asyncio
 async def test__generate_multiple() -> None:
-    """Tests that model can be called from run_async."""
+    """generate_multiple with `sample_n` of 1 should return flattened list of responses."""
     client = create_client(model_name=OPENAI_TEST_MODEL, temperature=0.1)
     start_time = perf_counter()
     responses = await client.generate_multiple(
@@ -107,6 +106,44 @@ async def test__generate_multiple() -> None:
         assert response.duration_seconds > 0
     assert total_duration > 0
     assert total_duration < sum(response.duration_seconds for response in responses), \
+        "Total duration should be less than the sum of individual durations because of concurrency"
+
+
+@pytest.mark.asyncio
+async def test__generate_multiple__sample_n() -> None:
+    """generate_multiple with `sample_n` greater than 1 should result in list of lists."""
+    client = create_client(model_name=OPENAI_TEST_MODEL, temperature=0.1)
+    start_time = perf_counter()
+    # responses should be a list of lists; outer list is len(messages), inner list is len(sample_n)
+    responses_set = await client.generate_multiple(
+        messages=[
+            [user_message("What is the capital of France? Return only the city name.")],
+            [user_message("What is the capital of Italy? Return only the city name.")],
+        ],
+        sample_n=3,
+    )
+    total_duration = perf_counter() - start_time
+    assert isinstance(responses_set, list)
+    assert len(responses_set) == 2
+    assert all(isinstance(responses, list) for responses in responses_set)
+    assert all(len(responses) == 3 for responses in responses_set)
+    for i, responses in enumerate(responses_set):
+        for response in responses:
+            assert isinstance(response, TextResponse)
+            assert response.response
+            if i == 0:
+                assert 'Paris' in response.response
+            else:
+                assert 'Rome' in response.response
+            assert response.total_tokens > 0
+            assert response.total_cost > 0
+            assert response.duration_seconds > 0
+    assert total_duration > 0
+    assert total_duration < sum(
+        response.duration_seconds
+        for responses in responses_set
+        for response in responses
+    ), \
         "Total duration should be less than the sum of individual durations because of concurrency"
 
 

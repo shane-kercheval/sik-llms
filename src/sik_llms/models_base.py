@@ -568,32 +568,50 @@ class Client(ABC):
             n:
                 Number of responses to generate.
         """
-        async def get_response():  # noqa: ANN202
-            return await self.run_async(messages)
-
-        tasks = [get_response() for _ in range(n)]
+        tasks = [self.run_async(messages) for _ in range(n)]
         return await asyncio.gather(*tasks)
 
     async def generate_multiple(
         self,
         messages: list[list[dict[str, object]]],
-    ) -> list[TextResponse | ToolPredictionResponse | StructuredOutputResponse]:
+        sample_n: int = 1,
+    ) -> list[TextResponse | ToolPredictionResponse | StructuredOutputResponse] | \
+         list[list[TextResponse | ToolPredictionResponse | StructuredOutputResponse]]:
         """
-        Generate `n` responses from the model concurrently given `n` different input messages.
+        Generate multiple responses from the model concurrently given `n` different input messages.
+
+        If `sample_n` is greater than 1, the model will generate `n` responses for each set of
+        messages, resulting in a **list of lists** of responses of outer length `len(messages)` and
+        inner length `sample_n`.
+
+        If `sample_n` is 1, the model will generate a single response for each set of messages,
+        resulting in a **list** of responses.
 
         Args:
             messages:
                 List of list of messages. Each inner list represents a separate set of messages to
                 send to the model.
+            sample_n:
+                Number of responses to generate for each set of messages.
         """
         if not (isinstance(messages, list) and all(isinstance(m, list) for m in messages)):
             raise TypeError("Messages must be a list of lists")
 
-        async def get_response(message_set: list[dict[str, object]]):  # noqa: ANN202
-            return await self.run_async(message_set)
+        all_tasks = []
+        for message_set in messages:
+            for _ in range(sample_n):
+                all_tasks.append(self.run_async(message_set))
 
-        tasks = [get_response(message_set) for message_set in messages]
-        return await asyncio.gather(*tasks)
+        all_results = await asyncio.gather(*all_tasks)
+
+        if sample_n == 1:
+            # If sample_n is 1, return results directly as a flat list
+            return all_results
+        # If sample_n > 1, restructure into a list of lists
+        result_lists = []
+        for i in range(0, len(all_results), sample_n):
+            result_lists.append(all_results[i:i+sample_n])
+        return result_lists
 
 
     @classmethod
