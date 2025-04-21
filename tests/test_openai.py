@@ -1,7 +1,7 @@
 """Test the OpenAI Wrapper."""
 import asyncio
 import random
-from time import perf_counter
+from time import perf_counter, sleep
 from faker import Faker
 import pytest
 from dotenv import load_dotenv
@@ -696,7 +696,7 @@ class TestOpenAICaching:
         )
         assert response.total_cost == expected_total_cost
 
-        time.sleep(0.5)  # sporadicly failing; i'm guessing it needs time to write to cache
+        sleep(0.5)  # sporadicly failing; i'm guessing it needs time to write to cache
         # second run should result in a cache-hit
         response = client(messages=messages)
         assert response.response
@@ -755,7 +755,7 @@ class TestOpenAICaching:
         )
         assert response.total_cost == expected_total_cost
 
-        time.sleep(0.5)  # sporadicly failing; i'm guessing it needs time to write to cache
+        sleep(0.5)  # sporadicly failing; i'm guessing it needs time to write to cache
         # second run should result in a cache-hit
         messages=[
             user_message("Search for expensive italian restaurants in New York?"),
