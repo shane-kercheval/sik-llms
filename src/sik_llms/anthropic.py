@@ -241,6 +241,8 @@ class Anthropic(Client):
             self,
             model_name: str,
             api_key: str | None = None,
+            web_search: bool = False,
+            max_web_searches: int = 5,
             reasoning_effort: ReasoningEffort | None = None,
             thinking_budget_tokens: int | None = None,
             response_format: type[BaseModel] | None = None,
@@ -258,6 +260,15 @@ class Anthropic(Client):
             api_key:
                 The API key to use for the API call. If not provided, the ANTHROPIC_API_KEY
                 environment variable will be used.
+            web_search:
+                "The web search tool gives Claude direct access to real-time web content, allowing
+                it to answer questions with up-to-date information beyond its knowledge cutoff.
+                Claude automatically cites sources from search results as part of its answer."
+                https://docs.anthropic.com/en/docs/build-with-claude/tool-use/web-search-tool
+            max_web_searches:
+                "The max_uses parameter limits the number of searches performed. If Claude attempts
+                more searches than allowed, the web_search_tool_result will be an error with the
+                max_uses_exceeded error code."
             reasoning_effort:
                 Refers to the "thinking budget" refered to here:
 
@@ -291,6 +302,9 @@ class Anthropic(Client):
             raise ValueError("ANTHROPIC_API_KEY is not set")
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model_name
+
+        self.web_search = web_search
+        self.max_web_searches = max_web_searches
 
         self.response_format = response_format
         # remove any None values
@@ -341,7 +355,7 @@ class Anthropic(Client):
                 self.model_parameters.pop('top_k')
 
 
-    async def stream(
+    async def stream(  # noqa: PLR0912
             self,
             messages: list[dict],
         ) -> AsyncGenerator[TextChunkEvent | TextResponse, None]:
@@ -416,12 +430,20 @@ class Anthropic(Client):
         }
         if system_messages:
             api_params['system'] = system_messages
-        start_time = perf_counter()
+
+        if self.web_search:
+            api_params['tools'] = [{
+                'type': 'web_search_20250305',
+                'name': 'web_search',
+                'max_uses': self.max_web_searches,
+            }]
+
         input_tokens = 0
         output_tokens = 0
         cache_creation_input_tokens = 0
         cache_read_input_tokens = 0
 
+        start_time = perf_counter()
         chunks = []
         response = await self.client.messages.create(**api_params)
         async for chunk in response:
