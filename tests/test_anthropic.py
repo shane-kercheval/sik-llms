@@ -38,6 +38,8 @@ class TestAnthropic:
             'claude-3-5-haiku-20241022',
             'claude-3-5-sonnet-20241022',
             'claude-3-7-sonnet-20250219',
+            'claude-sonnet-4-20250514',
+            'claude-opus-4-20250514',
             # primary models
             'claude-3-5-haiku-latest',
             'claude-3-5-sonnet-latest',

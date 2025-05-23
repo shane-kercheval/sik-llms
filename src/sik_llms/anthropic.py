@@ -59,7 +59,7 @@ ANTHROPIC_MODEL_LOOKUPS = [
     ModelInfo(
         model='claude-3-7-sonnet-20250219',
         provider=ModelProvider.ANTHROPIC,
-        max_output_tokens=8_192,
+        max_output_tokens=64_000,
         context_window_size=200_000,
         pricing={
             'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
@@ -73,14 +73,47 @@ ANTHROPIC_MODEL_LOOKUPS = [
             'max_output_extended_thinking': 64_000,
         },
     ),
+
+    ModelInfo(
+        model='claude-sonnet-4-20250514',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=64_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
+            'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        supports_reasoning=True,
+        knowledge_cutoff_date=date(year=2025, month=3, day=31),
+        metadata={
+            'max_output_extended_thinking': 64_000,
+        },
+    ),
+
+    ModelInfo(
+        model='claude-opus-4-20250514',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=32_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 15.00 / 1_000_000, 'output': 75.00 / 1_000_000,
+            'cache_write': 18.75 / 1_000_000, 'cache_read': 1.50 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        supports_reasoning=True,
+        knowledge_cutoff_date=date(year=2025, month=3, day=31),
+        metadata={
+            'max_output_extended_thinking': 64_000,
+        },
+    ),
 ]
 SUPPORTED_ANTHROPIC_MODELS = {model.model: model for model in ANTHROPIC_MODEL_LOOKUPS}
 SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-20241022']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-20241022']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-20250219']  # noqa: E501
-SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-latest']  # noqa: E501
-SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-latest']  # noqa: E501
-SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-latest']  # noqa: E501
 
 
 # Default thinking budget tokens for each reasoning effort level
