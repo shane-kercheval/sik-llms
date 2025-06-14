@@ -525,19 +525,16 @@ class Client(ABC):
             # If it's a regular coroutine, just await and return the result
             return await result
 
-        # Try to get the current event loop
+        # Try to use the current event loop if one is running
         try:
-            loop = asyncio.get_event_loop()
-            # Check if the loop is already running
-            if loop.is_running():
-                # We're inside a running event loop (test, Jupyter, etc.)
-                # Apply nest_asyncio to allow nested event loops
-                nest_asyncio.apply()
-                return loop.run_until_complete(run())
-            # We have a loop but it's not running
+            # Try to get the running loop (will raise RuntimeError if no loop is running)
+            loop = asyncio.get_running_loop()
+            # We're inside a running event loop (test, Jupyter, etc.)
+            # Apply nest_asyncio to allow nested event loops
+            nest_asyncio.apply()
             return loop.run_until_complete(run())
         except RuntimeError:
-            # No event loop exists
+            # No running loop exists, use asyncio.run which creates and manages its own loop
             return asyncio.run(run())
 
     async def run_async(
