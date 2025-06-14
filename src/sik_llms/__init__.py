@@ -55,21 +55,21 @@ def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | E
 
 def create_client(
         model_name: str,
-        client_type: str | Enum | None = None,
+        client_type: str | RegisteredClients | None = None,
         **client_kwargs: dict | None,
     ) -> Client:
     """
     Create a client instance based on the model name and type. This function is simply a
     convenience over calling Client.instantiate directly and ifers the model type from the model
-    name if it is registered in the RegisteredModels enum.
+    name if it is registered in the RegisteredClients enum.
 
     Args:
         model_name:
             The name of the model to create (e.g. 'gpt-4o-mini').
         client_type:
-            The type of model to create. This can be a string or a value from RegisteredModels.
+            The type of model to create. This can be a string or a value from RegisteredClients.
             If None, the model type is inferred from the model name. This only works for models
-            registered in the RegisteredModels enum. Additionally, it will chose chat models over
+            registered in the RegisteredClients enum. Additionally, it will chose chat models over
             other types (e.g. `OpenAI` over `OpenAIFunctions`).
         **client_kwargs:
             Additional keyword arguments to pass to the client's constructor. Each client has

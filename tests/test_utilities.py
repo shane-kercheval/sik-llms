@@ -3,7 +3,7 @@ import pytest
 from enum import Enum, auto
 from typing import List, Dict, Literal, Optional, Union, Any  # noqa: UP035
 from pydantic import BaseModel
-from sik_llms.utilities import Registry
+from sik_llms.utilities import Registry, _string_to_type
 from sik_llms.utilities import get_json_schema_type
 
 
@@ -407,3 +407,46 @@ class Test_get_json_schema_type:  # noqa: D101, N801
 
         with pytest.raises(ValueError, match="Unsupported type annotation"):
             get_json_schema_type(CustomClass)
+
+
+class TestStringToType:
+    """Tests for the _string_to_type helper function."""
+
+    @pytest.mark.parametrize(('type_str', 'expected_type'), [
+        ('str', str),
+        ('int', int),
+        ('bool', bool),
+        ('float', float),
+        ('list', list),
+        ('dict', dict),
+        ('tuple', tuple),
+        ('set', set),
+        ('bytes', bytes),
+        ('bytearray', bytearray),
+        ('complex', complex),
+        ('frozenset', frozenset),
+    ])
+    def test_basic_types(self, type_str: str, expected_type: type):
+        """Test conversion of basic Python types from strings."""
+        result = _string_to_type(type_str)
+        assert result is expected_type
+
+    def test_invalid_type_string(self):
+        """Test that invalid type strings raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid type string 'invalid_type'"):
+            _string_to_type('invalid_type')
+
+    def test_non_type_string(self):
+        """Test that strings that don't represent types raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid type string 'hello'"):
+            _string_to_type('hello')
+
+    def test_empty_string(self):
+        """Test that empty string raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid type string"):
+            _string_to_type('')
+
+    def test_malicious_string(self):
+        """Test that potentially malicious strings don't execute."""
+        with pytest.raises(ValueError, match="Invalid type string"):
+            _string_to_type('__import__("os").system("echo test")')

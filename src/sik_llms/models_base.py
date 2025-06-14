@@ -12,7 +12,7 @@ from collections.abc import AsyncGenerator, Callable
 from copy import deepcopy
 from enum import Enum, auto
 from typing import Any, Literal, TypeVar, Union, get_args, get_origin
-from sik_llms.utilities import Registry
+from sik_llms.utilities import Registry, _string_to_type
 
 
 class ModelProvider(Enum):
@@ -279,7 +279,8 @@ class Parameter(BaseModel):
         name:
             The name of the parameter.
         param_type:
-            The type of the parameter (e.g. `str`, `int`, `bool`, `MyModel(BaseModel)`).
+            The type of the parameter (e.g. `str`, `int`, `bool`, `MyModel(BaseModel)`), or a
+            string representation of a type (e.g. `"str"`, `"int"`).
         required:
             Whether the parameter is required.
         description:
@@ -365,6 +366,10 @@ class Parameter(BaseModel):
     @classmethod
     def validate_param_type(cls, v):  # noqa: ANN001
         """Validate that param_type is a valid type."""
+        # Handle string representations
+        if isinstance(v, str):
+            v = _string_to_type(v)
+
         # Reject Any explicitly
         if v is Any:
             raise ValueError("Any is not supported as a param_type")

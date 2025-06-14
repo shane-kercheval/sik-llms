@@ -1,6 +1,6 @@
 [project]
 name = "sik-llms"
-version = "0.3.17"
+version = "0.3.18"
 description = "Lightweight, easy, and consistent LLM-interface across providers and functionality."
 readme = "README.md"
 requires-python = ">=3.11"

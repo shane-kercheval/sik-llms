@@ -1,4 +1,5 @@
 """Utility functions and classes."""
+import builtins
 from enum import Enum
 import inspect
 import types
@@ -267,3 +268,26 @@ def _remove_defaults_recursively(obj) -> None:  # noqa: ANN001
         for item in obj:
             if isinstance(item, dict | list):
                 _remove_defaults_recursively(item)
+
+
+def _string_to_type(type_str: str) -> type:
+    """
+    Convert a string representation to a Python type.
+
+    Args:
+        type_str: String representation of a type (e.g., 'str', 'int', 'bool', 'float', 'list')
+
+    Returns:
+        The corresponding Python type
+
+    Raises:
+        ValueError: If the string doesn't correspond to a recognized type
+    """
+    try:
+        # Use eval to convert string to type, but restrict to safe builtins
+        result = eval(type_str, {"__builtins__": {}}, builtins.__dict__)
+        if isinstance(result, type):
+            return result
+        raise ValueError(f"'{type_str}' is not a type")
+    except Exception as e:
+        raise ValueError(f"Invalid type string '{type_str}': {e}") from e
