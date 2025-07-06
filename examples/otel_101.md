@@ -90,47 +90,40 @@ response = client([{"role": "user", "content": "Help me plan a trip"}])
 
 ### **The Three Pillars of Observability**
 
-Think of OpenTelemetry like a medical monitoring system for your code:
+OpenTelemetry defines three pillars of observability:
 
-#### **1. Traces = The Story**
+#### **1. Traces = The Story (Built from Spans)**
+
 **What**: The journey of a single request through your system
-**Analogy**: Like a GPS route showing every turn you took
+**How**: Made up of **spans** - individual operations with start/end times
 **LLM Example**: "User asked question → Reasoning started → Called GPT-4 → Got response → Formatted output"
 
 ```python
-# This creates a trace:
+# This creates a TRACE made up of multiple SPANS:
 response = client([{"role": "user", "content": "What's 2+2?"}])
 
-# Behind the scenes, sik-llms creates:
+# Behind the scenes, sik-llms creates spans:
 # Trace: "user_question_processing"
-#   Span: "llm.request" (2.3s)
-#     Span: "llm.openai.stream" (2.1s) 
-#       Span: "http.request" (2.0s)
+#   Span: "llm.request" (2.3s)           ← Created by a span
+#     Span: "llm.openai.stream" (2.1s)   ← Created by a span
+#       Span: "http.request" (2.0s)      ← Created by a span
 ```
 
 #### **2. Metrics = The Vital Signs**
+
 **What**: Numbers that tell you system health
-**Analogy**: Like heart rate, blood pressure, temperature
 **LLM Example**: Token counts, costs, request rates, error rates
 
-```python
-# These automatically become metrics:
-llm_tokens_input_total{model="gpt-4o-mini"} = 1,250
-llm_tokens_output_total{model="gpt-4o-mini"} = 480  
-llm_cost_total_usd{model="gpt-4o-mini"} = 0.0023
-llm_request_duration_seconds{model="gpt-4o-mini"} = 2.3
-```
+sik-llms automatically sends metrics like token usage, costs, and request duration to your observability backend (e.g., Prometheus). You can then query and visualize these metrics to understand your LLM usage patterns, set up alerts, and create dashboards.
 
-#### **3. Logs = The Details** 
-**What**: Detailed messages about what happened
-**Analogy**: Like a diary of events
-**LLM Example**: "Started reasoning", "Tool call failed", "Response parsed"
+#### **Logs (3rd Pillar)**
 
-*Note: sik-llms focuses on traces and metrics. Logs are usually handled separately.*
+`sik-llms` does not emit OpenTelemetry logs or span events. If you need logging, you'd add your own using Python's `logging` module or OpenTelemetry's logging APIs.
 
 ### **Key OpenTelemetry Concepts**
 
 #### **Spans: The Building Blocks**
+
 ```python
 # A span represents one operation
 with tracer.start_as_current_span("llm.request") as span:
@@ -146,6 +139,7 @@ with tracer.start_as_current_span("llm.request") as span:
 - `llm.provider` = "openai"
 
 #### **Trace Context: Connecting the Dots**
+
 ```python
 # Parent span
 with tracer.start_as_current_span("user.question") as parent:
@@ -364,8 +358,9 @@ python example_with_telemetry.py
 **What you'll see:**
 - **Timeline**: Visual representation of span durations
 - **Span Details**: Attributes like model, tokens, cost
-- **Logs**: Any log events attached to spans
 - **Process**: Service information
+
+*Note: sik-llms does not emit span events, so you won't see "logs" in Jaeger spans.*
 
 ### **Step 5: Understanding the Jaeger UI**
 
@@ -1380,19 +1375,31 @@ trace_provider = TracerProvider(sampler=CostBasedSampler())
 
 ### **✅ What sik-llms Provides Automatically**
 
-**Traces** (request flows):
-- LLM request spans with timing, model, provider attributes
-- Token counts, costs, and cache usage in span attributes
-- ReasoningAgent iterations and tool calls
-- Error tracking and status codes
+**Traces** (made up of spans):
+- Individual operation spans created via `safe_span()` throughout the codebase
+- Span attributes containing model info, token counts, costs, cache usage
+- ReasoningAgent spans for iterations and tool calls
+- Error tracking and status information
+- Hierarchical span relationships (parent-child traces)
 
-**Metrics** (monitoring data):
+**Metrics** (numerical monitoring data):
 - `llm_tokens_input_total`, `llm_tokens_output_total`
 - `llm_cost_total_usd`, `llm_request_duration_seconds`
 - `llm_cache_read_tokens_total`, `llm_cache_write_tokens_total`
 - `llm_reasoning_iterations_total`, `llm_reasoning_tool_calls_total`
 
 **Just set**: `export OTEL_SDK_DISABLED=false`
+
+### **❌ What sik-llms Does NOT Provide**
+
+**OpenTelemetry Logs** (3rd pillar):
+- No structured OTEL logging
+- No span events (`span.add_event()`)
+- No log correlation with traces
+
+**Traditional Application Logging**:
+- No `logging.info()`, `print()`, or similar output
+- You'd add your own logging if needed
 
 ### **📊 What You Need to Set Up**
 
