@@ -45,12 +45,12 @@ def get_tracer() -> object | None:
 
         if not isinstance(current_provider, NoOpTracerProvider):
             # User has already set up a real provider - respect it
-            return trace.get_tracer("sik-llms")
+            return trace.get_tracer('sik-llms')
 
         # No real provider exists - set up our default configuration
         resource = Resource.create({
-            "service.name": os.getenv("OTEL_SERVICE_NAME", "sik-llms"),
-            "service.version": _get_package_version(),
+            'service.name': os.getenv('OTEL_SERVICE_NAME', 'sik-llms'),
+            'service.version': _get_package_version(),
         })
 
         # Create and set tracer provider
@@ -60,17 +60,17 @@ def get_tracer() -> object | None:
         # Set up OTLP exporter
         otlp_exporter = OTLPSpanExporter(
             endpoint=os.getenv(
-                "OTEL_EXPORTER_OTLP_ENDPOINT",
-                "http://localhost:4318/v1/traces",
+                'OTEL_EXPORTER_OTLP_ENDPOINT',
+                'http://localhost:4318/v1/traces',
             ),
-            headers=_parse_headers(os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "")),
+            headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
         )
 
         # Add batch span processor
         span_processor = BatchSpanProcessor(otlp_exporter)
         provider.add_span_processor(span_processor)
 
-        return trace.get_tracer("sik-llms")
+        return trace.get_tracer('sik-llms')
 
     except ImportError:
         warnings.warn(
@@ -108,21 +108,21 @@ def get_meter() -> object | None:
 
         if not isinstance(current_provider, NoOpMeterProvider):
             # User has already set up a real provider - respect it
-            return metrics.get_meter("sik-llms")
+            return metrics.get_meter('sik-llms')
 
         # No real provider exists - set up our default configuration
         resource = Resource.create({
-            "service.name": os.getenv("OTEL_SERVICE_NAME", "sik-llms"),
-            "service.version": _get_package_version(),
+            'service.name': os.getenv('OTEL_SERVICE_NAME', 'sik-llms'),
+            'service.version': _get_package_version(),
         })
 
         # Create OTLP metric exporter
         otlp_exporter = OTLPMetricExporter(
             endpoint=os.getenv(
-                "OTEL_EXPORTER_OTLP_ENDPOINT",
-                "http://localhost:4318/v1/metrics",
-            ).replace("/traces", "/metrics"),
-            headers=_parse_headers(os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "")),
+                'OTEL_EXPORTER_OTLP_ENDPOINT',
+                'http://localhost:4318/v1/metrics',
+            ).replace('/traces', '/metrics'),
+            headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
         )
 
         # Create meter provider with periodic reader
@@ -134,7 +134,7 @@ def get_meter() -> object | None:
         provider = MeterProvider(resource=resource, metric_readers=[reader])
         metrics.set_meter_provider(provider)
 
-        return metrics.get_meter("sik-llms")
+        return metrics.get_meter('sik-llms')
 
     except ImportError:
         # Silently fail for metrics if traces are working
@@ -200,9 +200,9 @@ def _get_package_version() -> str:
     """Get the package version dynamically."""
     try:
         from importlib.metadata import version
-        return version("sik-llms")
+        return version('sik-llms')
     except Exception:
-        return "unknown"
+        return 'unknown'
 
 
 def _parse_headers(header_string: str) -> dict[str, str]:
