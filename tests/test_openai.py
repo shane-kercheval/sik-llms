@@ -20,7 +20,7 @@ from sik_llms import (
     OpenAITools,
 )
 from sik_llms.models_base import ImageContent, ImageSourceType, assistant_message
-from sik_llms.openai import _convert_messages
+from sik_llms.openai import SUPPORTED_OPENAI_MODELS, _convert_messages
 from tests.conftest import OPENAI_TEST_MODEL, OPENAI_TEST_REASONING_MODEL
 
 load_dotenv()
@@ -478,45 +478,37 @@ class TestReasoningModelsDoNotSetCertainParameters:
 class TestOpenAI:
     """Test the OpenAI Completion Wrapper."""
 
-    @pytest.mark.parametrize(
-        'model_name',
-        [
-            # versioned models
-            'gpt-4.1-2025-04-14',
-            'gpt-4.1-mini-2025-04-14',
-            'gpt-4.1-nano-2025-04-14',
-            'gpt-4o-mini-2024-07-18',
-            'gpt-4o-2024-08-06',
-            'gpt-4o-2024-11-20',
-            'o3-mini-2025-01-31',
-            'o1-2024-12-17',
-            # primary models
-            'gpt-4.1',
-            'gpt-4.1-mini',
-            'gpt-4.1-nano',
-            'gpt-4o',
-            'gpt-4o-mini',
-            'o3-mini',
-            'o1',
-        ],
-    )
-    async def test__all_models(self, model_name: str):
-        # Create an instance of the wrapper
-        client = OpenAI(model_name=model_name)
-        messages = [
-            system_message("You are a helpful assistant."),
-            user_message("Respond with exactly \"42\"."),
-        ]
-        response = await client.run_async(messages=messages)
-        assert isinstance(response, TextResponse)
-        assert '42' in response.response
-        assert response.input_tokens > 0
-        assert response.output_tokens > 0
-        assert response.total_tokens > 0
-        assert response.input_cost > 0
-        assert response.output_cost > 0
-        assert response.total_cost > 0
-        assert response.duration_seconds > 0
+    async def test__all_models(self):
+        """Test all models concurrently for better performance."""
+        async def test_single_model(model_name: str) -> TextResponse:
+            """Test a single model and return results."""
+            client = OpenAI(model_name=model_name)
+            messages = [
+                system_message("You are a helpful assistant."),
+                user_message("Respond with exactly \"42\"."),
+            ]
+            response = await client.run_async(messages=messages)
+            assert isinstance(response, TextResponse)
+            assert '42' in response.response
+            assert response.input_tokens > 0
+            assert response.output_tokens > 0
+            assert response.total_tokens > 0
+            assert response.input_cost > 0
+            assert response.output_cost > 0
+            assert response.total_cost > 0
+            assert response.duration_seconds > 0
+            return response
+
+        # Run all models concurrently
+        model_names = list(SUPPORTED_OPENAI_MODELS.keys())
+        results = await asyncio.gather(
+            *(test_single_model(model) for model in model_names),
+            return_exceptions=True,
+        )
+        assert len(results) == len(model_names)
+        assert all(isinstance(result, TextResponse) for result in results)
+
+
 
     @pytest.mark.stochastic(samples=10, threshold=0.8)
     async def test__async_openai(self):

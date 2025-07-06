@@ -20,7 +20,7 @@ from sik_llms import (
     ReasoningEffort,
     ThinkingChunkEvent,
 )
-from sik_llms.anthropic import _convert_messages
+from sik_llms.anthropic import SUPPORTED_ANTHROPIC_MODELS, _convert_messages
 from sik_llms.models_base import ImageContent, ImageSourceType
 from tests.conftest import ANTHROPIC_TEST_MODEL, ANTRHOPIC_TEST_THINKING_MODEL
 load_dotenv()
@@ -31,38 +31,35 @@ load_dotenv()
 class TestAnthropic:
     """Test the Anthropic Completion Wrapper."""
 
-    @pytest.mark.parametrize(
-        'model_name',
-        [
-            # versioned models
-            'claude-3-5-haiku-20241022',
-            'claude-3-5-sonnet-20241022',
-            'claude-3-7-sonnet-20250219',
-            'claude-sonnet-4-20250514',
-            'claude-opus-4-20250514',
-            # primary models
-            'claude-3-5-haiku-latest',
-            'claude-3-5-sonnet-latest',
-            'claude-3-7-sonnet-latest',
-        ],
-    )
-    async def test__all_models(self, model_name: str):
-        # Create an instance of the wrapper
-        client = Anthropic(model_name=model_name)
-        messages = [
-            system_message("You are a helpful assistant."),
-            user_message("Respond with exactly \"42\"."),
-        ]
-        response = await client.run_async(messages=messages)
-        assert isinstance(response, TextResponse)
-        assert '42' in response.response
-        assert response.input_tokens > 0
-        assert response.output_tokens > 0
-        assert response.total_tokens > 0
-        assert response.input_cost > 0
-        assert response.output_cost > 0
-        assert response.total_cost > 0
-        assert response.duration_seconds > 0
+    async def test__all_models(self):
+        """Test all models concurrently for better performance."""
+        async def test_single_model(model_name: str) -> TextResponse:
+            """Test a single model and return results."""
+            client = Anthropic(model_name=model_name)
+            messages = [
+                system_message("You are a helpful assistant."),
+                user_message("Respond with exactly \"42\"."),
+            ]
+            response = await client.run_async(messages=messages)
+            assert isinstance(response, TextResponse)
+            assert '42' in response.response
+            assert response.input_tokens > 0
+            assert response.output_tokens > 0
+            assert response.total_tokens > 0
+            assert response.input_cost > 0
+            assert response.output_cost > 0
+            assert response.total_cost > 0
+            assert response.duration_seconds > 0
+            return response
+
+        # Run all models concurrently
+        model_names = list(SUPPORTED_ANTHROPIC_MODELS.keys())
+        results = await asyncio.gather(
+            *(test_single_model(model) for model in model_names),
+            return_exceptions=True,
+        )
+        assert len(results) == len(model_names)
+        assert all(isinstance(result, TextResponse) for result in results)
 
 
 class TestAnthropicSync:  # noqa: D101
