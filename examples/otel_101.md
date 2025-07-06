@@ -11,7 +11,7 @@ This guide will take you from "What is observability?" to "I can set up producti
 **NO!** sik-llms automatically emits all telemetry for you. You just need to:
 
 1. **Set environment variable**: `export OTEL_SDK_DISABLED=false`
-2. **Set up collection infrastructure** (Jaeger for traces, Prometheus for metrics)
+2. **Set up collection infrastructure** (Any OTLP-compatible backend; e.g. Jaeger for traces, Prometheus for metrics)
 3. **Use sik-llms normally** - all metrics and traces are automatic
 
 **You get these metrics automatically**:
@@ -37,10 +37,11 @@ response = client([{"role": "user", "content": "Hello"}])
 4. [Complete Observability Stack Setup](#complete-stack-traces--metrics-recommended)
 5. [Quick Start: Traces Only](#quick-start-jaeger-only-traces-only)
 6. [Setup Options: Zero-Config vs Manual](#setup-options-zero-config-vs-manual)
-6. [Production Backends](#production-backends)
-7. [Understanding Your Data](#understanding-your-data)
-8. [Troubleshooting](#troubleshooting)
-9. [Advanced Usage](#advanced-usage)
+7. [Backend Alternatives: Simpler Setup Options](#backend-alternatives-simpler-setup-options)
+8. [Production Backends (Detailed Configuration)](#production-backends-detailed-configuration)
+9. [Understanding Your Data](#understanding-your-data)
+10. [Troubleshooting](#troubleshooting)
+11. [Advanced Usage](#advanced-usage)
 
 ---
 
@@ -257,10 +258,11 @@ llm_reasoning_tool_calls_total{reasoning_effort="medium"} += 1
 
 ## 🐳 **Setup Guide: Complete Observability Stack**
 
-### **Understanding the Two-Backend System**
+### **Understanding OpenTelemetry Backend Options**
 
-OpenTelemetry data flows to **two different types of backends**:
+OpenTelemetry data flows to **backend systems that support OTLP (OpenTelemetry Protocol)**. sik-llms is **backend-agnostic** - it just sends standardized OTLP data to any compatible system.
 
+**In this guide, we use popular open-source examples**:
 1. **Traces** → **Jaeger** (for request flows and debugging)
 2. **Metrics** → **Prometheus** (for monitoring and alerting)
 
@@ -269,13 +271,23 @@ sik-llms → OTLP Collector → ┌─ Jaeger (traces)
                            └─ Prometheus (metrics) → Grafana (dashboards)
 ```
 
-**That's why you need BOTH systems** to see all your telemetry data.
+**Alternative backends** (that can often handle both traces AND metrics with simpler setup):
+- **Honeycomb** - Handles traces + metrics in one system
+- **Datadog** - Full observability platform
+- **New Relic** - Application performance monitoring
+- **AWS X-Ray** + CloudWatch - AWS native
+- **Google Cloud Trace** + Monitoring - GCP native
+- **Grafana Cloud** - Managed Grafana + Prometheus + Loki
+
+**Why we use the two-backend example**: Jaeger + Prometheus demonstrates the full OpenTelemetry ecosystem and gives you maximum flexibility, but **other backends can simplify this significantly**.
 
 ---
 
-## 🎯 **Quick Start: Jaeger Only (Traces Only)**
+## 🎯 **Quick Start: Traces Only (Jaeger Example)**
 
-If you only want to see **traces** (request flows), start with Jaeger:
+**For traces only, using Jaeger as a common example backend**:
+
+**Why this works simply**: Jaeger all-in-one includes a built-in OTLP receiver that can directly accept trace data from sik-llms.
 
 ### **Step 1: Start Jaeger**
 
@@ -392,9 +404,15 @@ error=true
 
 ---
 
-## 📊 **Complete Stack: Traces + Metrics (Recommended)**
+## 📊 **Complete Stack: Traces + Metrics (Jaeger + Prometheus Example)**
 
-To see **both traces and metrics** (the full picture), you need Jaeger + Prometheus + Grafana:
+**This section shows how to set up the full observability stack using popular open-source tools**. Remember, these are just examples - you can substitute other OTLP-compatible backends.
+
+**Why this example needs multiple services**:
+- **Jaeger** handles traces but not metrics
+- **Prometheus** handles metrics but not traces  
+- **OTLP Collector** routes the data appropriately
+- **Alternative**: Single backends like Honeycomb can replace this entire stack
 
 ### **Step 1: Complete Docker Compose Setup**
 
@@ -566,10 +584,12 @@ python your_llm_app.py
 
 *sik-llms automatically appends the correct paths based on your base endpoint.*
 
-**Now you'll see**:
+**Now you'll see** (in our Jaeger + Prometheus example):
 - ✅ **Traces** in Jaeger showing request flows
 - ✅ **Metrics** in Prometheus showing token usage, costs, latency
 - ✅ **Dashboards** in Grafana visualizing your LLM performance
+
+**With alternative backends**: You might get all of this in a single UI (e.g., Honeycomb combines traces and metrics).
 
 ---
 
@@ -605,7 +625,7 @@ export OTEL_SERVICE_NAME="my-app"
 # 4. Use sik-llms normally - telemetry just works!
 ```
 
-**Note**: Zero-config only collects **traces** with Jaeger. For **metrics**, use the complete stack above.
+**Note about zero-config**: This setup only collects **traces** because Jaeger doesn't handle metrics. For metrics, see the complete stack below, or consider backends like Honeycomb/Datadog that handle both traces and metrics in one system.
 
 **Configuration via environment variables:**
 ```bash
@@ -712,6 +732,64 @@ resource = Resource.create({
     "git.commit.sha": os.getenv("GIT_SHA", "unknown"),
 })
 ```
+
+---
+
+## 🌍 **Backend Alternatives: Simpler Setup Options**
+
+The Jaeger + Prometheus example above demonstrates the full OpenTelemetry ecosystem, but **many backends can simplify this dramatically**.
+
+### **Single-Backend Solutions (Easier Setup)**
+
+#### **Honeycomb** (Recommended for simplicity)
+```bash
+# One backend handles both traces AND metrics
+export OTEL_SDK_DISABLED=false
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://api.honeycomb.io/v1/traces/your-dataset"
+export OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=your-api-key"
+
+# That's it! Both traces and metrics go to one place
+```
+
+#### **Datadog**
+```bash
+export OTEL_SDK_DISABLED=false
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://http-intake.logs.datadoghq.com/v1/input/your-api-key"
+export OTEL_EXPORTER_OTLP_HEADERS="DD-API-KEY=your-api-key"
+```
+
+#### **New Relic**
+```bash
+export OTEL_SDK_DISABLED=false
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://otlp.nr-data.net:4318/v1/traces"
+export OTEL_EXPORTER_OTLP_HEADERS="api-key=your-license-key"
+```
+
+### **Why Single Backends Are Simpler**
+
+**With Jaeger + Prometheus** (our example):
+- Need 4 services: Jaeger + Prometheus + Grafana + OTLP Collector
+- Separate UIs for traces vs metrics
+- Complex configuration files
+
+**With Honeycomb/Datadog/etc.**:
+- One service receives everything
+- One UI for traces AND metrics correlation
+- Simple environment variable configuration
+
+### **When to Use Each Approach**
+
+**Use Jaeger + Prometheus when**:
+- You want full control and customization
+- You prefer open-source solutions
+- You're building internal observability platforms
+- You want to understand the full OpenTelemetry ecosystem
+
+**Use single backends when**:
+- You want the simplest possible setup
+- You prefer managed services
+- You need advanced correlation between traces and metrics
+- You want enterprise features (alerting, anomaly detection, etc.)
 
 ### **How sik-llms Detects Your Setup**
 
