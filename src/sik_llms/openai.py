@@ -29,6 +29,7 @@ from sik_llms.models_base import (
 from dotenv import load_dotenv
 
 from sik_llms.utilities import _remove_defaults_recursively, get_json_schema_type
+from sik_llms.telemetry import safe_span
 load_dotenv()
 
 # Define all OpenAI models
@@ -342,6 +343,8 @@ class OpenAI(Client):
                 the OPENAI_API_KEY environment variable.
             **model_kwargs: Additional parameters to pass to the API call
         """
+        super().__init__(model_name, **model_kwargs)
+
         model_info = SUPPORTED_OPENAI_MODELS.get(model_name)
         if server_url is None and not model_info:
             raise ValueError(f"Model '{model_name}' is not supported.")
@@ -386,109 +389,149 @@ class OpenAI(Client):
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
         """
-        model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
-        pricing_lookup = model_info.pricing if model_info else None
+        with safe_span(
+            self.tracer,
+            "llm.openai.stream",
+            attributes={
+                "llm.model": self.model,
+                "llm.provider": "openai",
+                "llm.streaming": True,
+            },
+        ) as span:
+            # Add OpenAI-specific attributes
+            if span:
+                span.set_attribute("llm.api.vendor", "openai")
+                if hasattr(self, 'temperature') and 'temperature' in self.model_parameters:
+                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])
+                if hasattr(self, 'max_completion_tokens') and 'max_completion_tokens' in self.model_parameters:
+                    span.set_attribute("llm.request.max_tokens", self.model_parameters['max_completion_tokens'])
 
-        messages = _convert_messages(messages, self.cache_content)
-        model_parameters = deepcopy(self.model_parameters)
-        if self.response_format:
-            if not model_info or not model_info.supports_structured_output:
-                raise ValueError(f"Structured output is not supported for this model: `{self.model}`")  # noqa: E501
-            start_time = perf_counter()
-            completion = await self.client.beta.chat.completions.parse(
-                model=self.model,
-                messages=messages,
-                store=False,
-                **model_parameters,
-            )
-            end_time = perf_counter()
-            input_tokens = completion.usage.prompt_tokens
-            # these fields may not be available when using openai library for third-party providers
-            if (
-                hasattr(completion, 'usage')
-                and hasattr(completion.usage, 'prompt_tokens_details')
-                and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
-            ):
-                cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
-                cached_cost = cached_tokens * pricing_lookup.get('cached', 0)
-                input_tokens -= cached_tokens  # remove cached tokens from input tokens
-            else:
-                cached_tokens = None
-                cached_cost = None
-            yield StructuredOutputResponse(
-                parsed=completion.choices[0].message.parsed,
-                refusal=completion.choices[0].message.refusal,
-                input_tokens=input_tokens,
-                output_tokens=completion.usage.completion_tokens,
-                cache_read_tokens=cached_tokens,
-                input_cost=completion.usage.prompt_tokens * pricing_lookup['input'],
-                output_cost=completion.usage.completion_tokens * pricing_lookup['output'],
-                cache_read_cost=cached_cost,
-                duration_seconds=end_time - start_time,
-            )
-        else:
-            chunks = []
-            input_tokens = 0
-            output_tokens = 0
-            cached_tokens = 0
-            # `stream_options={'include_usage': True}` is required to get usage information
-            # from API when streaming.
-            # However, stream_options may not be valid when using openai library for third-party
-            # providers (i.e. if server_url is None we are using the openai library)
-            if (
-                self.server_url is None  # if using openai library
-                and (
-                    # if either the user has not specified stream_options, or if they have and
-                    # 'include_usage' is not set
-                    'stream_options' not in model_parameters
-                    or 'include_usage' not in model_parameters['stream_options']
-                )
-            ):
-                model_parameters['stream_options'] = {'include_usage': True}
-            start_time = perf_counter()
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                stream=True,
-                store=False,
-                **model_parameters,
-            )
-            async for chunk in response:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    parsed_chunk = _parse_completion_chunk(chunk)
-                    yield parsed_chunk
-                    chunks.append(parsed_chunk)
-                if hasattr(chunk, 'usage') and chunk.usage:
-                    input_tokens += chunk.usage.prompt_tokens
-                    output_tokens += chunk.usage.completion_tokens
-                    # these fields may not be available when using openai library for third-party
-                    # providers
+            model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
+            pricing_lookup = model_info.pricing if model_info else None
+
+            try:
+                messages = _convert_messages(messages, self.cache_content)
+                model_parameters = deepcopy(self.model_parameters)
+                if self.response_format:
+                    if not model_info or not model_info.supports_structured_output:
+                        raise ValueError(f"Structured output is not supported for this model: `{self.model}`")  # noqa: E501
+                    start_time = perf_counter()
+                    completion = await self.client.beta.chat.completions.parse(
+                        model=self.model,
+                        messages=messages,
+                        store=False,
+                        **model_parameters,
+                    )
+                    end_time = perf_counter()
+                    input_tokens = completion.usage.prompt_tokens
+                    # these fields may not be available when using openai library for third-party providers
                     if (
-                        hasattr(chunk, 'usage')
-                        and hasattr(chunk.usage, 'prompt_tokens_details')
-                        and hasattr(chunk.usage.prompt_tokens_details, 'cached_tokens')
+                        hasattr(completion, 'usage')
+                        and hasattr(completion.usage, 'prompt_tokens_details')
+                        and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
                     ):
-                        cached_tokens += chunk.usage.prompt_tokens_details.cached_tokens
-            end_time = perf_counter()
-            input_tokens -= cached_tokens  # remove cached tokens from input tokens
-            if pricing_lookup:
-                input_cost = input_tokens * pricing_lookup['input']
-                output_cost = output_tokens * pricing_lookup['output']
-                cache_cost = cached_tokens * pricing_lookup.get('cached', 0)
-            else:
-                input_cost = None
-                output_cost = None
-                cache_cost = None
-            yield TextResponse(
-                response=''.join([chunk.content for chunk in chunks]),
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                cache_read_tokens=cached_tokens,
-                input_cost=input_cost,
-                output_cost=output_cost,
-                cache_read_cost=cache_cost,
-                duration_seconds=end_time - start_time,
-            )
+                        cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
+                        cached_cost = cached_tokens * pricing_lookup.get('cached', 0)
+                        input_tokens -= cached_tokens  # remove cached tokens from input tokens
+                    else:
+                        cached_tokens = None
+                        cached_cost = None
+
+                    # Add timing to span
+                    if span:
+                        span.set_attribute("llm.request.duration", end_time - start_time)
+                        span.set_attribute("llm.response.finish_reason", "completed")
+
+                    yield StructuredOutputResponse(
+                        parsed=completion.choices[0].message.parsed,
+                        refusal=completion.choices[0].message.refusal,
+                        input_tokens=input_tokens,
+                        output_tokens=completion.usage.completion_tokens,
+                        cache_read_tokens=cached_tokens,
+                        input_cost=completion.usage.prompt_tokens * pricing_lookup['input'],
+                        output_cost=completion.usage.completion_tokens * pricing_lookup['output'],
+                        cache_read_cost=cached_cost,
+                        duration_seconds=end_time - start_time,
+                    )
+                else:
+                    chunks = []
+                    input_tokens = 0
+                    output_tokens = 0
+                    cached_tokens = 0
+                    # `stream_options={'include_usage': True}` is required to get usage information
+                    # from API when streaming.
+                    # However, stream_options may not be valid when using openai library for third-party
+                    # providers (i.e. if server_url is None we are using the openai library)
+                    if (
+                        self.server_url is None  # if using openai library
+                        and (
+                            # if either the user has not specified stream_options, or if they have and
+                            # 'include_usage' is not set
+                            'stream_options' not in model_parameters
+                            or 'include_usage' not in model_parameters['stream_options']
+                        )
+                    ):
+                        model_parameters['stream_options'] = {'include_usage': True}
+                    start_time = perf_counter()
+                    response = await self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        stream=True,
+                        store=False,
+                        **model_parameters,
+                    )
+                    async for chunk in response:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            parsed_chunk = _parse_completion_chunk(chunk)
+                            yield parsed_chunk
+                            chunks.append(parsed_chunk)
+                        if hasattr(chunk, 'usage') and chunk.usage:
+                            input_tokens += chunk.usage.prompt_tokens
+                            output_tokens += chunk.usage.completion_tokens
+                            # these fields may not be available when using openai library for third-party
+                            # providers
+                            if (
+                                hasattr(chunk, 'usage')
+                                and hasattr(chunk.usage, 'prompt_tokens_details')
+                                and hasattr(chunk.usage.prompt_tokens_details, 'cached_tokens')
+                            ):
+                                cached_tokens += chunk.usage.prompt_tokens_details.cached_tokens
+                    end_time = perf_counter()
+                    input_tokens -= cached_tokens  # remove cached tokens from input tokens
+                    if pricing_lookup:
+                        input_cost = input_tokens * pricing_lookup['input']
+                        output_cost = output_tokens * pricing_lookup['output']
+                        cache_cost = cached_tokens * pricing_lookup.get('cached', 0)
+                    else:
+                        input_cost = None
+                        output_cost = None
+                        cache_cost = None
+
+                    # Add timing to span
+                    if span:
+                        span.set_attribute("llm.request.duration", end_time - start_time)
+                        span.set_attribute("llm.response.finish_reason", "completed")
+
+                    yield TextResponse(
+                        response=''.join([chunk.content for chunk in chunks]),
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cache_read_tokens=cached_tokens,
+                        input_cost=input_cost,
+                        output_cost=output_cost,
+                        cache_read_cost=cache_cost,
+                        duration_seconds=end_time - start_time,
+                    )
+
+            except Exception as e:
+                # Add error information to span
+                if span:
+                    span.set_attribute("llm.request.error", str(e))
+                    from opentelemetry import trace
+                    span.set_status(
+                        trace.Status(trace.StatusCode.ERROR, description=str(e)),
+                    )
+                raise
 
 
 def _tool_to_openai_schema(tool: Tool) -> dict[str, object]:
@@ -609,6 +652,8 @@ class OpenAITools(Client):
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
+        super().__init__(model_name, **model_kwargs)
+
         if (
             server_url is None  # using OpenAI provider
             and (
@@ -642,61 +687,103 @@ class OpenAITools(Client):
         Args:
             messages: List of messages to send to the model.
         """
-        model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
-        pricing_lookup = model_info.pricing if model_info else None
+        with safe_span(
+            self.tracer,
+            "llm.openai.tools",
+            attributes={
+                "llm.model": self.model,
+                "llm.provider": "openai",
+                "llm.operation": "tool_calling",
+            },
+        ) as span:
+            model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
+            pricing_lookup = model_info.pricing if model_info else None
 
-        model_parameters = deepcopy(self.model_parameters)
-        start = perf_counter()
-        completion = await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            store=False,
-            # i'm not sure it makes sense to stream chunks for tools, perhaps this will change
-            # in the future; but seems overly complicated for a tool call.
-            stream=False,
-            **model_parameters,
-        )
-        end = perf_counter()
-        # Calculate costs
-        input_tokens = completion.usage.prompt_tokens
-        output_tokens = completion.usage.completion_tokens
-        # these fields may not be available when using openai library for third-party providers
-        cached_tokens = None
-        cached_cost = None
-        if (
-            hasattr(completion, 'usage')
-            and hasattr(completion.usage, 'prompt_tokens_details')
-            and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
-        ):
-            cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
-            if pricing_lookup:
-                cached_cost = cached_tokens * pricing_lookup.get('cached', 0)
-            input_tokens -= cached_tokens  # remove cached tokens from input tokens
+            # Add OpenAI-specific attributes
+            if span:
+                span.set_attribute("llm.api.vendor", "openai")
+                if 'temperature' in self.model_parameters:
+                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])
+                if 'tools' in self.model_parameters:
+                    span.set_attribute("llm.tools.count", len(self.model_parameters['tools']))
 
-        if pricing_lookup:
-            input_cost = input_tokens * pricing_lookup['input']
-            output_cost = output_tokens * pricing_lookup['output']
+            try:
+                model_parameters = deepcopy(self.model_parameters)
+                start = perf_counter()
+                completion = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    store=False,
+                    # i'm not sure it makes sense to stream chunks for tools, perhaps this will change
+                    # in the future; but seems overly complicated for a tool call.
+                    stream=False,
+                    **model_parameters,
+                )
+                end = perf_counter()
 
-        if completion.choices[0].message.tool_calls:
-            message = None
-            tool_call = completion.choices[0].message.tool_calls[0]
-            tool_prediction = ToolPrediction(
-                name=tool_call.function.name,
-                arguments=json.loads(tool_call.function.arguments),
-                call_id=tool_call.id,
-            )
-        else:
-            message = completion.choices[0].message.content
-            tool_prediction = None
+                # Add timing to span
+                if span:
+                    span.set_attribute("llm.request.duration", end - start)
+                    span.set_attribute("llm.response.finish_reason", "completed")
 
-        yield ToolPredictionResponse(
-            tool_prediction=tool_prediction,
-            message=message,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cache_read_tokens=cached_tokens,
-            input_cost=input_cost,
-            output_cost=output_cost,
-            cache_read_cost=cached_cost,
-            duration_seconds=end - start,
-        )
+                # Calculate costs
+                input_tokens = completion.usage.prompt_tokens
+                output_tokens = completion.usage.completion_tokens
+                # these fields may not be available when using openai library for third-party providers
+                cached_tokens = None
+                cached_cost = None
+                if (
+                    hasattr(completion, 'usage')
+                    and hasattr(completion.usage, 'prompt_tokens_details')
+                    and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
+                ):
+                    cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
+                    if pricing_lookup:
+                        cached_cost = cached_tokens * pricing_lookup.get('cached', 0)
+                    input_tokens -= cached_tokens  # remove cached tokens from input tokens
+
+                if pricing_lookup:
+                    input_cost = input_tokens * pricing_lookup['input']
+                    output_cost = output_tokens * pricing_lookup['output']
+
+                if completion.choices[0].message.tool_calls:
+                    message = None
+                    tool_call = completion.choices[0].message.tool_calls[0]
+                    tool_prediction = ToolPrediction(
+                        name=tool_call.function.name,
+                        arguments=json.loads(tool_call.function.arguments),
+                        call_id=tool_call.id,
+                    )
+
+                    # Add tool call info to span
+                    if span:
+                        span.set_attribute("llm.tool.name", tool_call.function.name)
+                        span.set_attribute("llm.tool.arguments_count", len(tool_call.function.arguments))
+                else:
+                    message = completion.choices[0].message.content
+                    tool_prediction = None
+
+                    if span:
+                        span.set_attribute("llm.response.type", "message")
+
+                yield ToolPredictionResponse(
+                    tool_prediction=tool_prediction,
+                    message=message,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_read_tokens=cached_tokens,
+                    input_cost=input_cost,
+                    output_cost=output_cost,
+                    cache_read_cost=cached_cost,
+                    duration_seconds=end - start,
+                )
+
+            except Exception as e:
+                # Add error information to span
+                if span:
+                    span.set_attribute("llm.request.error", str(e))
+                    from opentelemetry import trace
+                    span.set_status(
+                        trace.Status(trace.StatusCode.ERROR, description=str(e)),
+                    )
+                raise

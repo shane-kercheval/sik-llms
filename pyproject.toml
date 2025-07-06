@@ -25,6 +25,14 @@ dev = [
     "faker>=37.0.2",
     "ipykernel>=6.29.5",
 ]
+telemetry = [
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp>=1.20.0",
+]
+all = [
+    "sik-llms[telemetry]",
+]
 
 [tool.hatch.metadata]
 allow-direct-references = true
