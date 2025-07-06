@@ -6,13 +6,37 @@
 
 This guide will take you from "What is observability?" to "I can set up production OpenTelemetry monitoring for my LLM applications." We'll use sik-llms as our practical example throughout.
 
+## ❗ **Quick Answer: Do I Need to Write Instrumentation Code?**
+
+**NO!** sik-llms automatically emits all telemetry for you. You just need to:
+
+1. **Set environment variable**: `export OTEL_SDK_DISABLED=false`
+2. **Set up collection infrastructure** (Jaeger for traces, Prometheus for metrics)
+3. **Use sik-llms normally** - all metrics and traces are automatic
+
+**You get these metrics automatically**:
+```python
+# Your code (no instrumentation needed):
+client = create_client("gpt-4o-mini")
+response = client([{"role": "user", "content": "Hello"}])
+
+# sik-llms automatically emits:
+# llm_tokens_input_total{llm_model="gpt-4o-mini"} += 8
+# llm_request_duration_seconds{llm_model="gpt-4o-mini"} = 2.1
+# llm_cost_total_usd{llm_model="gpt-4o-mini"} += 0.0001
+# + traces in Jaeger
+```
+
+**The confusion**: Those metric variables need **Prometheus** to collect them. The guide shows what they look like, but you need the infrastructure to see them.
+
 ## 📚 **Table of Contents**
 
 1. [Why Observability Matters for LLMs](#why-observability-matters-for-llms)
 2. [OpenTelemetry Fundamentals](#opentelemetry-fundamentals)
 3. [How sik-llms Implements OpenTelemetry](#how-sik-llms-implements-opentelemetry)
-4. [Setup Guide: Jaeger (Local Development)](#setup-guide-jaeger-local-development)
-5. [Setup Options: Zero-Config vs Manual](#setup-options-zero-config-vs-manual)
+4. [Complete Observability Stack Setup](#complete-stack-traces--metrics-recommended)
+5. [Quick Start: Traces Only](#quick-start-jaeger-only-traces-only)
+6. [Setup Options: Zero-Config vs Manual](#setup-options-zero-config-vs-manual)
 6. [Production Backends](#production-backends)
 7. [Understanding Your Data](#understanding-your-data)
 8. [Troubleshooting](#troubleshooting)
@@ -148,9 +172,9 @@ with tracer.start_as_current_span("user.question") as parent:
 
 ## 🔧 **How sik-llms Implements OpenTelemetry**
 
-### **Automatic Instrumentation**
+### **Fully Automatic Telemetry**
 
-sik-llms automatically creates traces for all LLM operations. Here's what happens under the hood:
+**The key thing to understand**: sik-llms automatically emits **both traces and metrics** for every LLM call. You don't need to instrument anything in your application code.
 
 ```python
 # Your code:
@@ -158,7 +182,8 @@ client = create_client("gpt-4o-mini")
 response = client([{"role": "user", "content": "Hello"}])
 
 # What sik-llms creates automatically:
-# 
+#
+# 1. TRACES (sent to localhost:4318/v1/traces)
 # Trace: user_request_abc123
 # └── Span: llm.request (2.1s)
 #     ├── Attribute: llm.model = "gpt-4o-mini"  
@@ -169,6 +194,12 @@ response = client([{"role": "user", "content": "Hello"}])
 #     └── Child Span: llm.openai.stream (2.0s)
 #         ├── Attribute: llm.streaming = true
 #         └── Attribute: llm.request.temperature = 0.7
+#
+# 2. METRICS (sent to localhost:4318/v1/metrics) 
+# llm_tokens_input_total{llm_model="gpt-4o-mini", llm_provider="openai"} += 8
+# llm_tokens_output_total{llm_model="gpt-4o-mini", llm_provider="openai"} += 12
+# llm_cost_total_usd{llm_model="gpt-4o-mini", llm_provider="openai"} += 0.0001
+# llm_request_duration_seconds{llm_model="gpt-4o-mini"} = 2.1
 ```
 
 ### **ReasoningAgent Deep Instrumentation**
@@ -196,35 +227,61 @@ response = agent([{"role": "user", "content": "Solve: 15 * 23 + 7"}])
 #     └── Child Span: reasoning.thinking.iteration_3 (3.1s)
 ```
 
-### **Metrics Collection**
+### **Automatic Metrics Collection**
 
-Every LLM call automatically generates metrics:
+**Important**: sik-llms automatically emits these metrics for every LLM call. You don't write this code - it happens behind the scenes:
 
 ```python
+# These metrics are automatically emitted by sik-llms:
+
 # Counters (cumulative)
 llm_tokens_input_total{llm_model="gpt-4o-mini", llm_provider="openai"} += 150
 llm_tokens_output_total{llm_model="gpt-4o-mini", llm_provider="openai"} += 75
 llm_cost_total_usd{llm_model="gpt-4o-mini", llm_provider="openai"} += 0.0023
 
-# Histograms (distribution)  
+# Histograms (track distributions)
 llm_request_duration_seconds{llm_model="gpt-4o-mini"} = 2.3
 
-# Reasoning-specific metrics
+# Cache metrics (when using caching)
+llm_cache_read_tokens_total{llm_model="gpt-4o-mini"} += 50
+llm_cache_write_tokens_total{llm_model="gpt-4o-mini"} += 25
+
+# Reasoning-specific metrics (when using ReasoningAgent)
 llm_reasoning_iterations_total{reasoning_effort="medium"} += 3
 llm_reasoning_tool_calls_total{reasoning_effort="medium"} += 1
 ```
 
+**The metrics are sent to your observability backend automatically** - you just need the infrastructure to collect them (see setup sections below).
+
 ---
 
-## 🐳 **Setup Guide: Jaeger (Local Development)**
+## 🐳 **Setup Guide: Complete Observability Stack**
 
-Jaeger is the most popular open-source distributed tracing system. It's perfect for local development and understanding your traces.
+### **Understanding the Two-Backend System**
+
+OpenTelemetry data flows to **two different types of backends**:
+
+1. **Traces** → **Jaeger** (for request flows and debugging)
+2. **Metrics** → **Prometheus** (for monitoring and alerting)
+
+```
+sik-llms → OTLP Collector → ┌─ Jaeger (traces)
+                           └─ Prometheus (metrics) → Grafana (dashboards)
+```
+
+**That's why you need BOTH systems** to see all your telemetry data.
+
+---
+
+## 🎯 **Quick Start: Jaeger Only (Traces Only)**
+
+If you only want to see **traces** (request flows), start with Jaeger:
 
 ### **Step 1: Start Jaeger**
 
-**Option A: Docker (Recommended)**
+**Quick Jaeger Setup**
 ```bash
-# Start Jaeger all-in-one (includes UI, collector, storage)
+# Start Jaeger all-in-one (traces only)
 docker run -d --name jaeger \
   -p 16686:16686 \
   -p 4318:4318 \
@@ -335,6 +392,187 @@ error=true
 
 ---
 
+## 📊 **Complete Stack: Traces + Metrics (Recommended)**
+
+To see **both traces and metrics** (the full picture), you need Jaeger + Prometheus + Grafana:
+
+### **Step 1: Complete Docker Compose Setup**
+
+```yaml
+# docker-compose.yml - Complete observability stack
+version: '3.8'
+services:
+  # Jaeger - for traces
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4318:4318"    # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+  
+  # Prometheus - for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"    # Prometheus UI
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-lifecycle'
+  
+  # OTLP Collector - routes data to backends
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otelcol-contrib/otel-collector.yml"]
+    volumes:
+      - ./otel-collector.yml:/etc/otelcol-contrib/otel-collector.yml
+    ports:
+      - "4317:4317"    # OTLP gRPC receiver  
+      - "4318:4318"    # OTLP HTTP receiver
+    depends_on:
+      - jaeger
+      - prometheus
+  
+  # Grafana - for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"    # Grafana UI
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-storage:/var/lib/grafana
+
+volumes:
+  grafana-storage:
+```
+
+### **Step 2: Create Configuration Files**
+
+**prometheus.yml**
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']  # Collector metrics endpoint
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+```
+
+**otel-collector.yml**
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+exporters:
+  # Send traces to Jaeger
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+  
+  # Send metrics to Prometheus
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger]
+    
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]
+```
+
+### **Step 3: Start the Complete Stack**
+
+```bash
+# Create the config files first (copy the YAML above)
+mkdir -p otel-stack
+cd otel-stack
+
+# Create docker-compose.yml, prometheus.yml, and otel-collector.yml
+# (copy the content from above)
+
+# Start everything
+docker-compose up -d
+
+# Verify all services are running
+docker-compose ps
+```
+
+### **Step 4: Access Your Observability UIs**
+
+- **Jaeger (Traces)**: http://localhost:16686
+- **Prometheus (Metrics)**: http://localhost:9090  
+- **Grafana (Dashboards)**: http://localhost:3000 (admin/admin)
+
+### **Step 5: Query Your Metrics**
+
+Now you can actually see those `llm_*` metrics!
+
+**In Prometheus UI (localhost:9090)**:
+```promql
+# Query examples:
+llm_tokens_input_total
+llm_request_duration_seconds
+rate(llm_cost_total_usd[5m])
+sum by (llm_model) (llm_tokens_output_total)
+```
+
+**In Grafana (localhost:3000)**:
+1. Add Prometheus as data source: `http://prometheus:9090`
+2. Create dashboards with charts showing:
+   - Token usage over time
+   - Cost per model
+   - Request latency histograms
+   - Error rates
+
+### **Step 6: Enable sik-llms Telemetry**
+
+```bash
+# Enable telemetry to send to the collector
+export OTEL_SDK_DISABLED=false
+export OTEL_SERVICE_NAME="my-llm-app"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+
+# Run your sik-llms code
+python your_llm_app.py
+```
+
+**How sik-llms handles endpoints**:
+- **Traces** → `http://localhost:4318/v1/traces`
+- **Metrics** → `http://localhost:4318/v1/metrics`
+
+*sik-llms automatically appends the correct paths based on your base endpoint.*
+
+**Now you'll see**:
+- ✅ **Traces** in Jaeger showing request flows
+- ✅ **Metrics** in Prometheus showing token usage, costs, latency
+- ✅ **Dashboards** in Grafana visualizing your LLM performance
+
+---
+
 ## ⚙️ **Setup Options: Zero-Config vs Manual**
 
 ### **🚀 Zero-Config Setup (Recommended for Getting Started)**
@@ -356,15 +594,18 @@ error=true
 # 1. Install telemetry support
 pip install sik-llms[telemetry]
 
-# 2. Start Jaeger
+# 2. Start Jaeger (traces only)
 docker run -d -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one
 
 # 3. Enable telemetry
 export OTEL_SDK_DISABLED=false
 export OTEL_SERVICE_NAME="my-app"
+# Default endpoint: http://localhost:4318 (sik-llms adds /v1/traces and /v1/metrics)
 
 # 4. Use sik-llms normally - telemetry just works!
 ```
+
+**Note**: Zero-config only collects **traces** with Jaeger. For **metrics**, use the complete stack above.
 
 **Configuration via environment variables:**
 ```bash
@@ -605,39 +846,48 @@ services:
 
 ## 📊 **Understanding Your Data**
 
+### **Where to Find Your Data**
+
+**Traces**: View in Jaeger UI (http://localhost:16686)
+**Metrics**: Query in Prometheus (http://localhost:9090) or visualize in Grafana (http://localhost:3000)
+
 ### **Key Metrics to Monitor**
 
+**Important**: These are **Prometheus queries** you run in the Prometheus UI or use in Grafana dashboards. sik-llms automatically sends these metrics to Prometheus.
+
 #### **Performance Metrics**
-```bash
-# Request latency
+```promql
+# Request latency (Prometheus query)
 llm_request_duration_seconds
 
-# Token efficiency  
-llm_tokens_input_total / llm_requests_total  # Average input tokens per request
-llm_tokens_output_total / llm_requests_total # Average output tokens per request
+# Token efficiency (calculated in Prometheus)
+rate(llm_tokens_input_total[5m]) / rate(llm_requests_total[5m])   # Avg input tokens/request
+rate(llm_tokens_output_total[5m]) / rate(llm_requests_total[5m])  # Avg output tokens/request
 
 # Cost tracking
 llm_cost_total_usd
+rate(llm_cost_total_usd[1h])  # Cost per hour
 
 # Cache efficiency (if using caching)
 llm_cache_read_tokens_total / (llm_cache_read_tokens_total + llm_tokens_input_total)
 ```
 
 #### **ReasoningAgent Metrics**
-```bash
-# Reasoning efficiency
-llm_reasoning_iterations_total / llm_reasoning_requests_total  # Avg iterations per request
+```promql
+# Reasoning efficiency (Prometheus queries)
+rate(llm_reasoning_iterations_total[5m]) / rate(llm_reasoning_requests_total[5m])  # Avg iterations per request
 
 # Tool usage
 llm_reasoning_tool_calls_total
+rate(llm_reasoning_tool_calls_total[5m])  # Tool calls per minute
 
 # Success rate
-llm_reasoning_success_total / llm_reasoning_requests_total
+rate(llm_reasoning_success_total[5m]) / rate(llm_reasoning_requests_total[5m])
 ```
 
 ### **Common Queries**
 
-#### **In Jaeger**
+#### **In Jaeger (Trace Queries)**
 ```bash
 # Find expensive operations
 llm.cost.total > 0.05
@@ -652,23 +902,37 @@ llm.tokens.total > 1000
 llm.model="gpt-4o" OR llm.model="claude-3-opus"
 ```
 
-#### **In Honeycomb**
-```sql
--- Average response time by model
-GROUP BY llm.model
-CALCULATE AVG(duration_ms)
+#### **In Prometheus (Metrics Queries)**
+```promql
+# Average response time by model
+avg by (llm_model) (llm_request_duration_seconds)
 
--- Token usage distribution  
-VISUALIZE llm.tokens.total as heatmap(duration_ms)
+# Token usage over time
+rate(llm_tokens_input_total[5m])
+rate(llm_tokens_output_total[5m])
 
--- Cost analysis
-GROUP BY llm.model, llm.provider
-CALCULATE SUM(llm.cost.total)
+# Cost analysis
+sum by (llm_model, llm_provider) (rate(llm_cost_total_usd[1h]))
 
--- Reasoning iteration patterns
-WHERE operation = "llm.reasoning_agent.stream"
-GROUP BY llm.reasoning.iterations.total
-CALCULATE COUNT
+# Request rate
+rate(llm_requests_total[5m])
+
+# Error rate
+rate(llm_requests_failed_total[5m]) / rate(llm_requests_total[5m])
+
+# Reasoning iteration patterns
+avg by (reasoning_effort) (llm_reasoning_iterations_total)
+```
+
+#### **In Grafana (Dashboard Queries)**
+```promql
+# Time series panels:
+rate(llm_tokens_input_total{llm_model="$model"}[5m])
+histogram_quantile(0.95, llm_request_duration_seconds_bucket)
+
+# Single stat panels:
+sum(rate(llm_cost_total_usd[24h])) * 24  # Daily cost
+avg(llm_request_duration_seconds)        # Average latency
 ```
 
 ### **Setting Up Alerts**
@@ -901,17 +1165,18 @@ with tracer.start_as_current_span("evaluation.quality_check") as eval_span:
     eval_span.set_attribute("evaluation.criteria", "accuracy")
 ```
 
-### **Custom Metrics**
+### **Custom Metrics (Beyond sik-llms Automatic Metrics)**
 
-Add domain-specific metrics:
+**Important**: sik-llms already emits all core LLM metrics automatically (tokens, costs, latency, etc.). This section is for adding **additional domain-specific metrics** to your application.
 
 ```python
 from opentelemetry import metrics
 from sik_llms import create_client
 
+# Get the same meter that sik-llms uses (or create your own)
 meter = metrics.get_meter("my_app")
 
-# Custom counters
+# Custom business metrics (NOT provided by sik-llms)
 conversation_counter = meter.create_counter(
     name="conversations_total",
     description="Total number of conversations",
@@ -919,7 +1184,7 @@ conversation_counter = meter.create_counter(
 )
 
 user_satisfaction_histogram = meter.create_histogram(
-    name="user_satisfaction_score",
+    name="user_satisfaction_score", 
     description="User satisfaction ratings",
     unit="score"
 )
@@ -927,15 +1192,16 @@ user_satisfaction_histogram = meter.create_histogram(
 def handle_conversation(messages, user_id):
     client = create_client("gpt-4o-mini")
     
-    # Increment conversation counter
+    # Your custom business metrics
     conversation_counter.add(1, {
         "user_tier": get_user_tier(user_id),
         "conversation_type": classify_conversation(messages)
     })
     
+    # sik-llms automatically emits: llm_tokens_*, llm_cost_*, llm_request_duration_*, etc.
     response = client(messages)
     
-    # Record satisfaction (from user feedback later)
+    # More custom metrics
     satisfaction = get_user_feedback(user_id, response.response)
     user_satisfaction_histogram.record(satisfaction, {
         "model": "gpt-4o-mini",
@@ -1029,6 +1295,47 @@ trace_provider = TracerProvider(sampler=CostBasedSampler())
 - Try both setup patterns to see which fits your needs
 - Read the troubleshooting section when things go wrong
 - Contribute feedback and feature requests to the sik-llms project
+
+---
+
+## 📝 **Summary: What You Get vs What You Need to Set Up**
+
+### **✅ What sik-llms Provides Automatically**
+
+**Traces** (request flows):
+- LLM request spans with timing, model, provider attributes
+- Token counts, costs, and cache usage in span attributes
+- ReasoningAgent iterations and tool calls
+- Error tracking and status codes
+
+**Metrics** (monitoring data):
+- `llm_tokens_input_total`, `llm_tokens_output_total`
+- `llm_cost_total_usd`, `llm_request_duration_seconds`
+- `llm_cache_read_tokens_total`, `llm_cache_write_tokens_total`
+- `llm_reasoning_iterations_total`, `llm_reasoning_tool_calls_total`
+
+**Just set**: `export OTEL_SDK_DISABLED=false`
+
+### **📊 What You Need to Set Up**
+
+**Collection Infrastructure**:
+- **Jaeger** (for viewing traces) → http://localhost:16686
+- **Prometheus** (for collecting metrics) → http://localhost:9090
+- **Grafana** (for metric dashboards) → http://localhost:3000
+- **OTLP Collector** (routes data between sik-llms and backends)
+
+**Use the complete Docker Compose stack above** for the full experience.
+
+### **📋 Quick Start Checklist**
+
+1. ☐ Copy the Docker Compose setup from the "Complete Stack" section
+2. ☐ Create config files: `prometheus.yml`, `otel-collector.yml`
+3. ☐ Run: `docker-compose up -d`
+4. ☐ Set: `export OTEL_SDK_DISABLED=false`
+5. ☐ Use sik-llms normally - telemetry flows automatically
+6. ☐ View traces at http://localhost:16686
+7. ☐ Query metrics at http://localhost:9090
+8. ☐ Build dashboards at http://localhost:3000
 
 ---
 
