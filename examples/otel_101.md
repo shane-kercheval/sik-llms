@@ -224,29 +224,27 @@ response = agent([{"role": "user", "content": "Solve: 15 * 23 + 7"}])
 
 ### **Automatic Metrics Collection**
 
-**Important**: sik-llms automatically emits these metrics for every LLM call. You don't write this code - it happens behind the scenes:
+**Important**: sik-llms automatically emits these metrics for every LLM call. You don't write any code - this happens behind the scenes:
 
-```python
-# These metrics are automatically emitted by sik-llms:
+**Token Usage:**
+- `llm_tokens_input_total` - Total input tokens consumed
+- `llm_tokens_output_total` - Total output tokens generated  
 
-# Counters (cumulative)
-llm_tokens_input_total{llm_model="gpt-4o-mini", llm_provider="openai"} += 150
-llm_tokens_output_total{llm_model="gpt-4o-mini", llm_provider="openai"} += 75
-llm_cost_total_usd{llm_model="gpt-4o-mini", llm_provider="openai"} += 0.0023
+**Performance:**
+- `llm_request_duration_seconds` - Request latency
 
-# Histograms (track distributions)
-llm_request_duration_seconds{llm_model="gpt-4o-mini"} = 2.3
+**Cost Tracking:**
+- `llm_cost_total_usd` - Total cost in USD
 
-# Cache metrics (when using caching)
-llm_cache_read_tokens_total{llm_model="gpt-4o-mini"} += 50
-llm_cache_write_tokens_total{llm_model="gpt-4o-mini"} += 25
+**Cache Metrics (when using caching):**
+- `llm_cache_read_tokens_total` - Tokens read from cache
+- `llm_cache_write_tokens_total` - Tokens written to cache
 
-# Reasoning-specific metrics (when using ReasoningAgent)
-llm_reasoning_iterations_total{reasoning_effort="medium"} += 3
-llm_reasoning_tool_calls_total{reasoning_effort="medium"} += 1
-```
+**ReasoningAgent Metrics:**
+- `llm_reasoning_iterations_total` - Number of reasoning iterations
+- `llm_reasoning_tool_calls_total` - Number of tool calls
 
-**The metrics are sent to your observability backend automatically** - you just need the infrastructure to collect them (see setup sections below).
+These metrics are sent to your observability backend (e.g. Prometheus, Honeycomb, etc.) with appropriate labels like model name and provider.
 
 ---
 
