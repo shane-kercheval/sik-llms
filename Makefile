@@ -9,10 +9,18 @@ export
 build-env:
 	uv sync
 
-linting:
+linting_src:
 	uv run ruff check src/sik_llms --fix --unsafe-fixes
-	uv run ruff check examples/cli.py --fix --unsafe-fixes
+
+linting_examples:
+	uv run ruff check examples --fix --unsafe-fixes
+
+linting_tests:
 	uv run ruff check tests --fix --unsafe-fixes
+
+linting:
+	# Run all linters on source, examples, and tests
+	uv run ruff check src/sik_llms examples tests --fix --unsafe-fixes
 
 quicktests:
 	# only runs a subset of tests that are generally faster
@@ -35,10 +43,10 @@ quicktests-with-telemetry:
 	# Run quicktests + telemetry unit tests
 	uv run pytest --durations=0 --durations-min=0.1 -k "not integration" tests
 
-fulltests-with-telemetry: linting quicktests-with-telemetry telemetry-tests
-	# Run all tests including telemetry integration tests
+telemetry-all:
+	uv run pytest --durations=0 --durations-min=0.1 tests/test_telemetry.py tests/test_telemetry_regression.py -v
 
-tests: linting quicktests-with-telemetry
+tests: linting unittests telemetry-all
 
 package-build:
 	rm -rf dist/*
