@@ -23,6 +23,9 @@ def get_tracer() -> object | None:
     """
     Get OpenTelemetry tracer if available and enabled.
 
+    Respects existing user configuration. Only auto-configures if no
+    telemetry provider has been set up.
+
     Returns:
         OpenTelemetry tracer instance or None if disabled/unavailable.
     """
@@ -31,39 +34,41 @@ def get_tracer() -> object | None:
 
     try:
         from opentelemetry import trace
+        from opentelemetry.trace import NoOpTracerProvider
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import Resource
 
-        # Set up tracer provider if not already configured
+        # Check if user has already configured telemetry
         current_provider = trace.get_tracer_provider()
-        if not hasattr(current_provider, '_sik_llms_initialized'):
-            # Create resource with service info
-            resource = Resource.create({
-                'service.name': os.getenv('OTEL_SERVICE_NAME', 'sik-llms'),
-                'service.version': '1.0.0',  # TODO: Get from package version
-            })
 
-            # Create and set tracer provider
-            provider = TracerProvider(resource=resource)
-            trace.set_tracer_provider(provider)
+        if not isinstance(current_provider, NoOpTracerProvider):
+            # User has already set up a real provider - respect it
+            return trace.get_tracer("sik-llms")
 
-            # Set up OTLP exporter
-            otlp_exporter = OTLPSpanExporter(
-                endpoint=os.getenv(
-                    'OTEL_EXPORTER_OTLP_ENDPOINT',
-                    'http://localhost:4318/v1/traces',
-                ),
-                headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
-            )
+        # No real provider exists - set up our default configuration
+        resource = Resource.create({
+            "service.name": os.getenv("OTEL_SERVICE_NAME", "sik-llms"),
+            "service.version": _get_package_version(),
+        })
 
-            # Add batch span processor
-            span_processor = BatchSpanProcessor(otlp_exporter)
-            provider.add_span_processor(span_processor)
+        # Create and set tracer provider
+        provider = TracerProvider(resource=resource)
+        trace.set_tracer_provider(provider)
 
-            # Mark as initialized
-            provider._sik_llms_initialized = True
+        # Set up OTLP exporter
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=os.getenv(
+                "OTEL_EXPORTER_OTLP_ENDPOINT",
+                "http://localhost:4318/v1/traces",
+            ),
+            headers=_parse_headers(os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "")),
+        )
+
+        # Add batch span processor
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        provider.add_span_processor(span_processor)
 
         return trace.get_tracer("sik-llms")
 
@@ -81,6 +86,9 @@ def get_meter() -> object | None:
     """
     Get OpenTelemetry meter if available and enabled.
 
+    Respects existing user configuration. Only auto-configures if no
+    metrics provider has been set up.
+
     Returns:
         OpenTelemetry meter instance or None if disabled/unavailable.
     """
@@ -89,40 +97,42 @@ def get_meter() -> object | None:
 
     try:
         from opentelemetry import metrics
+        from opentelemetry.metrics._internal import NoOpMeterProvider  # Note: internal API
         from opentelemetry.sdk.metrics import MeterProvider
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
         from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
         from opentelemetry.sdk.resources import Resource
 
-        # Set up meter provider if not already configured
+        # Check if user has already configured metrics
         current_provider = metrics.get_meter_provider()
-        if not hasattr(current_provider, '_sik_llms_initialized'):
-            # Create resource
-            resource = Resource.create({
-                "service.name": os.getenv("OTEL_SERVICE_NAME", "sik-llms"),
-                "service.version": "1.0.0",
-            })
 
-            # Create OTLP metric exporter
-            otlp_exporter = OTLPMetricExporter(
-                endpoint=os.getenv(
-                    "OTEL_EXPORTER_OTLP_ENDPOINT",
-                    "http://localhost:4318/v1/metrics",
-                ).replace("/traces", "/metrics"),
-                headers=_parse_headers(os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "")),
-            )
+        if not isinstance(current_provider, NoOpMeterProvider):
+            # User has already set up a real provider - respect it
+            return metrics.get_meter("sik-llms")
 
-            # Create meter provider with periodic reader
-            reader = PeriodicExportingMetricReader(
-                exporter=otlp_exporter,
-                export_interval_millis=5000,  # Export every 5 seconds
-            )
+        # No real provider exists - set up our default configuration
+        resource = Resource.create({
+            "service.name": os.getenv("OTEL_SERVICE_NAME", "sik-llms"),
+            "service.version": _get_package_version(),
+        })
 
-            provider = MeterProvider(resource=resource, metric_readers=[reader])
-            metrics.set_meter_provider(provider)
+        # Create OTLP metric exporter
+        otlp_exporter = OTLPMetricExporter(
+            endpoint=os.getenv(
+                "OTEL_EXPORTER_OTLP_ENDPOINT",
+                "http://localhost:4318/v1/metrics",
+            ).replace("/traces", "/metrics"),
+            headers=_parse_headers(os.getenv("OTEL_EXPORTER_OTLP_HEADERS", "")),
+        )
 
-            # Mark as initialized
-            provider._sik_llms_initialized = True
+        # Create meter provider with periodic reader
+        reader = PeriodicExportingMetricReader(
+            exporter=otlp_exporter,
+            export_interval_millis=5000,  # Export every 5 seconds
+        )
+
+        provider = MeterProvider(resource=resource, metric_readers=[reader])
+        metrics.set_meter_provider(provider)
 
         return metrics.get_meter("sik-llms")
 
@@ -184,6 +194,15 @@ def create_span_link(
         pass
 
     return None
+
+
+def _get_package_version() -> str:
+    """Get the package version dynamically."""
+    try:
+        from importlib.metadata import version
+        return version("sik-llms")
+    except Exception:
+        return "unknown"
 
 
 def _parse_headers(header_string: str) -> dict[str, str]:

@@ -49,9 +49,11 @@ print(summary)
 
 ## Observability with OpenTelemetry
 
-sik-llms supports OpenTelemetry for comprehensive observability of your LLM operations.
+sik-llms supports OpenTelemetry for comprehensive observability of your LLM operations. There are two ways to use telemetry:
 
-### Quick Start
+### 🚀 Option 1: Zero-Config (Recommended for Quick Start)
+
+Perfect for prototypes, scripts, and getting started quickly:
 
 1. Install with telemetry support:
    ```bash
@@ -74,34 +76,75 @@ sik-llms supports OpenTelemetry for comprehensive observability of your LLM oper
 
 4. Use sik-llms normally - traces will appear at http://localhost:16686
 
+**How it works**: sik-llms automatically configures OpenTelemetry with sensible defaults when no existing configuration is detected.
+
+### 🏗️ Option 2: Manual Setup (Recommended for Production)
+
+For production applications or when you need custom OpenTelemetry configuration:
+
+1. Install dependencies:
+   ```bash
+   pip install sik-llms[telemetry]
+   ```
+
+2. Configure OpenTelemetry in your application:
+   ```python
+   # main.py - Your application startup
+   from opentelemetry import trace
+   from opentelemetry.sdk.trace import TracerProvider
+   from opentelemetry.sdk.trace.export import BatchSpanProcessor
+   from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+   # Set up your custom telemetry configuration
+   trace.set_tracer_provider(TracerProvider())
+   tracer_provider = trace.get_tracer_provider()
+
+   otlp_exporter = OTLPSpanExporter(
+       endpoint="https://your-telemetry-backend.com/v1/traces",
+       headers={"authorization": "Bearer your-token"}
+   )
+   span_processor = BatchSpanProcessor(otlp_exporter)
+   tracer_provider.add_span_processor(span_processor)
+   ```
+
+3. Enable telemetry:
+   ```bash
+   export OTEL_SDK_DISABLED=false
+   ```
+
+4. Use sik-llms normally - it will respect your configuration
+
+**How it works**: sik-llms detects your existing OpenTelemetry setup and uses it without any interference.
+
+### 🔍 What You Get
+
+Regardless of which option you choose:
+- **Distributed tracing**: Full request flows across LLM calls
+- **Performance metrics**: Token usage, latency, cost tracking  
+- **Error tracking**: Failed requests and their context
+- **Reasoning insights**: ReasoningAgent iteration and tool usage
+
 ### Configuration
 
-Telemetry is configured via environment variables:
+Additional configuration via environment variables:
 
 ```bash
 # Enable/disable telemetry (default: disabled)
 export OTEL_SDK_DISABLED=false
 
-# Service identification
+# Service identification (for zero-config mode)
 export OTEL_SERVICE_NAME="my-application"
 
-# OTLP endpoint (default: http://localhost:4318)
+# OTLP endpoint (for zero-config mode, default: http://localhost:4318)
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 
-# Authentication headers (if needed)
+# Authentication headers (for zero-config mode)
 export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer token"
 ```
 
-### What You Get
+### Production Examples
 
-- **Distributed tracing**: Full request flows across LLM calls
-- **Performance metrics**: Token usage, latency, cost tracking
-- **Error tracking**: Failed requests and their context
-- **Reasoning insights**: ReasoningAgent iteration and tool usage
-
-### Production Setup
-
-For production, point to your observability platform:
+For zero-config mode with production backends:
 
 ```bash
 # Honeycomb
@@ -112,6 +155,20 @@ export OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=your-api-key"
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://api.datadoghq.com"
 export OTEL_EXPORTER_OTLP_HEADERS="dd-api-key=your-api-key"
 ```
+
+### ⚠️ Troubleshooting
+
+**Problem**: Telemetry enabled but no traces appearing
+
+**Check**:
+1. Is telemetry actually enabled? `echo $OTEL_SDK_DISABLED` should show `false`
+2. Is the endpoint correct? Default is `http://localhost:4318`
+3. Is Jaeger running? Visit http://localhost:16686
+4. Check for error messages in your application logs
+
+**Problem**: Conflicts with existing OpenTelemetry setup
+
+**Solution**: sik-llms should automatically detect and respect your configuration. If you're seeing conflicts, please file an issue with your setup details.
 
 ### Development with Telemetry
 

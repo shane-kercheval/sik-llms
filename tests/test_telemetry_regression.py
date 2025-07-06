@@ -30,8 +30,8 @@ class TestTelemetryRegression:
     def test_all_existing_functionality_telemetry_mocked(self):
         """Run key existing scenarios with telemetry enabled but mocked."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "false"}):
-            with patch('sik_llms.telemetry.get_tracer', return_value=None):
-                with patch('sik_llms.telemetry.get_meter', return_value=None):
+            with patch('sik_llms.models_base.get_tracer', return_value=None):
+                with patch('sik_llms.models_base.get_meter', return_value=None):
                     # Same tests as above should still work
                     client = create_client("gpt-4o-mini")
                     assert hasattr(client, 'model_name')
@@ -376,3 +376,17 @@ class TestTelemetryBackwardCompatibility:
         # Test tool choice enum
         assert ToolChoice.AUTO
         assert ToolChoice.REQUIRED
+
+    def test_provider_detection_backward_compatibility(self):
+        """Test that the new provider detection doesn't break existing functionality."""
+        with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "false"}):
+            with patch('sik_llms.telemetry.get_tracer', return_value=MagicMock()):
+                with patch('sik_llms.telemetry.get_meter', return_value=MagicMock()):
+                    # Should work the same as before for new users
+                    client = create_client("gpt-4o-mini")
+                    assert client.tracer is not None  # Should auto-configure
+
+        with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
+            # Should still respect disabled state
+            client = create_client("gpt-4o-mini")
+            assert client.tracer is None

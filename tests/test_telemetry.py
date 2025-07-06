@@ -239,6 +239,86 @@ class TestSpanLinking:
             assert result is None
 
 
+class TestStandardProviderDetection:
+    """Test that we properly detect and respect existing OpenTelemetry setup."""
+
+    @patch('sik_llms.telemetry.is_telemetry_enabled')
+    def test_respects_existing_tracer_provider(self, mock_enabled):
+        """Test that we don't override existing user TracerProvider."""
+        mock_enabled.return_value = True
+
+        # User sets up their own provider
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+
+        user_provider = TracerProvider()
+        trace.set_tracer_provider(user_provider)
+
+        # Our code should respect their provider
+        tracer = get_tracer()
+
+        # Verify we got a tracer from their provider, not a new one
+        assert trace.get_tracer_provider() is user_provider
+        assert tracer is not None
+
+    @patch('sik_llms.telemetry.is_telemetry_enabled')
+    def test_auto_configures_when_no_provider(self, mock_enabled):
+        """Test that we auto-configure when only NoOpTracerProvider exists."""
+        mock_enabled.return_value = True
+
+        # Reset to default NoOp state
+        from opentelemetry.trace import NoOpTracerProvider
+
+        # Simulate fresh start - no user configuration
+        with patch('opentelemetry.trace.get_tracer_provider') as mock_get_provider:
+            mock_get_provider.return_value = NoOpTracerProvider()
+
+            with patch('opentelemetry.trace.set_tracer_provider') as mock_set_provider:
+                tracer = get_tracer()
+
+                # Verify we attempted to set up our own provider
+                assert mock_set_provider.called
+                assert tracer is not None
+
+    @patch('sik_llms.telemetry.is_telemetry_enabled')
+    def test_no_interference_with_user_config(self, mock_enabled):
+        """Test that we don't interfere with user's custom configuration."""
+        mock_enabled.return_value = True
+
+        # Mock the OpenTelemetry provider to simulate user's configuration
+        with patch('opentelemetry.trace.get_tracer_provider') as mock_get_provider:
+            from opentelemetry.sdk.trace import TracerProvider
+
+            # User's provider is not a NoOpTracerProvider
+            user_provider = MagicMock(spec=TracerProvider)
+            mock_get_provider.return_value = user_provider
+
+            # Mock trace.get_tracer to return a tracer
+            with patch('opentelemetry.trace.get_tracer') as mock_get_tracer:
+                mock_tracer = MagicMock()
+                mock_get_tracer.return_value = mock_tracer
+
+                # Our code runs
+                tracer = get_tracer()
+
+                # Verify we didn't try to set a new provider
+                from opentelemetry import trace
+                with patch.object(trace, 'set_tracer_provider') as mock_set:
+                    # Re-run to verify no set_tracer_provider call
+                    get_tracer()
+                    mock_set.assert_not_called()
+
+                # Verify we returned a tracer from the existing provider
+                assert tracer is mock_tracer
+
+    def test_handles_missing_opentelemetry_gracefully(self):
+        """Test graceful handling when OpenTelemetry not installed."""
+        with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "false"}):
+            with patch('builtins.__import__', side_effect=ImportError):
+                tracer = get_tracer()
+                assert tracer is None
+
+
 class TestHeaderParsing:
     """Test OTLP header parsing."""
 
@@ -319,8 +399,8 @@ class TestTelemetryIntegrationReal:
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "false"}):
             # Clear any existing tracer provider
             with patch('opentelemetry.trace.get_tracer_provider') as mock_provider:
-                mock_provider.return_value = MagicMock()
-                mock_provider.return_value._sik_llms_initialized = False
+                from opentelemetry.trace import NoOpTracerProvider
+                mock_provider.return_value = NoOpTracerProvider()
 
                 tracer = get_tracer()
                 # Should not be None when OpenTelemetry is available
@@ -335,12 +415,39 @@ class TestTelemetryIntegrationReal:
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "false"}):
             # Clear any existing meter provider
             with patch('opentelemetry.metrics.get_meter_provider') as mock_provider:
-                mock_provider.return_value = MagicMock()
-                mock_provider.return_value._sik_llms_initialized = False
+                from opentelemetry.metrics._internal import NoOpMeterProvider
+                mock_provider.return_value = NoOpMeterProvider()
 
                 meter = get_meter()
                 # Should not be None when OpenTelemetry is available
                 assert meter is not None
+
+
+@pytest.mark.integration
+class TestUserConfigurationRespect:
+    """Integration tests for respecting user OpenTelemetry configuration."""
+
+    @pytest.mark.skipif(not _otel_available(), reason="OpenTelemetry not installed")
+    def test_end_to_end_user_config_preserved(self):
+        """Test that user's end-to-end configuration is preserved."""
+        # Mock scenario where user has already set up OpenTelemetry
+        with patch('opentelemetry.trace.get_tracer_provider') as mock_get_provider:
+            from opentelemetry.sdk.trace import TracerProvider
+
+            # Simulate that user has a real provider configured
+            user_provider = MagicMock(spec=TracerProvider)
+            mock_get_provider.return_value = user_provider
+
+            with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "false"}):
+                # Verify sik-llms respects existing configuration
+                with patch('opentelemetry.trace.set_tracer_provider') as mock_set:
+                    client = create_client("gpt-4o-mini")
+
+                    # Should not have tried to set a new provider
+                    mock_set.assert_not_called()
+
+                    # Should have gotten a tracer
+                    assert client.tracer is not None
 
 
 @pytest.mark.integration

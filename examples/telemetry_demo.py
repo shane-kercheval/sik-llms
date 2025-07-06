@@ -4,9 +4,63 @@ import os
 from sik_llms import create_client
 
 
+def demonstrate_setup_patterns():
+    """Show both zero-config and manual setup patterns."""
+    print("\n" + "="*60)
+    print("📋 TELEMETRY SETUP PATTERNS")
+    print("="*60)
+    
+    print("\n🚀 Pattern 1: Zero-Config (What we're using now)")
+    print("   1. pip install sik-llms[telemetry]")
+    print("   2. export OTEL_SDK_DISABLED=false")
+    print("   3. That's it! sik-llms handles the rest")
+    
+    print("\n🏗️  Pattern 2: Manual Setup (Production recommended)")
+    print("   1. Set up OpenTelemetry in your app startup code")
+    print("   2. export OTEL_SDK_DISABLED=false") 
+    print("   3. sik-llms detects and respects your configuration")
+    
+    print("\n📝 Example manual setup code:")
+    print("   ```python")
+    print("   from opentelemetry import trace")
+    print("   from opentelemetry.sdk.trace import TracerProvider")
+    print("   from opentelemetry.sdk.trace.export import BatchSpanProcessor")
+    print("   from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter")
+    print("   ")
+    print("   # Configure your telemetry")
+    print("   trace.set_tracer_provider(TracerProvider())")
+    print("   tracer_provider = trace.get_tracer_provider()")
+    print("   ")
+    print("   # Add your exporter")
+    print("   otlp_exporter = OTLPSpanExporter(endpoint='https://your-backend.com/v1/traces')")
+    print("   span_processor = BatchSpanProcessor(otlp_exporter)")
+    print("   tracer_provider.add_span_processor(span_processor)")
+    print("   ")
+    print("   # Now use sik-llms normally - it will respect your setup!")
+    print("   ```")
+    
+    print("\n💡 Current demo is using: Zero-Config")
+    
+    from sik_llms.telemetry import is_telemetry_enabled
+    from opentelemetry import trace
+    from opentelemetry.trace import NoOpTracerProvider
+    
+    if is_telemetry_enabled():
+        provider = trace.get_tracer_provider()
+        if isinstance(provider, NoOpTracerProvider):
+            print("   Status: ❌ Telemetry enabled but not configured")
+        else:
+            print("   Status: ✅ Telemetry configured and working")
+            print(f"   Provider: {type(provider).__name__}")
+    else:
+        print("   Status: ⚪ Telemetry disabled")
+
+
 async def main():
     """Run telemetry demo with various sik-llms features."""
-    print("🔍 sik-llms Telemetry Demo")
+    demonstrate_setup_patterns()
+    
+    print("\n🔍 sik-llms Telemetry Demo")
     print(f"📊 Service: {os.getenv('OTEL_SERVICE_NAME', 'sik-llms-demo')}")
     print(f"📡 Endpoint: {os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://localhost:4318')}")
     print("\n" + "="*50)
