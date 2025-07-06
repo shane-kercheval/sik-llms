@@ -123,3 +123,130 @@ make package-build
 
 # Full package build and publish
 make package
+
+# Telemetry development commands  
+make telemetry-demo
+make jaeger-start
+make jaeger-stop
+```
+
+## 5. Observability and Telemetry
+
+**sik-llms** includes comprehensive OpenTelemetry integration for observing LLM operations in production and development. Understanding the telemetry system is crucial for AI coding agents working on this codebase.
+
+### Telemetry Architecture
+
+The library follows OpenTelemetry standards and supports two usage patterns:
+
+#### Zero-Config Mode (Default)
+- **When**: No existing OpenTelemetry setup detected
+- **Behavior**: Automatically configures OpenTelemetry with sensible defaults
+- **Detection**: Uses `isinstance(provider, NoOpTracerProvider)` check
+- **Configuration**: Via environment variables (`OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`)
+
+#### Manual Setup Mode  
+- **When**: User has pre-configured OpenTelemetry
+- **Behavior**: Respects existing configuration, no interference
+- **Detection**: Provider is not `NoOpTracerProvider` or `NoOpMeterProvider`
+- **Integration**: Uses existing tracer/meter providers
+
+### Key Files and Components
+
+#### `src/sik_llms/telemetry.py`
+Core telemetry module containing:
+- `get_tracer()`: Returns OpenTelemetry tracer with provider detection
+- `get_meter()`: Returns OpenTelemetry meter with provider detection  
+- `is_telemetry_enabled()`: Checks `OTEL_SDK_DISABLED` environment variable
+- `safe_span()`: Context manager for safe span creation
+- `create_span_link()`: Links spans for evaluation correlation
+- `_get_package_version()`: Dynamic version detection
+
+#### Provider Detection Logic
+```python
+# Standard approach - no custom markers
+current_provider = trace.get_tracer_provider()
+if not isinstance(current_provider, NoOpTracerProvider):
+    # User has configured - respect their setup
+    return trace.get_tracer("sik-llms") 
+else:
+    # Auto-configure for zero-config experience
+    # ... setup TracerProvider, exporters, etc.
+```
+
+#### Integration Points
+- **`models_base.py`**: Base client classes call `get_tracer()` and `get_meter()`
+- **All provider clients**: Instrument LLM calls with spans and metrics
+- **ReasoningAgent**: Tracks reasoning iterations and tool usage
+- **TokenSummary**: Emits usage and cost metrics
+
+### Telemetry Data Generated
+
+#### Distributed Tracing
+- **Span Names**: `llm.request`, `llm.reasoning.iteration`, `llm.tool.call`
+- **Attributes**: Model name, provider, operation type, token counts, costs
+- **Links**: Connect evaluation results to original generations
+
+#### Metrics  
+- **Counters**: Input/output tokens, cache hits, costs by model
+- **Histograms**: Request duration, reasoning iterations
+- **Labels**: Model, provider, operation type
+
+#### Events
+- **Streaming**: Text chunks, tool predictions, thinking events
+- **Errors**: Failed requests with context and retry information
+
+### Environment Variables
+
+#### Required
+- `OTEL_SDK_DISABLED`: Set to `false` to enable telemetry
+
+#### Zero-Config Mode (Optional)
+- `OTEL_SERVICE_NAME`: Service identification (default: "sik-llms")
+- `OTEL_EXPORTER_OTLP_ENDPOINT`: OTLP endpoint (default: "http://localhost:4318")
+- `OTEL_EXPORTER_OTLP_HEADERS`: Authentication headers
+
+#### Manual Mode
+- User configures OpenTelemetry in their application code
+- sik-llms automatically detects and uses existing setup
+
+### Development Guidelines
+
+#### For AI Coding Agents
+
+1. **Provider Detection**: Always use standard OpenTelemetry provider detection, never custom markers
+2. **Graceful Degradation**: All telemetry code must work when OpenTelemetry is disabled or missing
+3. **User Respect**: Never override existing user OpenTelemetry configuration
+4. **Standard Patterns**: Follow OpenTelemetry ecosystem conventions
+
+### Demo and Examples
+
+#### `examples/telemetry_demo.py`
+Comprehensive demonstration showing:
+- Both setup patterns explanation
+- Provider detection status
+- All telemetry features (tracing, metrics, span linking)
+- Multi-provider support (OpenAI + Anthropic)
+- ReasoningAgent iteration tracking
+
+#### Make Commands
+```bash
+make telemetry-demo    # Run full telemetry demonstration
+make jaeger-start      # Start local Jaeger instance  
+make jaeger-stop       # Stop local Jaeger instance
+```
+
+### Troubleshooting Common Issues
+
+#### Provider Override Warnings
+- **Symptom**: "Overriding of current TracerProvider is not allowed" warnings
+- **Cause**: OpenTelemetry global state management
+- **Solution**: Use provider detection to avoid setting when already configured
+
+#### Missing Traces
+- **Check**: `OTEL_SDK_DISABLED=false` is set
+- **Check**: Endpoint is reachable (default: http://localhost:4318)
+- **Check**: Jaeger is running for local development
+
+#### Import Errors
+- **Install**: `pip install sik-llms[telemetry]` for OpenTelemetry dependencies
+- **Graceful**: Code should handle ImportError when OpenTelemetry not installed
