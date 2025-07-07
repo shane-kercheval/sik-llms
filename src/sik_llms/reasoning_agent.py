@@ -1,5 +1,5 @@
 """Reasoning agent module with structured output and event-driven flow."""
-
+# ruff: noqa: E501
 import asyncio
 from importlib import resources
 import json
@@ -44,7 +44,7 @@ class ReasoningStep(BaseModel):
 
     thought: str = Field(description="Current reasoning/thinking about the problem")
     next_action: ReasoningAction = Field(description="What action to take next")
-    tool_name: str | None = Field(default=None, description="Name of the tool to use (if next_action is USE_TOOL)")  # noqa: E501
+    tool_name: str | None = Field(default=None, description="Name of the tool to use (if next_action is USE_TOOL)")
 
 
 def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
@@ -54,7 +54,7 @@ def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | E
         return RegisteredClients.OPENAI
     if model_name in SUPPORTED_ANTHROPIC_MODELS:
         return RegisteredClients.ANTHROPIC
-    raise ValueError(f"Unknown model name '{model_name}' or client when trying to infer client type")  # noqa: E501
+    raise ValueError(f"Unknown model name '{model_name}' or client when trying to infer client type")
 
 
 @Client.register(RegisteredClients.REASONING_AGENT)
@@ -117,7 +117,7 @@ class ReasoningAgent(Client):
                 elif client_type == RegisteredClients.ANTHROPIC:
                     tools_client_type = RegisteredClients.ANTHROPIC_TOOLS
                 else:
-                    raise ValueError("Unknown client type for tools when trying to infer tools_client_type")  # noqa: E501
+                    raise ValueError("Unknown client type for tools when trying to infer tools_client_type")
 
             self.tools_client_type = tools_client_type
             self.tools_model_name = tools_model_name
@@ -155,7 +155,7 @@ class ReasoningAgent(Client):
                             param_description = f": {param.description.strip()}"
                         else:
                             param_description = ""
-                        tools_description += f"  - `{param.name}` {required_str}{param_description}\n"  # noqa: E501
+                        tools_description += f"  - `{param.name}` {required_str}{param_description}\n"
                 tools_description += "\n"
         else:
             tools_description = "No tools available."
@@ -262,7 +262,7 @@ class ReasoningAgent(Client):
                 ]
                 if messages:
                     # if there were more than one message, add them to the reasoning messages
-                    reasoning_messages.append(user_message(f"Here are the previous messages for context:\n\n```\n{json.dumps(messages)}\n```\n"))  # noqa: E501
+                    reasoning_messages.append(user_message(f"Here are the previous messages for context:\n\n```\n{json.dumps(messages)}\n```\n"))
                 reasoning_messages.append(last_message)
                 # reasoning_history will be used to store the reasoning steps so that we can
                 # summarize them later for the final response
@@ -290,7 +290,7 @@ class ReasoningAgent(Client):
                     ):
                         # Get structured reasoning step
                         reasoning_client = self._get_reasoning_client()
-                        response: StructuredOutputResponse = await reasoning_client.run_async(reasoning_messages)  # noqa: E501
+                        response: StructuredOutputResponse = await reasoning_client.run_async(reasoning_messages)
 
                         # Update token usage
                         total_input_tokens += response.input_tokens
@@ -314,7 +314,7 @@ class ReasoningAgent(Client):
                             })
                         else:
                             # Handle parsing failure
-                            error_message = f"Error: Failed to parse reasoning step. Response: {response.refusal}"  # noqa: E501
+                            error_message = f"Error: Failed to parse reasoning step. Response: {response.refusal}"
                             yield ErrorEvent(
                                 content=error_message,
                                 metadata={
@@ -324,7 +324,7 @@ class ReasoningAgent(Client):
                             )
                             reasoning_messages.extend([
                                 assistant_message(error_message),
-                                user_message("Try again and adjust your thinking or response based on the error message."),  # noqa: E501
+                                user_message("Try again and adjust your thinking or response based on the error message."),
                             ])
                             continue
 
@@ -368,8 +368,8 @@ class ReasoningAgent(Client):
                                     },
                                 )
                                 reasoning_messages.extend([
-                                    assistant_message("Error: I chose to use a tool but didn't provide the tool name."),  # noqa: E501
-                                    user_message("Adjust your response and use the correct tools available if they are needed to answer the question."),  # noqa: E501
+                                    assistant_message("Error: I chose to use a tool but didn't provide the tool name."),
+                                    user_message("Adjust your response and use the correct tools available if they are needed to answer the question."),
                                 ])
                                 continue
 
@@ -389,9 +389,10 @@ class ReasoningAgent(Client):
                                 try:
                                     # Create messages for tool prediction
                                     tool_messages = reasoning_messages.copy()
-                                    # remove initial system message that is specific to the reasoning agent
+                                    # remove initial system message that is specific to the
+                                    # reasoning agent
                                     tool_messages.pop(0)
-                                    tool_messages[-1]['content'] += f"\n\nI will use the `{tool_name}` tool to help solve the problem."  # noqa: E501
+                                    tool_messages[-1]['content'] += f"\n\nI will use the `{tool_name}` tool to help solve the problem."
 
                                     # Get the tools client for this specific tool
                                     tools_client = self._get_tools_client(tool_name)
@@ -414,7 +415,7 @@ class ReasoningAgent(Client):
                                         # Verify the predicted tool matches the requested tool
                                         if predicted_tool_name != tool_name:
                                             yield ErrorEvent(
-                                                content=f"Warning: Tool prediction changed from `{tool_name}` to `{predicted_tool_name}`",  # noqa: E501
+                                                content=f"Warning: Tool prediction changed from `{tool_name}` to `{predicted_tool_name}`",
                                                 metadata={
                                                     'tool_name': tool_name,
                                                     'predicted_tool_name': predicted_tool_name,
@@ -433,7 +434,7 @@ class ReasoningAgent(Client):
 
                                         # Execute the tool
                                         try:
-                                            tool_result = await self._execute_tool(predicted_tool_name, predicted_tool_args)  # noqa: E501
+                                            tool_result = await self._execute_tool(predicted_tool_name, predicted_tool_args)
                                             # Yield tool result event
                                             yield ToolResultEvent(
                                                 name=predicted_tool_name,
@@ -443,7 +444,7 @@ class ReasoningAgent(Client):
                                             )
                                             # Add tool use to the messages
                                             reasoning_messages.extend([
-                                                assistant_message(f"Tool Used: `{tool_name}`\n\nParameters: `{json.dumps(predicted_tool_args)}`\n\nResult:\n\n```\n{tool_result!s}\n```\n"),  # noqa: E501
+                                                assistant_message(f"Tool Used: `{tool_name}`\n\nParameters: `{json.dumps(predicted_tool_args)}`\n\nResult:\n\n```\n{tool_result!s}\n```\n"),
                                                 user_message("Continue your reasoning based on the tool result."),
                                             ])
                                             # Record the tool use
@@ -469,12 +470,12 @@ class ReasoningAgent(Client):
                                             )
                                             reasoning_messages.extend([
                                                 assistant_message(error_message),
-                                                user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),  # noqa: E501
+                                                user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),
                                             ])
                                     else:
                                         # No tool prediction was made
                                         response_message = tool_response.message
-                                        error_message = f"Error: Failed to get tool prediction for {tool_name}; message=`{response_message}`"  # noqa: E501
+                                        error_message = f"Error: Failed to get tool prediction for {tool_name}; message=`{response_message}`"
                                         yield ErrorEvent(
                                             content=error_message,
                                             metadata={
@@ -485,7 +486,7 @@ class ReasoningAgent(Client):
                                         )
                                         reasoning_messages.extend([
                                             assistant_message(error_message),
-                                            user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),  # noqa: E501
+                                            user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),
                                         ])
                                         continue
 
@@ -502,7 +503,7 @@ class ReasoningAgent(Client):
                                     )
                                     reasoning_messages.extend([
                                         assistant_message(error_message),
-                                        user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),  # noqa: E501
+                                        user_message("Either adjust your response based on the error, or continue your reasoning without using this tool."),
                                     ])
                         else:
                             # Handle unknown reasoning action
@@ -519,7 +520,7 @@ class ReasoningAgent(Client):
                                 user_message("Adjust your response based on the error message."),
                             ])
 
-                if iteration >= self.max_iterations and (not reasoning_step or reasoning_step.next_action != ReasoningAction.FINISHED):  # noqa: E501
+                if iteration >= self.max_iterations and (not reasoning_step or reasoning_step.next_action != ReasoningAction.FINISHED):
                     error_message = f"Maximum iterations ({self.max_iterations}) reached."
                     yield ErrorEvent(
                         content=error_message,
@@ -540,9 +541,9 @@ class ReasoningAgent(Client):
                 if self.generate_final_response:
                     summary_messages = [
                         system_message(PROMPT__ANSWER_AGENT),
-                        assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),  # noqa: E501
-                        assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),  # noqa: E501
-                        user_message("Please provide the final answer based on your reasoning process above, and any additional explanation if you deem it necessary, which I will deliver to the end-user."),  # noqa: E501
+                        assistant_message("Here is the user's original question:\n\n```\n" + last_message['content'] + "\n```\n"),
+                        assistant_message("Here is the reasoning history for the problem:\n\n```\n" + json.dumps(reasoning_history, indent=2) + "\n```\n"),
+                        user_message("Please provide the final answer based on your reasoning process above, and any additional explanation if you deem it necessary, which I will deliver to the end-user."),
                     ]
                     async for chunk in self._get_summary_client().stream(summary_messages):
                         if isinstance(chunk, TextChunkEvent):

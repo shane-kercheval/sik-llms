@@ -13,7 +13,13 @@ from copy import deepcopy
 from enum import Enum, auto
 from typing import Any, Literal, TypeVar, Union, get_args, get_origin
 from sik_llms.utilities import Registry, _string_to_type
-from sik_llms.telemetry import get_tracer, get_meter, safe_span
+from sik_llms.telemetry import (
+    get_tracer,
+    get_meter,
+    safe_span,
+    create_span_link,
+    extract_current_trace_context,
+)
 
 
 class ModelProvider(Enum):
@@ -221,6 +227,27 @@ class ToolResultEvent(AgentEvent):
     result: object
 
 
+class TraceContext(BaseModel):
+    """OpenTelemetry trace context information for span linking."""
+
+    trace_id: str | None = None
+    span_id: str | None = None
+
+    def create_link(self, attributes: dict[str, Any] | None = None) -> object | None:
+        """
+        Create a span link from this trace context.
+
+        Args:
+            attributes: Optional attributes for the link
+
+        Returns:
+            Link object or None if trace context is incomplete or telemetry is disabled
+        """
+        if not self.trace_id or not self.span_id:
+            return None
+        return create_span_link(self.trace_id, self.span_id, attributes)
+
+
 class TokenSummary(BaseModel):
     """Summary of a chat response."""
 
@@ -258,7 +285,7 @@ class TokenSummary(BaseModel):
             + (self.cache_read_cost or 0)
         )
 
-    def emit_metrics(self, meter=None, labels: dict[str, str] | None = None) -> None:
+    def emit_metrics(self, meter=None, labels: dict[str, str] | None = None) -> None:  # noqa: ANN001
         """
         Emit OpenTelemetry metrics for this token summary.
 
@@ -332,12 +359,14 @@ class StructuredOutputResponse(TokenSummary):
 
     parsed: BaseModel | None
     refusal: str | object | None
+    trace_context: TraceContext | None = None
 
 
 class TextResponse(TokenSummary):
     """Summary of a chat response."""
 
     response: str
+    trace_context: TraceContext | None = None
 
 
 class Parameter(BaseModel):
@@ -535,6 +564,7 @@ class ToolPredictionResponse(TokenSummary):
 
     tool_prediction: ToolPrediction | None
     message: str | None = None
+    trace_context: TraceContext | None = None
 
 
 ClientType = TypeVar('ClientType', bound='Client')
@@ -544,7 +574,7 @@ class Client(ABC):
 
     registry = Registry()
 
-    def __init__(self, model_name: str, **kwargs):
+    def __init__(self, model_name: str, **kwargs):  # noqa: ANN003, ARG002
         """Initialize client with optional telemetry setup."""
         self.model_name = model_name
 
@@ -598,9 +628,15 @@ class Client(ABC):
                 last_response = None
                 async for response in result:
                     last_response = response
+                # Add trace context to the final response
+                if last_response:
+                    self._add_trace_context(last_response)
                 return last_response
             # If it's a regular coroutine, just await and return the result
-            return await result
+            final_response = await result
+            if final_response:
+                self._add_trace_context(final_response)
+            return final_response
 
         # Try to use the current event loop if one is running
         try:
@@ -650,6 +686,10 @@ class Client(ABC):
             async for response in self.stream(messages):
                 last_response = response
 
+            # Add trace context to the final response
+            if last_response:
+                self._add_trace_context(last_response)
+
             # Emit metrics if available
             if self.meter and isinstance(last_response, TokenSummary):
                 labels = {
@@ -679,6 +719,16 @@ class Client(ABC):
         if "anthropic" in class_name:
             return "anthropic"
         return "unknown"
+
+    def _add_trace_context(
+            self,
+            response: TextResponse | ToolPredictionResponse | StructuredOutputResponse,
+        ) -> None:
+        """Add trace context to response if available."""
+        if hasattr(response, 'trace_context'):
+            trace_id, span_id = extract_current_trace_context()
+            if trace_id and span_id:
+                response.trace_context = TraceContext(trace_id=trace_id, span_id=span_id)
 
     async def sample(
         self,

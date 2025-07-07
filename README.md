@@ -191,15 +191,26 @@ make jaeger-stop
 
 ### Span Links for Evaluation
 
-When using sik-llms with evaluation frameworks, you can link evaluation results back to original LLM generations:
+When using sik-llms with evaluation frameworks, you can link evaluation results back to original LLM generations using the new TraceContext feature:
 
 ```python
-from sik_llms import create_span_link
+# Generate content with automatic trace context
+response = client([{"role": "user", "content": "Write a story about AI"}])
 
-# In your evaluation code
-link = create_span_link(
-    trace_id=response.trace_id,
-    span_id=response.span_id, 
-    attributes={"link.type": "evaluation_of_generation"}
-)
+# Later, in your evaluation pipeline
+if response.trace_context:
+    link = response.trace_context.create_link({
+        "link.type": "evaluation_of_generation",
+        "evaluation.type": "quality_check"
+    })
+    
+    # Use the link when creating evaluation spans
+    with tracer.start_as_current_span("evaluation", links=[link] if link else []):
+        quality_score = evaluate_quality(response.response)
 ```
+
+**Key Benefits:**
+- ✅ No manual wrapper spans needed
+- ✅ Works with both sync (`client()`) and async (`client.run_async()`) calls
+- ✅ Automatic trace context extraction
+- ✅ Clean separation between LLM operations and evaluation

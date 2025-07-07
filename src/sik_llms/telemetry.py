@@ -218,6 +218,41 @@ def _parse_headers(header_string: str) -> dict[str, str]:
     return headers
 
 
+def extract_current_trace_context() -> tuple[str | None, str | None]:
+    """
+    Extract trace and span IDs from the current active span.
+
+    Returns:
+        Tuple of (trace_id, span_id) as hexadecimal strings, or (None, None) if no active span
+        or telemetry is disabled.
+    """
+    if not is_telemetry_enabled():
+        return None, None
+
+    try:
+        from opentelemetry import trace
+
+        # Get current span
+        current_span = trace.get_current_span()
+        if not current_span or not current_span.is_recording():
+            return None, None
+
+        # Get span context
+        span_context = current_span.get_span_context()
+        if not span_context or not span_context.is_valid:
+            return None, None
+
+        # Convert to hex strings
+        trace_id = format(span_context.trace_id, '032x')
+        span_id = format(span_context.span_id, '016x')
+
+        return trace_id, span_id
+
+    except (ImportError, AttributeError, ValueError):
+        # Gracefully handle any errors
+        return None, None
+
+
 def safe_span(tracer: object | None, name: str, **kwargs: dict) -> object:
     """
     Create span safely, returning nullcontext if tracer unavailable.

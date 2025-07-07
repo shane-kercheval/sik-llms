@@ -381,7 +381,7 @@ class OpenAI(Client):
         if 'max_completion_tokens' not in self.model_parameters and model_info:
             self.model_parameters['max_completion_tokens'] = min(8_000, model_info.max_output_tokens)  # noqa: E501
 
-    async def stream(
+    async def stream(  # noqa: PLR0912, PLR0915
             self,
             messages: list[dict],
         ) -> AsyncGenerator[TextChunkEvent | TextResponse | None]:
@@ -402,9 +402,9 @@ class OpenAI(Client):
             if span:
                 span.set_attribute("llm.api.vendor", "openai")
                 if hasattr(self, 'temperature') and 'temperature' in self.model_parameters:
-                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])
-                if hasattr(self, 'max_completion_tokens') and 'max_completion_tokens' in self.model_parameters:
-                    span.set_attribute("llm.request.max_tokens", self.model_parameters['max_completion_tokens'])
+                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])  # noqa: E501
+                if hasattr(self, 'max_completion_tokens') and 'max_completion_tokens' in self.model_parameters:  # noqa: E501
+                    span.set_attribute("llm.request.max_tokens", self.model_parameters['max_completion_tokens'])  # noqa: E501
 
             model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
             pricing_lookup = model_info.pricing if model_info else None
@@ -424,7 +424,8 @@ class OpenAI(Client):
                     )
                     end_time = perf_counter()
                     input_tokens = completion.usage.prompt_tokens
-                    # these fields may not be available when using openai library for third-party providers
+                    # these fields may not be available when using openai library for third-party
+                    # providers
                     if (
                         hasattr(completion, 'usage')
                         and hasattr(completion.usage, 'prompt_tokens_details')
@@ -460,13 +461,14 @@ class OpenAI(Client):
                     cached_tokens = 0
                     # `stream_options={'include_usage': True}` is required to get usage information
                     # from API when streaming.
-                    # However, stream_options may not be valid when using openai library for third-party
-                    # providers (i.e. if server_url is None we are using the openai library)
+                    # However, stream_options may not be valid when using openai library for
+                    # third-party providers (i.e. if server_url is None we are using the openai
+                    # library)
                     if (
                         self.server_url is None  # if using openai library
                         and (
-                            # if either the user has not specified stream_options, or if they have and
-                            # 'include_usage' is not set
+                            # if either the user has not specified stream_options, or if they have
+                            # and 'include_usage' is not set
                             'stream_options' not in model_parameters
                             or 'include_usage' not in model_parameters['stream_options']
                         )
@@ -488,8 +490,8 @@ class OpenAI(Client):
                         if hasattr(chunk, 'usage') and chunk.usage:
                             input_tokens += chunk.usage.prompt_tokens
                             output_tokens += chunk.usage.completion_tokens
-                            # these fields may not be available when using openai library for third-party
-                            # providers
+                            # these fields may not be available when using openai library for
+                            # third-party providers
                             if (
                                 hasattr(chunk, 'usage')
                                 and hasattr(chunk.usage, 'prompt_tokens_details')
@@ -680,7 +682,10 @@ class OpenAITools(Client):
             raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
         self.model_parameters['tools'] = [_tool_to_openai_schema(t) for t in tools]
 
-    async def stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[ToolPredictionResponse | None]:  # noqa: E501
+    async def stream(  # noqa: PLR0912
+            self,
+            messages: list[dict[str, str]],
+        ) -> AsyncGenerator[ToolPredictionResponse | None]:
         """
         Call the model with tools.
 
@@ -703,7 +708,7 @@ class OpenAITools(Client):
             if span:
                 span.set_attribute("llm.api.vendor", "openai")
                 if 'temperature' in self.model_parameters:
-                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])
+                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])  # noqa: E501
                 if 'tools' in self.model_parameters:
                     span.set_attribute("llm.tools.count", len(self.model_parameters['tools']))
 
@@ -714,8 +719,8 @@ class OpenAITools(Client):
                     model=self.model,
                     messages=messages,
                     store=False,
-                    # i'm not sure it makes sense to stream chunks for tools, perhaps this will change
-                    # in the future; but seems overly complicated for a tool call.
+                    # i'm not sure it makes sense to stream chunks for tools, perhaps this will
+                    # change in the future; but seems overly complicated for a tool call.
                     stream=False,
                     **model_parameters,
                 )
@@ -729,7 +734,8 @@ class OpenAITools(Client):
                 # Calculate costs
                 input_tokens = completion.usage.prompt_tokens
                 output_tokens = completion.usage.completion_tokens
-                # these fields may not be available when using openai library for third-party providers
+                # these fields may not be available when using openai library for third-party
+                # providers
                 cached_tokens = None
                 cached_cost = None
                 if (
@@ -758,7 +764,7 @@ class OpenAITools(Client):
                     # Add tool call info to span
                     if span:
                         span.set_attribute("llm.tool.name", tool_call.function.name)
-                        span.set_attribute("llm.tool.arguments_count", len(tool_call.function.arguments))
+                        span.set_attribute("llm.tool.arguments_count", len(tool_call.function.arguments))  # noqa: E501
                 else:
                     message = completion.choices[0].message.content
                     tool_prediction = None

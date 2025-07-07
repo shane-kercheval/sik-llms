@@ -712,7 +712,7 @@ class AnthropicTools(Client):
             if span:
                 span.set_attribute("llm.api.vendor", "anthropic")
                 if 'temperature' in self.model_parameters:
-                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])
+                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])  # noqa: E501
                 if 'tools' in self.model_parameters:
                     span.set_attribute("llm.tools.count", len(self.model_parameters['tools']))
 
@@ -721,8 +721,8 @@ class AnthropicTools(Client):
                 api_params = {
                     'model': self.model,
                     'messages': anthropic_messages,
-                    # i'm not sure it makes sense to stream chunks for tools, perhaps this will change
-                    # in the future; but seems overly complicated for a tool call.
+                    # i'm not sure it makes sense to stream chunks for tools, perhaps this will
+                    # change in the future; but seems overly complicated for a tool call.
                     'stream': False,
                     **self.model_parameters,
                 }
@@ -740,7 +740,7 @@ class AnthropicTools(Client):
                 tool_prediction = None
                 message = None
                 if len(response.content) > 1:
-                    raise ValueError(f"Unexpected multiple content items in response: {response.content}")
+                    raise ValueError(f"Unexpected multiple content items in response: {response.content}")  # noqa: E501
                 if response.content[0].type == 'tool_use':
                     tool_prediction = ToolPrediction(
                         name=response.content[0].name,
@@ -751,7 +751,7 @@ class AnthropicTools(Client):
                     # Add tool call info to span
                     if span:
                         span.set_attribute("llm.tool.name", response.content[0].name)
-                        span.set_attribute("llm.tool.arguments_count", len(response.content[0].input))
+                        span.set_attribute("llm.tool.arguments_count", len(response.content[0].input))  # noqa: E501
                 elif response.content[0].type == 'text':
                     message = response.content[0].text
 

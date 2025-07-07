@@ -47,7 +47,7 @@ class TestTelemetryIntegration:
 
     @patch('sik_llms.models_base.get_tracer')
     @patch('sik_llms.models_base.get_meter')
-    def test_client_creation_with_telemetry(self, mock_meter, mock_tracer):
+    def test_client_creation_with_telemetry(self, mock_meter, mock_tracer):  # noqa: ANN001
         """Test client creation with telemetry enabled."""
         mock_tracer_instance = MagicMock()
         mock_meter_instance = MagicMock()
@@ -85,7 +85,7 @@ class TestTokenSummaryMetrics:
     """Test TokenSummary metrics emission."""
 
     @patch('sik_llms.telemetry.get_meter')
-    def test_metrics_emission(self, mock_get_meter):
+    def test_metrics_emission(self, mock_get_meter):  # noqa: ANN001
         """Test that TokenSummary emits metrics correctly."""
         mock_meter = MagicMock()
         mock_counter = MagicMock()
@@ -217,7 +217,7 @@ class TestSpanLinking:
             assert result is None
 
     @patch('sik_llms.telemetry.is_telemetry_enabled')
-    def test_create_span_context_import_error(self, mock_enabled):
+    def test_create_span_context_import_error(self, mock_enabled):   # noqa
         """Test create_span_context handles import errors."""
         from sik_llms.telemetry import create_span_context
 
@@ -228,7 +228,7 @@ class TestSpanLinking:
             assert result is None
 
     @patch('sik_llms.telemetry.is_telemetry_enabled')
-    def test_create_span_link_import_error(self, mock_enabled):
+    def test_create_span_link_import_error(self, mock_enabled):   # noqa
         """Test create_span_link handles import errors."""
         from sik_llms.telemetry import create_span_link
 
@@ -243,7 +243,7 @@ class TestStandardProviderDetection:
     """Test that we properly detect and respect existing OpenTelemetry setup."""
 
     @patch('sik_llms.telemetry.is_telemetry_enabled')
-    def test_respects_existing_tracer_provider(self, mock_enabled):
+    def test_respects_existing_tracer_provider(self, mock_enabled):   # noqa
         """Test that we don't override existing user TracerProvider."""
         mock_enabled.return_value = True
 
@@ -262,7 +262,7 @@ class TestStandardProviderDetection:
         assert tracer is not None
 
     @patch('sik_llms.telemetry.is_telemetry_enabled')
-    def test_auto_configures_when_no_provider(self, mock_enabled):
+    def test_auto_configures_when_no_provider(self, mock_enabled):   # noqa
         """Test that we auto-configure when only NoOpTracerProvider exists."""
         mock_enabled.return_value = True
 
@@ -281,7 +281,7 @@ class TestStandardProviderDetection:
                 assert tracer is not None
 
     @patch('sik_llms.telemetry.is_telemetry_enabled')
-    def test_no_interference_with_user_config(self, mock_enabled):
+    def test_no_interference_with_user_config(self, mock_enabled):   # noqa
         """Test that we don't interfere with user's custom configuration."""
         mock_enabled.return_value = True
 

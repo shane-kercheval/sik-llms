@@ -6,29 +6,6 @@
 
 This guide will take you from "What is observability?" to "I can set up production OpenTelemetry monitoring for my LLM applications." We'll use sik-llms as our practical example throughout.
 
-## ❗ **Quick Answer: Do I Need to Write Instrumentation Code?**
-
-**NO!** sik-llms automatically emits all telemetry for you. You just need to:
-
-1. **Set environment variable**: `export OTEL_SDK_DISABLED=false`
-2. **Set up collection infrastructure** (Any OTLP-compatible backend; e.g. Jaeger for traces, Prometheus for metrics)
-3. **Use sik-llms normally** - all metrics and traces are automatic
-
-**You get these metrics automatically**:
-```python
-# Your code (no instrumentation needed):
-client = create_client("gpt-4o-mini")
-response = client([{"role": "user", "content": "Hello"}])
-
-# sik-llms automatically emits:
-# llm_tokens_input_total{llm_model="gpt-4o-mini"} += 8
-# llm_request_duration_seconds{llm_model="gpt-4o-mini"} = 2.1
-# llm_cost_total_usd{llm_model="gpt-4o-mini"} += 0.0001
-# + traces in Jaeger
-```
-
-**The confusion**: Those metric variables need **Prometheus** to collect them. The guide shows what they look like, but you need the infrastructure to see them.
-
 ## 📚 **Table of Contents**
 
 1. [Why Observability Matters for LLMs](#why-observability-matters-for-llms)
@@ -195,6 +172,27 @@ response = client([{"role": "user", "content": "Hello"}])
 # llm_tokens_output_total{llm_model="gpt-4o-mini", llm_provider="openai"} += 12
 # llm_cost_total_usd{llm_model="gpt-4o-mini", llm_provider="openai"} += 0.0001
 # llm_request_duration_seconds{llm_model="gpt-4o-mini"} = 2.1
+#
+# 3. TRACE CONTEXT (NEW! - automatically captured in response)
+# response.trace_context.trace_id = "abc123..."
+# response.trace_context.span_id = "def456..."
+```
+
+### **TraceContext**
+
+Every response object automatically includes trace context when telemetry is enabled:
+
+```python
+response = client([{"role": "user", "content": "Hello"}])
+# True if telemetry is enabled
+if response.trace_context:
+    print(f"Trace ID: {response.trace_context.trace_id}")
+    print(f"Span ID: {response.trace_context.span_id}")
+    # Create links for downstream evaluation
+    link = response.trace_context.create_link({
+        "link.type": "evaluation",
+        "evaluation.system": "quality_checker"
+    })
 ```
 
 ### **ReasoningAgent Deep Instrumentation**
@@ -220,6 +218,8 @@ response = agent([{"role": "user", "content": "Solve: 15 * 23 + 7"}])
 #     │   └── Attribute: tool.arguments_count = 2
 #     ├── Child Span: reasoning.thinking.iteration_2 (1.2s)
 #     └── Child Span: reasoning.thinking.iteration_3 (3.1s)
+#
+# PLUS: response.trace_context automatically populated
 ```
 
 ### **Automatic Metrics Collection**
@@ -336,10 +336,19 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 # example_with_telemetry.py
 from sik_llms import create_client
 
-# This will automatically create traces!
+# This will automatically create traces AND populate trace context!
 client = create_client("gpt-4o-mini") 
 response = client([{"role": "user", "content": "What's the capital of France?"}])
-print(response.response)
+
+print(f"Response: {response.response}")
+
+# NEW: Check trace context
+if response.trace_context:
+    print(f"🔗 Trace ID: {response.trace_context.trace_id}")
+    print(f"🔗 Span ID: {response.trace_context.span_id}")
+    print("✅ Ready for span linking!")
+else:
+    print("⚪ No trace context (telemetry may be disabled)")
 ```
 
 ```bash
@@ -581,6 +590,7 @@ python your_llm_app.py
 - ✅ **Traces** in Jaeger showing request flows
 - ✅ **Metrics** in Prometheus showing token usage, costs, latency
 - ✅ **Dashboards** in Grafana visualizing your LLM performance
+- ✅ **TraceContext** automatically captured in response objects
 
 **With alternative backends**: You might get all of this in a single UI (e.g., Honeycomb combines traces and metrics).
 
@@ -695,6 +705,10 @@ from sik_llms import create_client
 
 client = create_client("gpt-4o-mini")
 response = client([{"role": "user", "content": "Hello"}])
+
+# TraceContext is still automatically populated
+if response.trace_context:
+    print("✅ Custom OpenTelemetry setup + automatic TraceContext!")
 ```
 
 **Advanced configuration options:**
@@ -742,6 +756,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="https://api.honeycomb.io/v1/traces/your-data
 export OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=your-api-key"
 
 # That's it! Both traces and metrics go to one place
+# PLUS: TraceContext automatically works
 ```
 
 #### **Datadog**
@@ -769,6 +784,7 @@ export OTEL_EXPORTER_OTLP_HEADERS="api-key=your-license-key"
 - One service receives everything
 - One UI for traces AND metrics correlation
 - Simple environment variable configuration
+- TraceContext still works automatically
 
 ### **When to Use Each Approach**
 
@@ -801,6 +817,8 @@ else:
     # User has configured OpenTelemetry
     print("Using manual setup - respecting user configuration")
     # sik-llms just gets a tracer and uses existing setup
+
+# In BOTH cases: TraceContext is automatically populated!
 ```
 
 ---
@@ -824,6 +842,7 @@ export OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=your-api-key"
 - ✅ Great query interface for exploring traces
 - ✅ Built-in cost analysis features
 - ✅ Good performance with high-volume trace data
+- ✅ Works seamlessly with sik-llms TraceContext
 
 #### **Datadog**
 ```bash
@@ -921,6 +940,7 @@ services:
 
 **Traces**: View in Jaeger UI (http://localhost:16686)
 **Metrics**: Query in Prometheus (http://localhost:9090) or visualize in Grafana (http://localhost:3000)
+**TraceContext**: Automatically captured in response objects for span linking
 
 ### **Key Metrics to Monitor**
 
@@ -1075,6 +1095,30 @@ print(f"Provider type: {type(provider)}")
 print(f"Is NoOp: {isinstance(provider, NoOpTracerProvider)}")
 ```
 
+### **TraceContext Not Populated**
+
+#### **1. Check TraceContext in response**
+```python
+response = client([{"role": "user", "content": "Hello"}])
+
+print(f"Has trace_context: {hasattr(response, 'trace_context')}")
+print(f"TraceContext value: {response.trace_context}")
+
+if response.trace_context:
+    print(f"Trace ID: {response.trace_context.trace_id}")
+    print(f"Span ID: {response.trace_context.span_id}")
+else:
+    print("No trace context - check telemetry setup")
+```
+
+#### **2. Test context extraction directly**
+```python
+from sik_llms.telemetry import extract_current_trace_context
+
+trace_id, span_id = extract_current_trace_context()
+print(f"Direct extraction: trace_id={trace_id}, span_id={span_id}")
+```
+
 ### **Traces Not Showing Expected Data**
 
 #### **1. Check span attributes**
@@ -1173,7 +1217,169 @@ processor = BatchSpanProcessor(
 
 ## 🚀 **Advanced Usage**
 
-### **Custom Instrumentation**
+### **🆕 Simplified Span Linking with TraceContext**
+
+The new TraceContext feature dramatically simplifies span linking for evaluation workflows:
+
+```python
+from opentelemetry import trace
+from sik_llms import create_client
+
+tracer = trace.get_tracer("evaluation_system")
+
+def evaluate_llm_generation():
+    """Modern evaluation workflow using TraceContext."""
+    
+    # 1. Generate content (trace context automatically captured)
+    client = create_client("gpt-4o-mini")
+    response = client([{
+        "role": "user", 
+        "content": "Write a creative story about space exploration"
+    }])
+    
+    print(f"Generated: {response.response[:100]}...")
+    
+    # 2. Later, run evaluation with automatic span linking
+    if response.trace_context:
+        # Create link back to original generation
+        evaluation_link = response.trace_context.create_link({
+            "link.type": "evaluation_of_generation",
+            "evaluation.category": "creativity", 
+            "evaluation.criteria": "originality,engagement,coherence"
+        })
+        
+        # Run evaluation with the link
+        links = [evaluation_link] if evaluation_link else []
+        with tracer.start_as_current_span("content_evaluation", links=links) as eval_span:
+            # Your evaluation logic
+            creativity_score = assess_creativity(response.response)
+            engagement_score = assess_engagement(response.response)
+            coherence_score = assess_coherence(response.response)
+            
+            # Record evaluation results
+            eval_span.set_attribute("evaluation.creativity_score", creativity_score)
+            eval_span.set_attribute("evaluation.engagement_score", engagement_score) 
+            eval_span.set_attribute("evaluation.coherence_score", coherence_score)
+            eval_span.set_attribute("evaluation.overall_score", 
+                                   (creativity_score + engagement_score + coherence_score) / 3)
+            
+            print(f"✅ Evaluation complete - linked to trace {response.trace_context.trace_id}")
+            return {
+                "creativity": creativity_score,
+                "engagement": engagement_score,
+                "coherence": coherence_score
+            }
+    else:
+        print("⚠️  No trace context available - evaluation will not be linked")
+        return None
+
+# Run the evaluation
+results = evaluate_llm_generation()
+```
+
+**Benefits of the new approach:**
+- ✅ **No manual wrapper spans** - context captured automatically
+- ✅ **Works with any LLM call** - sync, async, reasoning, tools, etc.
+- ✅ **Clean separation** - generation and evaluation are separate spans but linked
+- ✅ **Easy to use** - just check `response.trace_context` and call `create_link()`
+
+### **Batch Evaluation with TraceContext**
+
+```python
+def batch_evaluate_responses(test_cases):
+    """Evaluate multiple LLM responses with automatic linking."""
+    
+    client = create_client("gpt-4o-mini")
+    evaluation_results = []
+    
+    for i, test_case in enumerate(test_cases):
+        # Generate response
+        response = client(test_case["messages"])
+        
+        # Evaluate with linking if available
+        if response.trace_context:
+            link = response.trace_context.create_link({
+                "link.type": "batch_evaluation",
+                "evaluation.batch_id": "batch_001",
+                "evaluation.test_case_id": str(i)
+            })
+            
+            with tracer.start_as_current_span(f"evaluate_case_{i}", links=[link] if link else []):
+                score = evaluate_response(response.response, test_case["expected"])
+                evaluation_results.append({
+                    "case_id": i,
+                    "score": score,
+                    "trace_id": response.trace_context.trace_id,
+                    "linked": True
+                })
+        else:
+            # Fallback without linking
+            score = evaluate_response(response.response, test_case["expected"])
+            evaluation_results.append({
+                "case_id": i,
+                "score": score,
+                "linked": False
+            })
+    
+    return evaluation_results
+```
+
+### **Advanced Multi-Stage Workflows**
+
+```python
+def multi_stage_content_pipeline():
+    """Complex workflow with multiple LLM calls and automatic linking."""
+    
+    client = create_client("gpt-4o-mini")
+    
+    # Stage 1: Initial content generation
+    with tracer.start_as_current_span("pipeline.content_generation") as pipeline_span:
+        initial_response = client([{
+            "role": "user",
+            "content": "Create an outline for a blog post about AI ethics"
+        }])
+        
+        # Stage 2: Expand the outline  
+        expansion_response = client([{
+            "role": "user",
+            "content": f"Expand this outline into a full blog post:\n{initial_response.response}"
+        }])
+        
+        # Stage 3: Review and edit
+        final_response = client([{
+            "role": "user",
+            "content": f"Review and improve this blog post:\n{expansion_response.response}"
+        }])
+        
+        # Now link all stages for analysis
+        stages = [
+            ("outline", initial_response),
+            ("expansion", expansion_response), 
+            ("final", final_response)
+        ]
+        
+        for stage_name, response in stages:
+            if response.trace_context:
+                # Link each stage back to the main pipeline
+                link = response.trace_context.create_link({
+                    "link.type": "pipeline_stage",
+                    "pipeline.stage": stage_name,
+                    "pipeline.id": "content_creation_001"
+                })
+                
+                if link:
+                    # Could store these links for later analysis
+                    pipeline_span.set_attribute(f"pipeline.{stage_name}.trace_id", 
+                                               response.trace_context.trace_id)
+        
+        return final_response
+
+# Usage
+final_content = multi_stage_content_pipeline()
+print(f"Final content trace: {final_content.trace_context.trace_id if final_content.trace_context else 'None'}")
+```
+
+### **Custom Instrumentation (Complementing sik-llms)**
 
 Add your own telemetry to complement sik-llms:
 
@@ -1192,48 +1398,80 @@ def process_user_request(user_input: str):
         with tracer.start_as_current_span("user.input.preprocessing"):
             clean_input = preprocess(user_input)
         
-        # LLM call (automatically instrumented by sik-llms)
+        # LLM call (automatically instrumented by sik-llms + gets TraceContext)
         client = create_client("gpt-4o-mini")
         with tracer.start_as_current_span("llm.generation") as llm_span:
             response = client([{"role": "user", "content": clean_input}])
             llm_span.set_attribute("llm.response.length", len(response.response))
+            
+            # NEW: Can access trace context for linking
+            if response.trace_context:
+                llm_span.set_attribute("llm.trace_id", response.trace_context.trace_id)
         
         # Postprocessing
         with tracer.start_as_current_span("response.postprocessing"):
             final_response = postprocess(response.response)
         
         span.set_attribute("response.final.length", len(final_response))
-        return final_response
+        return final_response, response.trace_context
 ```
 
-### **Span Links for Evaluation**
-
-Connect evaluation results back to original LLM generations:
+### **Integration with Existing Evaluation Frameworks**
 
 ```python
-from sik_llms import create_client, create_span_link
-from opentelemetry import trace
-
-tracer = trace.get_tracer("evaluation")
-
-# Original generation
-client = create_client("gpt-4o-mini")
-response = client([{"role": "user", "content": "Explain quantum computing"}])
-
-# Later, during evaluation
-with tracer.start_as_current_span("evaluation.quality_check") as eval_span:
-    # Link back to original generation
-    if hasattr(response, 'trace_id') and hasattr(response, 'span_id'):
-        link = create_span_link(
-            trace_id=response.trace_id,
-            span_id=response.span_id,
-            attributes={"link.type": "evaluation_of_generation"}
-        )
-        # Note: You'd need to add links when creating the span
-        # This is a conceptual example
+# Example: Integrating with a hypothetical evaluation framework
+class LLMEvaluator:
+    def __init__(self):
+        self.tracer = trace.get_tracer("llm_evaluator")
+        self.client = create_client("gpt-4o-mini")
     
-    eval_span.set_attribute("evaluation.score", 0.85)
-    eval_span.set_attribute("evaluation.criteria", "accuracy")
+    def evaluate_with_context(self, prompt: str, expected_criteria: dict):
+        """Evaluate LLM response with automatic trace linking."""
+        
+        # Generate response
+        response = self.client([{"role": "user", "content": prompt}])
+        
+        # Run evaluation with optional linking
+        evaluation_links = []
+        if response.trace_context:
+            link = response.trace_context.create_link({
+                "link.type": "quality_evaluation",
+                "evaluation.framework": "custom_evaluator",
+                "evaluation.version": "1.0"
+            })
+            if link:
+                evaluation_links.append(link)
+        
+        with self.tracer.start_as_current_span("evaluation.quality", links=evaluation_links) as eval_span:
+            # Run your evaluation metrics
+            scores = {}
+            for criterion, weight in expected_criteria.items():
+                score = self._evaluate_criterion(response.response, criterion)
+                scores[criterion] = score
+                eval_span.set_attribute(f"evaluation.{criterion}.score", score)
+                eval_span.set_attribute(f"evaluation.{criterion}.weight", weight)
+            
+            # Overall score
+            overall = sum(score * expected_criteria[criterion] for criterion, score in scores.items())
+            eval_span.set_attribute("evaluation.overall_score", overall)
+            
+            return {
+                "response": response.response,
+                "scores": scores,
+                "overall": overall,
+                "trace_context": response.trace_context,
+                "linked": bool(evaluation_links)
+            }
+
+# Usage
+evaluator = LLMEvaluator()
+result = evaluator.evaluate_with_context(
+    prompt="Explain quantum computing simply",
+    expected_criteria={"clarity": 0.4, "accuracy": 0.4, "completeness": 0.2}
+)
+
+print(f"Evaluation score: {result['overall']:.2f}")
+print(f"Linked to trace: {result['linked']}")
 ```
 
 ### **Custom Metrics (Beyond sik-llms Automatic Metrics)**
@@ -1260,6 +1498,12 @@ user_satisfaction_histogram = meter.create_histogram(
     unit="score"
 )
 
+trace_context_usage_counter = meter.create_counter(
+    name="trace_context_usage_total",
+    description="Number of times TraceContext was used for linking",
+    unit="usage"
+)
+
 def handle_conversation(messages, user_id):
     client = create_client("gpt-4o-mini")
     
@@ -1272,19 +1516,27 @@ def handle_conversation(messages, user_id):
     # sik-llms automatically emits: llm_tokens_*, llm_cost_*, llm_request_duration_*, etc.
     response = client(messages)
     
+    # Track TraceContext usage
+    if response.trace_context:
+        trace_context_usage_counter.add(1, {
+            "provider": "openai" if "gpt" in client.model_name else "other",
+            "has_evaluation": "true"  # if this will be evaluated later
+        })
+    
     # More custom metrics
     satisfaction = get_user_feedback(user_id, response.response)
     user_satisfaction_histogram.record(satisfaction, {
-        "model": "gpt-4o-mini",
-        "response_length": len(response.response)
+        "model": client.model_name,
+        "response_length": len(response.response),
+        "had_trace_context": str(bool(response.trace_context))
     })
     
     return response
 ```
 
-### **Multi-Service Tracing**
+### **Multi-Service Tracing with TraceContext**
 
-Trace requests across multiple services:
+Trace requests across multiple services while preserving TraceContext:
 
 ```python
 # Service A: Web API
@@ -1301,7 +1553,15 @@ def chat_endpoint():
         
         # Call Service B with trace context
         response = call_llm_service(request.json, context)
-        return response
+        
+        # Response includes TraceContext automatically
+        return {
+            "response": response.response,
+            "trace_info": {
+                "trace_id": response.trace_context.trace_id if response.trace_context else None,
+                "linked": bool(response.trace_context)
+            }
+        }
 
 # Service B: LLM Service  
 def call_llm_service(data, context):
@@ -1309,40 +1569,47 @@ def call_llm_service(data, context):
     with trace.use_context(context):
         with tracer.start_as_current_span("llm_service.process"):
             client = create_client("gpt-4o-mini")
-            return client(data['messages'])
+            response = client(data['messages'])
+            
+            # TraceContext is automatically populated and inherits the distributed trace
+            return response
 ```
 
-### **Sampling Strategies**
+### **Sampling Strategies with TraceContext Consideration**
 
-Implement intelligent sampling for high-volume applications:
+Implement intelligent sampling that considers TraceContext usage:
 
 ```python
 from opentelemetry.sdk.trace.sampling import Sampler, SamplingResult, Decision
 
-class CostBasedSampler(Sampler):
-    """Sample more expensive operations at higher rates."""
+class SmartLLMSampler(Sampler):
+    """Sample more intelligently for LLM operations."""
     
     def should_sample(self, parent_context, trace_id, name, kind, attributes, links, trace_state):
-        # Always sample reasoning operations (they're complex)
+        # Always sample operations that will likely use TraceContext
+        if "evaluation" in name.lower() or "batch" in name.lower():
+            return SamplingResult(Decision.RECORD_AND_SAMPLE)
+        
+        # Always sample reasoning operations (they're complex and valuable)
         if "reasoning" in name.lower():
             return SamplingResult(Decision.RECORD_AND_SAMPLE)
         
-        # Sample expensive models more frequently
+        # Sample expensive models more frequently 
         model = attributes.get("llm.model", "")
         if "gpt-4" in model or "claude-3-opus" in model:
             return SamplingResult(Decision.RECORD_AND_SAMPLE)
         
-        # Sample cheap models less frequently
-        if "gpt-3.5" in model or "gpt-4o-mini" in model:
-            # 10% sampling
-            return SamplingResult(Decision.RECORD_AND_SAMPLE if trace_id % 10 == 0 else Decision.DROP)
+        # Sample cheap models less frequently (but still capture some for TraceContext)
+        if "gpt-4o-mini" in model or "gpt-3.5" in model:
+            # 20% sampling - higher than usual because TraceContext is valuable
+            return SamplingResult(Decision.RECORD_AND_SAMPLE if trace_id % 5 == 0 else Decision.DROP)
         
         # Default sampling
-        return SamplingResult(Decision.RECORD_AND_SAMPLE if trace_id % 5 == 0 else Decision.DROP)
+        return SamplingResult(Decision.RECORD_AND_SAMPLE if trace_id % 10 == 0 else Decision.DROP)
 
 # Use the custom sampler
 from opentelemetry.sdk.trace import TracerProvider
-trace_provider = TracerProvider(sampler=CostBasedSampler())
+trace_provider = TracerProvider(sampler=SmartLLMSampler())
 ```
 
 ---
@@ -1360,9 +1627,11 @@ trace_provider = TracerProvider(sampler=CostBasedSampler())
 3. **Configure alerts**: Monitor costs, latency, and error rates
 4. **Create dashboards**: Visualize your LLM usage patterns
 5. **Train your team**: Ensure everyone knows how to use the observability tools
+6. **🆕 Leverage TraceContext**: Set up evaluation pipelines that use automatic span linking
 
 ### **sik-llms Specific**
 - Explore the telemetry demo: `python examples/telemetry_demo.py`
+- Try the new TraceContext feature for evaluation workflows
 - Try both setup patterns to see which fits your needs
 - Read the troubleshooting section when things go wrong
 - Contribute feedback and feature requests to the sik-llms project
@@ -1385,6 +1654,12 @@ trace_provider = TracerProvider(sampler=CostBasedSampler())
 - `llm_cost_total_usd`, `llm_request_duration_seconds`
 - `llm_cache_read_tokens_total`, `llm_cache_write_tokens_total`
 - `llm_reasoning_iterations_total`, `llm_reasoning_tool_calls_total`
+
+**🆕 TraceContext** (automatic span linking):
+- `response.trace_context.trace_id` and `response.trace_context.span_id`
+- `response.trace_context.create_link()` method for easy linking
+- Works with TextResponse, ToolPredictionResponse, StructuredOutputResponse
+- Automatic population when telemetry is enabled
 
 **Just set**: `export OTEL_SDK_DISABLED=false`
 
@@ -1419,7 +1694,9 @@ trace_provider = TracerProvider(sampler=CostBasedSampler())
 6. ☐ View traces at http://localhost:16686
 7. ☐ Query metrics at http://localhost:9090
 8. ☐ Build dashboards at http://localhost:3000
+9. ☐ 🆕 Test TraceContext: `print(response.trace_context.trace_id)`
+10. ☐ 🆕 Try span linking: `response.trace_context.create_link({"test": "attribute"})`
 
 ---
 
-**Remember**: Observability is a journey, not a destination. Start simple with Jaeger locally, then gradually add more sophisticated monitoring as your application grows. The investment in observability pays off exponentially as your LLM application becomes more complex!
+**Remember**: Observability is a journey, not a destination. Start simple with Jaeger locally, then gradually add more sophisticated monitoring as your application grows. The new TraceContext feature makes it easier than ever to implement evaluation pipelines and span linking without complex wrapper spans. The investment in observability pays off exponentially as your LLM application becomes more complex!

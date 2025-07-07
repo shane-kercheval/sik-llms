@@ -57,7 +57,7 @@ def demonstrate_setup_patterns() -> None:
         print("   Status: ⚪ Telemetry disabled")
 
 
-async def main() -> None:
+async def main() -> None:  # noqa: PLR0912, PLR0915
     """Run telemetry demo with various sik-llms features."""
     demonstrate_setup_patterns()
 
@@ -134,33 +134,58 @@ async def main() -> None:
             {"role": "user", "content": "Say hello in exactly 3 words"},
         ])
         print(f"Anthropic response: {anthropic_response.response}")
-        print(f"Tokens: {anthropic_response.input_tokens} in, {anthropic_response.output_tokens} out")
+        print(f"Tokens: {anthropic_response.input_tokens} in, {anthropic_response.output_tokens} out")  # noqa: E501
     except Exception as e:
         print(f"❌ Anthropic test failed: {e}")
         print("💡 Make sure you have ANTHROPIC_API_KEY set")
 
-    # Test span linking demonstration
-    print("\n6. Span Linking Demo")
+    # Test span linking demonstration with new TraceContext
+    print("\n6. TraceContext Demo (New Feature!)")
     try:
-        from sik_llms import create_span_link
+        # Generate content and get trace context automatically
+        print("Generating content with automatic trace context...")
+        content_response = client([
+            {"role": "user", "content": "Write a haiku about programming"},
+        ])
 
-        # Create a mock span link (in real use, you'd get these from actual spans)
-        mock_trace_id = "1234567890abcdef1234567890abcdef"
-        mock_span_id = "fedcba0987654321"
+        print(f"Content: {content_response.response}")
 
-        link = create_span_link(
-            trace_id=mock_trace_id,
-            span_id=mock_span_id,
-            attributes={"link.type": "evaluation_of_generation"},
-        )
+        # Check if trace context is available
+        if content_response.trace_context:
+            print("✅ Trace context captured automatically!")
+            print(f"   Trace ID: {content_response.trace_context.trace_id}")
+            print(f"   Span ID: {content_response.trace_context.span_id}")
 
-        if link:
-            print("✅ Span link created successfully")
+            # Demonstrate span link creation
+            evaluation_link = content_response.trace_context.create_link({
+                "link.type": "evaluation_of_generation",
+                "evaluation.type": "haiku_quality",
+                "content.type": "poetry",
+            })
+
+            if evaluation_link:
+                print("✅ Evaluation link created successfully")
+                print("   This link can be used to correlate evaluation results")
+                print("   back to the original generation in Jaeger!")
+            else:
+                print("⚠️  Link creation failed (OpenTelemetry not available)")
         else:
-            print("⚪ Span linking not available (telemetry disabled)")
+            print("⚪ No trace context available (telemetry may be disabled)")
+
+        # Demonstrate with async call too
+        print("\n   Testing with async call...")
+        async_response = await client.run_async([
+            {"role": "user", "content": "Name a programming language"},
+        ])
+
+        if async_response.trace_context:
+            print("✅ Async call also has trace context!")
+            print(f"   Async Trace ID: {async_response.trace_context.trace_id}")
+        else:
+            print("⚪ No trace context from async call")
 
     except Exception as e:
-        print(f"❌ Span linking demo failed: {e}")
+        print(f"❌ TraceContext demo failed: {e}")
 
     print("\n" + "="*50)
     print("🎉 Demo complete!")
@@ -177,8 +202,13 @@ async def main() -> None:
     print("  ✅ Batch processing telemetry")
     print("  ✅ ReasoningAgent iteration tracking")
     print("  ✅ Multi-provider support (OpenAI + Anthropic)")
-    print("  ✅ Span linking for evaluation correlation")
+    print("  ✅ TraceContext for easy span linking (NEW!)")
     print("  ✅ Token usage and cost metrics")
+    print("\n🆕 TraceContext Benefits:")
+    print("  ✅ No manual wrapper spans needed")
+    print("  ✅ Automatic trace context extraction")
+    print("  ✅ Works with both sync and async calls")
+    print("  ✅ Built-in link creation for evaluation")
 
 
 if __name__ == "__main__":

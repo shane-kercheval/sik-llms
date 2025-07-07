@@ -3,6 +3,7 @@ import os
 from unittest.mock import patch, MagicMock
 from sik_llms import create_client
 from sik_llms.models_base import Client
+from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
 
 
 class TestTelemetryRegression:
@@ -12,12 +13,12 @@ class TestTelemetryRegression:
         """Run key existing scenarios with telemetry disabled."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
             # Test basic client creation
-            client = create_client("gpt-4o-mini")
+            client = create_client(OPENAI_TEST_MODEL)
             assert client.tracer is None
             assert client.meter is None
 
             # Test all client types
-            for model in ["gpt-4o-mini", "claude-3-5-sonnet-latest"]:
+            for model in [OPENAI_TEST_MODEL, ANTHROPIC_TEST_MODEL]:
                 client = create_client(model)
                 assert hasattr(client, 'model_name')
                 assert client.model_name == model
@@ -33,7 +34,7 @@ class TestTelemetryRegression:
             with patch('sik_llms.models_base.get_tracer', return_value=None):
                 with patch('sik_llms.models_base.get_meter', return_value=None):
                     # Same tests as above should still work
-                    client = create_client("gpt-4o-mini")
+                    client = create_client(OPENAI_TEST_MODEL)
                     assert hasattr(client, 'model_name')
                     assert client.tracer is None
                     assert client.meter is None
@@ -42,7 +43,7 @@ class TestTelemetryRegression:
         """Test ReasoningAgent specifically with telemetry disabled."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
             from sik_llms import ReasoningAgent
-            agent = ReasoningAgent(model_name="gpt-4o-mini")
+            agent = ReasoningAgent(model_name=OPENAI_TEST_MODEL)
             assert agent.tracer is None
             assert agent.meter is None
             assert hasattr(agent, '_get_provider_name')
@@ -58,14 +59,14 @@ class TestTelemetryRegression:
                     mock_meter.return_value = mock_meter_instance
 
                     from sik_llms import ReasoningAgent
-                    agent = ReasoningAgent(model_name="gpt-4o-mini")
+                    agent = ReasoningAgent(model_name=OPENAI_TEST_MODEL)
                     assert agent.tracer is mock_tracer_instance
                     assert agent.meter is mock_meter_instance
 
     def test_client_methods_work_without_telemetry(self):
         """Test that all client methods work without telemetry."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
-            client = create_client("gpt-4o-mini")
+            client = create_client(OPENAI_TEST_MODEL)
 
             # Test provider name method
             provider_name = client._get_provider_name()
@@ -80,7 +81,7 @@ class TestTelemetryRegression:
     def test_anthropic_client_without_telemetry(self):
         """Test Anthropic client works without telemetry."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
-            client = create_client("claude-3-5-sonnet-latest")
+            client = create_client(ANTHROPIC_TEST_MODEL)
             assert client.tracer is None
             assert client.meter is None
             provider_name = client._get_provider_name()
@@ -185,11 +186,11 @@ class TestTelemetryRegression:
             from sik_llms import RegisteredClients
 
             # Test direct instantiation
-            openai_client = Client.instantiate(RegisteredClients.OPENAI, "gpt-4o-mini")
-            assert openai_client.model_name == "gpt-4o-mini"
+            openai_client = Client.instantiate(RegisteredClients.OPENAI, OPENAI_TEST_MODEL)
+            assert openai_client.model_name == OPENAI_TEST_MODEL
 
-            anthropic_client = Client.instantiate(RegisteredClients.ANTHROPIC, "claude-3-5-sonnet-latest")
-            assert anthropic_client.model_name == "claude-3-5-sonnet-latest"
+            anthropic_client = Client.instantiate(RegisteredClients.ANTHROPIC, ANTHROPIC_TEST_MODEL)  # noqa: E501
+            assert anthropic_client.model_name == ANTHROPIC_TEST_MODEL
 
     def test_pydantic_utilities_still_work(self):
         """Test that Pydantic utilities still work."""
@@ -227,9 +228,9 @@ class TestTelemetryRegression:
                 with patch('sik_llms.telemetry.get_tracer', return_value=None):
                     with patch('sik_llms.telemetry.get_meter', return_value=None):
                         # Should not raise exceptions
-                        client = create_client("gpt-4o-mini")
+                        client = create_client(OPENAI_TEST_MODEL)
                         assert hasattr(client, 'model_name')
-                        assert client.model_name == "gpt-4o-mini"
+                        assert client.model_name == OPENAI_TEST_MODEL
 
 
 class TestTelemetryPerformanceRegression:
@@ -244,7 +245,7 @@ class TestTelemetryPerformanceRegression:
 
             # Create multiple clients
             for _ in range(10):
-                client = create_client("gpt-4o-mini")
+                client = create_client(OPENAI_TEST_MODEL)
                 assert client.tracer is None
                 assert client.meter is None
 
@@ -303,20 +304,20 @@ class TestTelemetryBackwardCompatibility:
         """Test that existing client usage patterns still work."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
             # Pattern 1: Direct client creation
-            client = create_client("gpt-4o-mini")
+            client = create_client(OPENAI_TEST_MODEL)
             assert isinstance(client, Client)
 
             # Pattern 2: Model-specific creation
             from sik_llms import OpenAI, Anthropic
-            openai_client = OpenAI("gpt-4o-mini")
-            anthropic_client = Anthropic("claude-3-5-sonnet-latest")
+            openai_client = OpenAI(OPENAI_TEST_MODEL)
+            anthropic_client = Anthropic(ANTHROPIC_TEST_MODEL)
 
-            assert openai_client.model_name == "gpt-4o-mini"
-            assert anthropic_client.model_name == "claude-3-5-sonnet-latest"
+            assert openai_client.model_name == OPENAI_TEST_MODEL
+            assert anthropic_client.model_name == ANTHROPIC_TEST_MODEL
 
             # Pattern 3: Registry-based creation
-            registry_client = Client.instantiate("OpenAI", "gpt-4o-mini")
-            assert registry_client.model_name == "gpt-4o-mini"
+            registry_client = Client.instantiate("OpenAI", OPENAI_TEST_MODEL)
+            assert registry_client.model_name == OPENAI_TEST_MODEL
 
     def test_existing_message_utilities(self):
         """Test that message utility functions still work."""
@@ -338,12 +339,12 @@ class TestTelemetryBackwardCompatibility:
         """Test that model info access still works."""
         from sik_llms import SUPPORTED_OPENAI_MODELS, SUPPORTED_ANTHROPIC_MODELS
 
-        assert "gpt-4o-mini" in SUPPORTED_OPENAI_MODELS
-        assert "claude-3-5-sonnet-latest" in SUPPORTED_ANTHROPIC_MODELS
+        assert OPENAI_TEST_MODEL in SUPPORTED_OPENAI_MODELS
+        assert ANTHROPIC_TEST_MODEL in SUPPORTED_ANTHROPIC_MODELS
 
         # Test model info structure
-        gpt_info = SUPPORTED_OPENAI_MODELS["gpt-4o-mini"]
-        claude_info = SUPPORTED_ANTHROPIC_MODELS["claude-3-5-sonnet-latest"]
+        gpt_info = SUPPORTED_OPENAI_MODELS[OPENAI_TEST_MODEL]
+        claude_info = SUPPORTED_ANTHROPIC_MODELS[ANTHROPIC_TEST_MODEL]
 
         assert hasattr(gpt_info, 'model')
         assert hasattr(gpt_info, 'provider')
@@ -383,10 +384,10 @@ class TestTelemetryBackwardCompatibility:
             with patch('sik_llms.telemetry.get_tracer', return_value=MagicMock()):
                 with patch('sik_llms.telemetry.get_meter', return_value=MagicMock()):
                     # Should work the same as before for new users
-                    client = create_client("gpt-4o-mini")
+                    client = create_client(OPENAI_TEST_MODEL)
                     assert client.tracer is not None  # Should auto-configure
 
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
             # Should still respect disabled state
-            client = create_client("gpt-4o-mini")
+            client = create_client(OPENAI_TEST_MODEL)
             assert client.tracer is None
