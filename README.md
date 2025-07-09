@@ -61,6 +61,7 @@ Perfect for prototypes, scripts, and getting started quickly:
    ```
 
 2. Start Jaeger for local development:
+
    ```bash
    docker run -d --name jaeger \
      -p 16686:16686 \
@@ -68,7 +69,8 @@ Perfect for prototypes, scripts, and getting started quickly:
      jaegertracing/all-in-one:latest
    ```
 
-3. Enable telemetry:
+3. Enable telemetry via environment variables:
+
    ```bash
    export OTEL_SDK_DISABLED=false
    export OTEL_SERVICE_NAME="my-llm-app"
