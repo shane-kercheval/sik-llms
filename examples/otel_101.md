@@ -1219,7 +1219,7 @@ processor = BatchSpanProcessor(
 
 ### **🆕 Simplified Span Linking with TraceContext**
 
-The new TraceContext feature dramatically simplifies span linking for evaluation workflows:
+Use the TraceContext feature to simplify span linking. Example below shows an evaluation workflow:
 
 ```python
 from opentelemetry import trace
@@ -1277,52 +1277,90 @@ def evaluate_llm_generation():
 results = evaluate_llm_generation()
 ```
 
-**Benefits of the new approach:**
 - ✅ **No manual wrapper spans** - context captured automatically
 - ✅ **Works with any LLM call** - sync, async, reasoning, tools, etc.
 - ✅ **Clean separation** - generation and evaluation are separate spans but linked
 - ✅ **Easy to use** - just check `response.trace_context` and call `create_link()`
 
-### **Batch Evaluation with TraceContext**
+### **Example: Time-Separated Evaluation with TraceContext**
+
+The real power of TraceContext comes when you generate responses at one time and evaluate them later. **Without TraceContext**, you lose the connection between evaluation results and the original LLM calls.
 
 ```python
-def batch_evaluate_responses(test_cases):
-    """Evaluate multiple LLM responses with automatic linking."""
+def generate_and_save_responses(test_cases):
+    """Generate responses and save them for later evaluation."""
     
     client = create_client("gpt-4o-mini")
-    evaluation_results = []
+    saved_responses = []
     
     for i, test_case in enumerate(test_cases):
-        # Generate response
+        # Generate response (creates its own trace automatically)
         response = client(test_case["messages"])
         
-        # Evaluate with linking if available
-        if response.trace_context:
-            link = response.trace_context.create_link({
-                "link.type": "batch_evaluation",
-                "evaluation.batch_id": "batch_001",
-                "evaluation.test_case_id": str(i)
-            })
-            
-            with tracer.start_as_current_span(f"evaluate_case_{i}", links=[link] if link else []):
-                score = evaluate_response(response.response, test_case["expected"])
-                evaluation_results.append({
-                    "case_id": i,
-                    "score": score,
-                    "trace_id": response.trace_context.trace_id,
-                    "linked": True
-                })
-        else:
-            # Fallback without linking
-            score = evaluate_response(response.response, test_case["expected"])
-            evaluation_results.append({
-                "case_id": i,
-                "score": score,
-                "linked": False
-            })
+        # Save response + trace context for later
+        saved_responses.append({
+            "case_id": i,
+            "response": response.response,
+            "expected": test_case["expected"],
+            "trace_id": response.trace_context.trace_id if response.trace_context else None,
+            "span_id": response.trace_context.span_id if response.trace_context else None,
+        })
+        
+        print(f"Generated response {i}, trace: {response.trace_context.trace_id}")
     
-    return evaluation_results
+    return saved_responses
+
+def evaluate_saved_responses(saved_responses):
+    """Hours or days later, evaluate the saved responses."""
+    
+    tracer = trace.get_tracer("evaluation_system")
+    
+    for saved in saved_responses:
+        # Create link back to the original generation (from hours ago!)
+        link = None
+        if saved["trace_id"] and saved["span_id"]:
+            link = create_span_link(
+                saved["trace_id"], 
+                saved["span_id"], 
+                {
+                    "link.type": "delayed_evaluation",
+                    "case_id": saved["case_id"]
+                }
+            )
+        
+        # Run evaluation with link to original generation
+        with tracer.start_as_current_span("evaluate_saved_response", links=[link] if link else []):
+            score = evaluate_response(saved["response"], saved["expected"])
+            
+            if score < 7.0:  # Poor score - need to investigate!
+                print(f"⚠️  Case {saved['case_id']} scored {score}")
+                print(f"🔗 Original generation trace: {saved['trace_id']}")
+                # In Jaeger: click the link to jump to the original LLM call!
+
+# Usage scenario:
+# Monday morning: Generate all responses
+saved_responses = generate_and_save_responses(test_cases)
+
+# Monday afternoon: Evaluate them with full traceability
+evaluate_saved_responses(saved_responses)
 ```
+
+#### **Why This Matters**
+
+**Scenario**: You notice evaluation case #47 got a terrible score and want to debug why.
+
+**Without TraceContext**:
+- ❌ You have the evaluation result but no connection to the original LLM call
+- ❌ "Which trace was case #47? Let me search through hundreds of traces..."
+- ❌ Maybe grep through logs or re-run the case to debug
+
+**With TraceContext**:
+- ✅ Click the link in the evaluation span in Jaeger
+- ✅ Jump directly to the original generation trace from hours ago
+- ✅ See the exact prompt, model parameters, token usage, response time, cost
+- ✅ Determine if it was a prompt issue, model issue, or evaluation issue
+
+**The key insight**: TraceContext creates a "time machine" that lets you jump from any evaluation result back to the exact moment the content was generated, no matter how much time has passe
 
 ### **Advanced Multi-Stage Workflows**
 
