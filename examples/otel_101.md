@@ -104,6 +104,7 @@ sik-llms automatically sends metrics like token usage, costs, and request durati
 
 ```python
 # A span represents one operation
+# (example of sik-llms internal span) 
 with tracer.start_as_current_span("llm.request") as span:
     span.set_attribute("llm.model", "gpt-4o-mini")
     span.set_attribute("llm.tokens.input", 150)
@@ -112,6 +113,7 @@ with tracer.start_as_current_span("llm.request") as span:
 ```
 
 **Span Attributes**: Key-value pairs that describe what happened
+
 - `llm.model` = "gpt-4o-mini"
 - `llm.tokens.input` = 150
 - `llm.provider` = "openai"
@@ -119,7 +121,8 @@ with tracer.start_as_current_span("llm.request") as span:
 #### **Trace Context: Connecting the Dots**
 
 ```python
-# Parent span
+  # Parent span
+  # (example of sik-llms internal span)
 with tracer.start_as_current_span("user.question") as parent:
     # Child span (automatically linked)
     with tracer.start_as_current_span("llm.reasoning") as child:
