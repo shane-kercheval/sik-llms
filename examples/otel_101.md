@@ -346,7 +346,7 @@ response = client([{"role": "user", "content": "What's the capital of France?"}]
 
 print(f"Response: {response.response}")
 
-# NEW: Check trace context
+# Check trace context
 if response.trace_context:
     print(f"🔗 Trace ID: {response.trace_context.trace_id}")
     print(f"🔗 Span ID: {response.trace_context.span_id}")
@@ -1446,7 +1446,7 @@ def process_user_request(user_input: str):
             response = client([{"role": "user", "content": clean_input}])
             llm_span.set_attribute("llm.response.length", len(response.response))
             
-            # NEW: Can access trace context for linking
+            # Can access trace context for linking
             if response.trace_context:
                 llm_span.set_attribute("llm.trace_id", response.trace_context.trace_id)
         
