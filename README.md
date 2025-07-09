@@ -198,6 +198,17 @@ if response.trace_context:
         quality_score = evaluate_quality(response.response)
 ```
 
+### Additional Settings
+
+#### OpenTelemetry Batch Span Processor Settings
+
+```bash
+export OTEL_BSP_SCHEDULE_DELAY=5000          # Export delay in ms
+export OTEL_BSP_MAX_QUEUE_SIZE=2048          # Max queue size  
+export OTEL_BSP_MAX_EXPORT_BATCH_SIZE=512    # Max batch size
+export OTEL_BSP_EXPORT_TIMEOUT=30000         # Export timeout in ms
+```
+
 **Key Benefits:**
 - ✅ No manual wrapper spans needed
 - ✅ Works with both sync (`client()`) and async (`client.run_async()`) calls
