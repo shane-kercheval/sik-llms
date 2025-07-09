@@ -56,6 +56,7 @@ sik-llms supports OpenTelemetry for comprehensive observability of your LLM oper
 Perfect for prototypes, scripts, and getting started quickly:
 
 1. Install with telemetry support:
+
    ```bash
    pip install sik-llms[telemetry]
    ```
@@ -109,7 +110,7 @@ For production applications or when you need custom OpenTelemetry configuration:
    tracer_provider.add_span_processor(span_processor)
    ```
 
-3. Enable telemetry:
+3. Enable telemetry via environment variables:
    ```bash
    export OTEL_SDK_DISABLED=false
    ```
@@ -158,20 +159,6 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="https://api.datadoghq.com"
 export OTEL_EXPORTER_OTLP_HEADERS="dd-api-key=your-api-key"
 ```
 
-### ⚠️ Troubleshooting
-
-**Problem**: Telemetry enabled but no traces appearing
-
-**Check**:
-1. Is telemetry actually enabled? `echo $OTEL_SDK_DISABLED` should show `false`
-2. Is the endpoint correct? Default is `http://localhost:4318`
-3. Is Jaeger running? Visit http://localhost:16686
-4. Check for error messages in your application logs
-
-**Problem**: Conflicts with existing OpenTelemetry setup
-
-**Solution**: sik-llms should automatically detect and respect your configuration. If you're seeing conflicts, please file an issue with your setup details.
-
 ### Development with Telemetry
 
 For local development and testing:
@@ -193,7 +180,7 @@ make jaeger-stop
 
 ### Span Links for Evaluation
 
-When using sik-llms with evaluation frameworks, you can link evaluation results back to original LLM generations using the new TraceContext feature:
+When using sik-llms with evaluation frameworks, you can link evaluation results back to original LLM generations using the TraceContext feature:
 
 ```python
 # Generate content with automatic trace context
