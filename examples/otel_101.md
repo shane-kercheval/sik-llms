@@ -56,7 +56,8 @@ response = client([{"role": "user", "content": "Help me plan a trip"}])
 ```
 
 **Now you can see:**
-- ✅ The flight search tool is the bottleneck (2.1s)
+
+- ✅ The search tools (flight and hotel) are the bottleneck (2.1s & 1.9s)
 - ✅ Token usage per step (helps optimize prompts)
 - ✅ Cost breakdown by operation
 - ✅ Whether reasoning iterations are efficient
