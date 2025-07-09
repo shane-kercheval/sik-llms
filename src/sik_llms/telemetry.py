@@ -4,6 +4,8 @@ import warnings
 from contextlib import nullcontext
 from typing import Any
 
+PACKAGE_NAME = 'sik-llms'
+
 
 def is_telemetry_enabled() -> bool:
     """
@@ -45,11 +47,11 @@ def get_tracer() -> object | None:
 
         if not isinstance(current_provider, NoOpTracerProvider):
             # User has already set up a real provider - respect it
-            return trace.get_tracer('sik-llms')
+            return trace.get_tracer(PACKAGE_NAME)
 
         # No real provider exists - set up our default configuration
         resource = Resource.create({
-            'service.name': os.getenv('OTEL_SERVICE_NAME', 'sik-llms'),
+            'service.name': os.getenv('OTEL_SERVICE_NAME', PACKAGE_NAME),
             'service.version': _get_package_version(),
         })
 
@@ -63,6 +65,7 @@ def get_tracer() -> object | None:
                 'OTEL_EXPORTER_OTLP_ENDPOINT',
                 'http://localhost:4318/v1/traces',
             ),
+            # e.g. "authorization=Bearer token,x-custom-header=value"
             headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
         )
 
@@ -70,7 +73,7 @@ def get_tracer() -> object | None:
         span_processor = BatchSpanProcessor(otlp_exporter)
         provider.add_span_processor(span_processor)
 
-        return trace.get_tracer('sik-llms')
+        return trace.get_tracer(PACKAGE_NAME)
 
     except ImportError:
         warnings.warn(
@@ -108,11 +111,11 @@ def get_meter() -> object | None:
 
         if not isinstance(current_provider, NoOpMeterProvider):
             # User has already set up a real provider - respect it
-            return metrics.get_meter('sik-llms')
+            return metrics.get_meter(PACKAGE_NAME)
 
         # No real provider exists - set up our default configuration
         resource = Resource.create({
-            'service.name': os.getenv('OTEL_SERVICE_NAME', 'sik-llms'),
+            'service.name': os.getenv('OTEL_SERVICE_NAME', PACKAGE_NAME),
             'service.version': _get_package_version(),
         })
 
@@ -134,7 +137,7 @@ def get_meter() -> object | None:
         provider = MeterProvider(resource=resource, metric_readers=[reader])
         metrics.set_meter_provider(provider)
 
-        return metrics.get_meter('sik-llms')
+        return metrics.get_meter(PACKAGE_NAME)
 
     except ImportError:
         # Silently fail for metrics if traces are working
@@ -200,7 +203,7 @@ def _get_package_version() -> str:
     """Get the package version dynamically."""
     try:
         from importlib.metadata import version
-        return version('sik-llms')
+        return version(PACKAGE_NAME)
     except Exception:
         return 'unknown'
 
