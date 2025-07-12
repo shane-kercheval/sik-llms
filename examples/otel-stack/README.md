@@ -68,6 +68,17 @@ uv run example_with_telemetry.py
 - ✅ Evaluation workflows with trace connections
 - ✅ Multi-stage pipelines
 
+### Step 3.5: Verify OTLP Collector Pipeline (Troubleshooting)
+
+If you suspect issues with traces not appearing in Jaeger, test the collector pipeline:
+
+```bash
+# Test that the OTLP Collector properly forwards traces to Jaeger
+make verify-collector
+```
+
+This sends a test trace through the entire pipeline and verifies it reaches Jaeger.
+
 ### Step 4: Explore Your Telemetry Data
 
 #### View Traces in Jaeger

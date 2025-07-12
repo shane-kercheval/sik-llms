@@ -74,6 +74,16 @@ verify: ## Verify all services are healthy and accessible
 	@echo "Checking OTLP Collector health..."
 	@curl -s -o /dev/null -w "  OTLP Collector: %{http_code}\n" http://localhost:4318/v1/traces || echo "  OTLP Collector: L Not accessible"
 
+verify-collector: ## Test OTLP Collector -> Jaeger pipeline specifically
+	@echo "🔍 Testing OTLP Collector -> Jaeger pipeline..."
+	@echo ""
+	@echo "Sending test trace to OTLP Collector..."
+	@curl -X POST -H "Content-Type: application/json" -d '{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"test-service"}}]},"instrumentationLibrarySpans":[{"instrumentationLibrary":{"name":"test"},"spans":[{"traceId":"0123456789abcdef0123456789abcdef","spanId":"0123456789abcdef","name":"test-span","kind":"SPAN_KIND_CLIENT","startTimeUnixNano":"1640995200000000000","endTimeUnixNano":"1640995201000000000"}]}]}]}' http://localhost:4318/v1/traces
+	@echo ""
+	@echo "Checking if trace appears in Jaeger..."
+	@sleep 2
+	@curl -s "http://localhost:16686/api/traces?service=test-service" | grep -q "test-span" && echo "✅ Trace successfully forwarded to Jaeger!" || echo "❌ Trace not found in Jaeger"
+
 test-telemetry: ## Test telemetry with comprehensive examples (requires sik-llms[telemetry])
 	@echo ">� Testing telemetry integration..."
 	@echo "Note: Run 'uv sync' first and set OpenAI API key"
