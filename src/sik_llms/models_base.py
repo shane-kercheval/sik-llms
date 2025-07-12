@@ -621,22 +621,39 @@ class Client(ABC):
                 Each message should be a dict with 'role' and 'content' keys.
         """
         async def run() -> TextResponse:
-            # Check if the stream method returns a generator or a direct value
-            result = self.stream(messages)
-            # If it's an async generator, collect the last response
-            if hasattr(result, '__aiter__'):
-                last_response = None
-                async for response in result:
-                    last_response = response
-                # Add trace context to the final response
-                if last_response:
-                    self._add_trace_context(last_response)
-                return last_response
-            # If it's a regular coroutine, just await and return the result
-            final_response = await result
-            if final_response:
-                self._add_trace_context(final_response)
-            return final_response
+            with safe_span(
+                self.tracer,
+                "llm.request",
+                attributes={
+                    "llm.model": self.model_name,
+                    "llm.provider": self._get_provider_name(),
+                    "llm.messages.count": len(messages),
+                    "llm.operation": "chat",
+                },
+            ) as span:
+                # Add message content length for observability
+                if span and messages:
+                    total_content_length = sum(
+                        len(str(msg.get("content", ""))) for msg in messages
+                    )
+                    span.set_attribute("llm.input.content_length", total_content_length)
+
+                # Check if the stream method returns a generator or a direct value
+                result = self.stream(messages)
+                # If it's an async generator, collect the last response
+                if hasattr(result, '__aiter__'):
+                    last_response = None
+                    async for response in result:
+                        last_response = response
+                    # Add trace context to the final response
+                    if last_response:
+                        self._add_trace_context(last_response)
+                    return last_response
+                # If it's a regular coroutine, just await and return the result
+                final_response = await result
+                if final_response:
+                    self._add_trace_context(final_response)
+                return final_response
 
         # Try to use the current event loop if one is running
         try:

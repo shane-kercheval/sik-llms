@@ -49,11 +49,12 @@ def get_tracer() -> object | None:
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.resources import Resource
 
-    # Check if user has already configured telemetry
+    # Check if user has already configured telemetry with a real SDK provider
+    from opentelemetry.sdk.trace import TracerProvider
     current_provider = trace.get_tracer_provider()
 
-    if not isinstance(current_provider, NoOpTracerProvider):
-        # User has already set up a real provider - respect it
+    if isinstance(current_provider, TracerProvider):
+        # User has already set up a real SDK provider - respect it
         return trace.get_tracer(PACKAGE_NAME)
 
     # No real provider exists - set up our default configuration
@@ -70,7 +71,7 @@ def get_tracer() -> object | None:
     otlp_exporter = OTLPSpanExporter(
         endpoint=os.getenv(
             'OTEL_EXPORTER_OTLP_ENDPOINT',
-            'http://localhost:4318/v1/traces',
+            'http://localhost:4318',
         ),
         # e.g. "authorization=Bearer token,x-custom-header=value"
         headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),

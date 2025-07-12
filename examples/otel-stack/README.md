@@ -42,6 +42,8 @@ make verify
 
 ### Step 2: Enable Telemetry
 
+The `make test-telemetry` command handles this automatically, but for manual usage:
+
 ```bash
 # Configure sik-llms to send telemetry data
 export OTEL_SDK_DISABLED=false
@@ -52,11 +54,11 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 ### Step 3: Run the Example
 
 ```bash
-# Option A: Using uv
-uv run example_with_telemetry.py
+# Recommended: Use the Makefile command (automatically sets environment variables)
+make test-telemetry
 
-# Option B: Using python directly
-python example_with_telemetry.py
+# Or run manually (after setting environment variables from Step 2):
+uv run example_with_telemetry.py
 ```
 
 **What the example demonstrates:**

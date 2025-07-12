@@ -19,13 +19,14 @@ Usage:
     # Start the observability stack first
     make start
 
-    # Enable telemetry
+    # Run the telemetry test (automatically sets environment variables)
+    make test-telemetry
+
+    # Or run manually:
     export OTEL_SDK_DISABLED=false
     export OTEL_SERVICE_NAME="sik-llms-example"
     export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
-
-    # Run the example
-    python example_with_telemetry.py
+    uv run example_with_telemetry.py
 
     # View results at:
     # - Traces: http://localhost:16686 (Jaeger)
@@ -96,7 +97,7 @@ def reasoning_agent_example():  # noqa: ANN201
     agent = ReasoningAgent(model_name="gpt-4o-mini")
     response = agent([{
         "role": "user",
-        "content": "Calculate 15 * 23 + 7 and explain your reasoning step by step.",
+        "content": "Calculate 15 + 23. Show your work briefly.",
     }])
 
     print(f"Response: {response.response[:200]}...")
@@ -247,7 +248,7 @@ def main() -> None:
         # Evaluation with linking
         evaluation_with_linking_example(basic_response)
 
-        # Multi-stage pipeline
+        # Multi-stage pipeline (simplified to reduce client creation)
         multi_stage_pipeline_example()
 
         # Show metrics info
@@ -269,7 +270,7 @@ def main() -> None:
         print("  1. Ensure OpenAI API key is set: export OPENAI_API_KEY=...")
         print("  2. Start observability stack: make start")
         print("  3. Enable telemetry: export OTEL_SDK_DISABLED=false")
-        print("  4. Install dependencies: pip install sik-llms[telemetry]")
+        print("  4. Install dependencies: uv sync")
 
 
 if __name__ == "__main__":

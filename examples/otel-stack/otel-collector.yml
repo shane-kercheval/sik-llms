@@ -10,9 +10,9 @@ processors:
   batch:
 
 exporters:
-  # Send traces to Jaeger using OTLP
-  otlp/jaeger:
-    endpoint: jaeger:14250
+  # Send traces to Jaeger using OTLP HTTP (Jaeger OTLP receiver)
+  otlphttp/jaeger:
+    endpoint: http://jaeger:4318
     tls:
       insecure: true
   
@@ -27,7 +27,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [otlp/jaeger]
+      exporters: [otlphttp/jaeger]
     
     metrics:
       receivers: [otlp]

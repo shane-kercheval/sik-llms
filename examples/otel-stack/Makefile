@@ -54,7 +54,7 @@ clean: ## Stop and remove containers (keeps data volumes)
 	@echo " Cleanup complete"
 
 verify: ## Verify all services are healthy and accessible
-	@echo "= Verifying OpenTelemetry stack health..."
+	@echo "Verifying OpenTelemetry stack health..."
 	@echo ""
 	@echo "Checking Jaeger UI..."
 	@curl -s -o /dev/null -w "  Jaeger UI: %{http_code}\n" http://localhost:16686/ || echo "  Jaeger UI: L Not accessible"
@@ -74,22 +74,25 @@ verify: ## Verify all services are healthy and accessible
 	@echo "Checking OTLP Collector health..."
 	@curl -s -o /dev/null -w "  OTLP Collector: %{http_code}\n" http://localhost:4318/v1/traces || echo "  OTLP Collector: L Not accessible"
 
-test-telemetry: ## Test telemetry with a simple example (requires sik-llms[telemetry])
+test-telemetry: ## Test telemetry with comprehensive examples (requires sik-llms[telemetry])
 	@echo ">� Testing telemetry integration..."
-	@echo "Note: Run 'uv sync' or 'pip install \"sik-llms[telemetry]\"' and set OpenAI API key"
+	@echo "Note: Run 'uv sync' first and set OpenAI API key"
 	@echo ""
 	OTEL_SDK_DISABLED=false \
 	OTEL_SERVICE_NAME="otel-stack-test" \
 	OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318" \
-	python3 -c "\
-	from sik_llms import create_client; \
-	print('=' Creating client...'); \
-	client = create_client('gpt-4o-mini'); \
-	print('=� Sending test request...'); \
-	response = client([{'role': 'user', 'content': 'Say hello for telemetry test'}]); \
-	print(f'=� Response: {response.response[:50]}...'); \
-	print(f'= Trace ID: {response.trace_context.trace_id if response.trace_context else \"None\"}'); \
-	print(' Test complete! Check Jaeger UI for traces.');"
+	uv run example_with_telemetry.py
+	@echo ""
+	@echo "🎯 Telemetry test complete! View traces at http://localhost:16686"
+
+test-simple: ## Run simple telemetry test (quick verification)
+	@echo ">� Running simple telemetry test..."
+	@echo "Note: Run 'uv sync' first and set OpenAI API key"
+	@echo ""
+	OTEL_SDK_DISABLED=false \
+	OTEL_SERVICE_NAME="otel-stack-simple" \
+	OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318" \
+	uv run test_simple.py
 
 restart: ## Restart the entire stack
 	@make stop
