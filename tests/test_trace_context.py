@@ -1,5 +1,6 @@
 """Tests for TraceContext functionality."""
 import os
+import pytest
 from unittest.mock import Mock, patch
 from sik_llms.models_base import (
     TraceContext,
@@ -249,10 +250,10 @@ class TestExtractCurrentTraceContext:
     def test_extract_with_import_error(self):
         """Test extraction when OpenTelemetry is not available."""
         with patch('builtins.__import__', side_effect=ImportError):
-            trace_id, span_id = extract_current_trace_context()
-
-            assert trace_id is None
-            assert span_id is None
+            with pytest.raises(
+                ImportError, match="OTEL_SDK_DISABLED=false but opentelemetry not installed",
+            ):
+                extract_current_trace_context()
 
 
 class TestClientTraceContextIntegration:
