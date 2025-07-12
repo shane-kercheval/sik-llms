@@ -60,13 +60,17 @@ class TestTelemetryIntegration:
             assert client.meter is mock_meter_instance
 
     def test_graceful_degradation_missing_otel(self):
-        """Test graceful handling when OpenTelemetry not installed."""
+        """Test that functions raise ImportError when OpenTelemetry not installed but enabled."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "false"}):
             with patch('builtins.__import__', side_effect=ImportError):
-                tracer = get_tracer()
-                meter = get_meter()
-                assert tracer is None
-                assert meter is None
+                with pytest.raises(
+                    ImportError, match="OTEL_SDK_DISABLED=false but opentelemetry not installed",
+                ):
+                    get_tracer()
+                with pytest.raises(
+                    ImportError, match="OTEL_SDK_DISABLED=false but opentelemetry not installed",
+                ):
+                    get_meter()
 
     def test_get_tracer_returns_none_when_disabled(self):
         """Test get_tracer returns None when telemetry disabled."""
@@ -218,25 +222,29 @@ class TestSpanLinking:
 
     @patch('sik_llms.telemetry.is_telemetry_enabled')
     def test_create_span_context_import_error(self, mock_enabled):   # noqa
-        """Test create_span_context handles import errors."""
+        """Test create_span_context raises ImportError when dependencies missing."""
         from sik_llms.telemetry import create_span_context
 
         mock_enabled.return_value = True
 
         with patch('builtins.__import__', side_effect=ImportError):
-            result = create_span_context("1234567890abcdef", "fedcba0987654321")
-            assert result is None
+            with pytest.raises(
+                ImportError, match="OTEL_SDK_DISABLED=false but opentelemetry not installed",
+            ):
+                create_span_context("1234567890abcdef", "fedcba0987654321")
 
     @patch('sik_llms.telemetry.is_telemetry_enabled')
     def test_create_span_link_import_error(self, mock_enabled):   # noqa
-        """Test create_span_link handles import errors."""
+        """Test create_span_link raises ImportError when dependencies missing."""
         from sik_llms.telemetry import create_span_link
 
         mock_enabled.return_value = True
 
         with patch('builtins.__import__', side_effect=ImportError):
-            result = create_span_link("1234567890abcdef", "fedcba0987654321")
-            assert result is None
+            with pytest.raises(
+                ImportError, match="OTEL_SDK_DISABLED=false but opentelemetry not installed",
+            ):
+                create_span_link("1234567890abcdef", "fedcba0987654321")
 
 
 class TestStandardProviderDetection:
@@ -312,11 +320,13 @@ class TestStandardProviderDetection:
                 assert tracer is mock_tracer
 
     def test_handles_missing_opentelemetry_gracefully(self):
-        """Test graceful handling when OpenTelemetry not installed."""
+        """Test that get_tracer raises ImportError when OpenTelemetry not installed but enabled."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "false"}):
             with patch('builtins.__import__', side_effect=ImportError):
-                tracer = get_tracer()
-                assert tracer is None
+                with pytest.raises(
+                    ImportError, match="OTEL_SDK_DISABLED=false but opentelemetry not installed",
+                ):
+                    get_tracer()
 
 
 class TestHeaderParsing:
