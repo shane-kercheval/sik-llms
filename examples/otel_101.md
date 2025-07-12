@@ -420,13 +420,39 @@ error=true
 - **OTLP Collector** routes the data appropriately
 - **Alternative**: Single backends like Honeycomb can replace this entire stack
 
+**Why do we need an OTLP Collector?**
+
+The OpenTelemetry Collector is a **vendor-agnostic data pipeline** that solves a critical problem:
+
+**Without Collector (❌ Doesn't work):**
+```
+                    ┌─ Jaeger (traces only)
+sik-llms → ??? → ┤
+                    └─ Prometheus (metrics only)
+```
+- sik-llms can only send to ONE endpoint
+- Jaeger doesn't handle metrics
+- Prometheus doesn't handle traces
+- Can't get both traces AND metrics
+
+**With Collector (✅ Works perfectly):**
+```
+                          ┌─ Jaeger (receives traces)
+sik-llms → OTLP Collector ┤
+                          └─ Prometheus (receives metrics)
+```
+- Single endpoint for sik-llms (`localhost:4318`)
+- Automatic routing: traces to Jaeger, metrics to Prometheus
+- Both data types captured from one configuration
+- Easy to add more backends later
+
 ### **Step 1: Complete Docker Compose Setup**
 
 ```yaml
-# docker-compose.yml - Complete observability stack
+# docker-compose.yml - Complete observability stack with persistent data
 version: '3.8'
 services:
-  # Jaeger - for traces
+  # Jaeger - for traces (with persistent Badger storage)
   jaeger:
     image: jaegertracing/all-in-one:latest
     ports:
@@ -434,16 +460,25 @@ services:
       - "4318:4318"    # OTLP HTTP receiver
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=badger
+      - BADGER_EPHEMERAL=false
+      - BADGER_DIRECTORY_VALUE=/badger/data
+      - BADGER_DIRECTORY_KEY=/badger/key
+    volumes:
+      - jaeger-badger:/badger
   
-  # Prometheus - for metrics
+  # Prometheus - for metrics (with persistent storage and 30-day retention)
   prometheus:
     image: prom/prometheus:latest
     ports:
       - "9090:9090"    # Prometheus UI
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
       - '--web.enable-lifecycle'
   
   # OTLP Collector - routes data to backends
@@ -459,7 +494,7 @@ services:
       - jaeger
       - prometheus
   
-  # Grafana - for dashboards
+  # Grafana - for dashboards (with persistent storage)
   grafana:
     image: grafana/grafana:latest
     ports:
@@ -470,7 +505,9 @@ services:
       - grafana-storage:/var/lib/grafana
 
 volumes:
-  grafana-storage:
+  grafana-storage:    # Persists Grafana dashboards and settings
+  jaeger-badger:      # Persists Jaeger traces using Badger database
+  prometheus-data:    # Persists Prometheus metrics with 30-day retention
 ```
 
 ### **Step 2: Create Configuration Files**
@@ -490,6 +527,9 @@ scrape_configs:
 ```
 
 **otel-collector.yml**
+
+This configuration file defines how the OTLP Collector routes your telemetry data:
+
 ```yaml
 receivers:
   otlp:
@@ -497,36 +537,43 @@ receivers:
       grpc:
         endpoint: 0.0.0.0:4317
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: 0.0.0.0:4318  # This is where sik-llms sends data
 
 processors:
-  batch:
+  batch:  # Batches data for efficiency
 
 exporters:
   # Send traces to Jaeger
   jaeger:
-    endpoint: jaeger:14250
+    endpoint: jaeger:14250  # Internal Docker network communication
     tls:
       insecure: true
   
-  # Send metrics to Prometheus
+  # Send metrics to Prometheus (expose for scraping)
   prometheus:
-    endpoint: "0.0.0.0:8889"
+    endpoint: "0.0.0.0:8889"  # Prometheus scrapes this endpoint
     resource_to_telemetry_conversion:
       enabled: true
 
 service:
   pipelines:
-    traces:
+    traces:       # Trace Pipeline: OTLP → Batch → Jaeger
       receivers: [otlp]
       processors: [batch]
       exporters: [jaeger]
     
-    metrics:
+    metrics:      # Metrics Pipeline: OTLP → Batch → Prometheus
       receivers: [otlp]
       processors: [batch]
       exporters: [prometheus]
 ```
+
+**How the data flows:**
+1. **sik-llms** sends traces + metrics → `localhost:4318` (OTLP receiver)
+2. **Collector** separates the data types into different pipelines
+3. **Traces** get routed → Jaeger backend via internal network
+4. **Metrics** get exposed → Prometheus scrapes them
+5. **Both backends** receive only their relevant data type
 
 ### **Step 3: Start the Complete Stack**
 
@@ -543,6 +590,64 @@ docker-compose up -d
 
 # Verify all services are running
 docker-compose ps
+```
+
+### **💾 Data Persistence**
+
+**All data is now persistent between restarts!** The updated configuration includes:
+
+- ✅ **Jaeger Traces**: Stored using Badger database in `jaeger-badger` volume
+- ✅ **Prometheus Metrics**: Stored with 30-day retention in `prometheus-data` volume  
+- ✅ **Grafana Dashboards**: Settings and dashboards in `grafana-storage` volume
+
+**What this means:**
+- `docker-compose down && docker-compose up` preserves all your historical data
+- Traces and metrics remain available for analysis even after restarts
+- Grafana dashboards and configurations are saved
+
+**Managing data:**
+```bash
+# Stop containers but keep all data
+docker-compose down
+
+# View volume information  
+docker volume ls | grep otel-stack
+
+# DESTROY all data (use with caution!)
+docker-compose down -v
+
+# Using the Makefile for selective cleaning:
+make clean-traces     # Clear only Jaeger traces
+make clean-metrics    # Clear only Prometheus metrics  
+make clean-dashboards # Clear only Grafana dashboards
+make clean-all        # DESTROY all data (with confirmation)
+```
+
+**About Badger Storage:**
+Badger is a high-performance embedded database that Jaeger uses for local storage. It's perfect for development and single-node deployments, providing excellent performance while keeping setup simple (no external database required).
+
+### **🔧 Convenient Management (Using the Provided Makefile)**
+
+If you're using the complete setup from `examples/otel-stack/`, you can use the provided Makefile for easier management:
+
+```bash
+# Quick start
+make start        # Start the complete stack
+make verify       # Check all services are healthy  
+make data-info    # Show persistence status
+make test-telemetry  # Test sik-llms integration
+
+# Management
+make stop         # Stop services (keeps data)
+make clean        # Stop containers (keeps data volumes)
+make clean-all    # DESTROY all data (with confirmation)
+make logs         # View all logs
+make status       # Show service status
+
+# Selective data cleaning
+make clean-traces     # Clear only Jaeger traces
+make clean-metrics    # Clear only Prometheus metrics
+make clean-dashboards # Clear only Grafana dashboards
 ```
 
 ### **Step 4: Access Your Observability UIs**
@@ -580,8 +685,9 @@ export OTEL_SDK_DISABLED=false
 export OTEL_SERVICE_NAME="my-llm-app"
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 
-# Run your sik-llms code
-python your_llm_app.py
+# Run your sik-llms code - try the provided example!
+cd examples/otel-stack
+python example_with_telemetry.py
 ```
 
 **How sik-llms handles endpoints**:
@@ -595,6 +701,8 @@ python your_llm_app.py
 - ✅ **Metrics** in Prometheus showing token usage, costs, latency
 - ✅ **Dashboards** in Grafana visualizing your LLM performance
 - ✅ **TraceContext** automatically captured in response objects
+- ✅ **Persistent Data** - all historical data survives restarts
+- ✅ **Easy Management** - Makefile commands for common operations
 
 **With alternative backends**: You might get all of this in a single UI (e.g., Honeycomb combines traces and metrics).
 
@@ -783,12 +891,41 @@ export OTEL_EXPORTER_OTLP_HEADERS="api-key=your-license-key"
 - Need 4 services: Jaeger + Prometheus + Grafana + OTLP Collector
 - Separate UIs for traces vs metrics
 - Complex configuration files
+- **But teaches production patterns!**
 
 **With Honeycomb/Datadog/etc.**:
 - One service receives everything
 - One UI for traces AND metrics correlation
 - Simple environment variable configuration
 - TraceContext still works automatically
+
+### **The Value of Learning the Collector Pattern**
+
+Even though single backends are simpler, understanding the OTLP Collector pattern is valuable because:
+
+**Production Benefits:**
+- ✅ **Vendor flexibility** - Switch backends without changing application code
+- ✅ **Multi-destination** - Send to multiple backends simultaneously (local + cloud)
+- ✅ **Data processing** - Filter, sample, or enrich data before export
+- ✅ **High availability** - Buffer data if backends are temporarily down
+- ✅ **Cost optimization** - Sample expensive traces, keep all metrics
+
+**Example advanced collector use:**
+```yaml
+# Send to BOTH local Jaeger AND cloud Honeycomb
+exporters:
+  jaeger:
+    endpoint: jaeger:14250
+  honeycomb:
+    endpoint: "https://api.honeycomb.io/v1/traces/dataset"
+    headers:
+      x-honeycomb-team: "your-api-key"
+
+service:
+  pipelines:
+    traces:
+      exporters: [jaeger, honeycomb]  # Dual destination!
+```
 
 ### **When to Use Each Approach**
 

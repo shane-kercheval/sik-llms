@@ -1,0 +1,12 @@
+[project]
+name = "otel-stack"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "sik-llms[telemetry]",
+]
+
+[tool.uv.sources]
+sik-llms = { path = "../..", editable = true }
