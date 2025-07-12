@@ -43,14 +43,12 @@ def get_tracer() -> object | None:
         )
 
     from opentelemetry import trace
-    from opentelemetry.trace import NoOpTracerProvider
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.resources import Resource
 
     # Check if user has already configured telemetry with a real SDK provider
-    from opentelemetry.sdk.trace import TracerProvider
     current_provider = trace.get_tracer_provider()
 
     if isinstance(current_provider, TracerProvider):
