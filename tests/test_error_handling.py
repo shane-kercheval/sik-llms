@@ -128,7 +128,7 @@ class TestAnthropicErrorHandling:
     """Test error handling and telemetry for Anthropic client."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
+    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")  # noqa: E501
     async def test_anthropic_api_error_with_telemetry(self):
         """Test that Anthropic API errors are properly logged to telemetry spans."""
         # Mock the tracer and span
@@ -172,7 +172,7 @@ class TestAnthropicErrorHandling:
                 assert hasattr(status_arg, 'status_code')
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
+    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")  # noqa: E501
     async def test_anthropic_structured_output_error_with_telemetry(self):
         """Test error handling in Anthropic structured output mode with telemetry."""
         from pydantic import BaseModel
@@ -232,7 +232,7 @@ class TestAnthropicErrorHandling:
                     )
 
     @pytest.mark.asyncio
-    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")
+    @pytest.mark.skipif(os.getenv('ANTHROPIC_API_KEY') is None, reason="ANTHROPIC_API_KEY is not set")  # noqa: E501
     async def test_anthropic_error_without_telemetry(self):
         """Test that errors still propagate correctly when telemetry is disabled."""
         with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
