@@ -69,7 +69,7 @@ def get_tracer() -> object | None:
     otlp_exporter = OTLPSpanExporter(
         endpoint=os.getenv(
             'OTEL_EXPORTER_OTLP_ENDPOINT',
-            'http://localhost:4318',
+            'http://localhost:4318/v1/traces',
         ),
         # e.g. "authorization=Bearer token,x-custom-header=value"
         headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
