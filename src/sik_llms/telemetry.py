@@ -1,6 +1,5 @@
 """OpenTelemetry utilities for sik-llms."""
 import os
-import warnings
 from contextlib import nullcontext
 from typing import Any
 
@@ -34,55 +33,54 @@ def get_tracer() -> object | None:
     if not is_telemetry_enabled():
         return None
 
+    # Check if opentelemetry is installed before proceeding
     try:
-        from opentelemetry import trace
-        from opentelemetry.trace import NoOpTracerProvider
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-        from opentelemetry.sdk.resources import Resource
-
-        # Check if user has already configured telemetry
-        current_provider = trace.get_tracer_provider()
-
-        if not isinstance(current_provider, NoOpTracerProvider):
-            # User has already set up a real provider - respect it
-            return trace.get_tracer(PACKAGE_NAME)
-
-        # No real provider exists - set up our default configuration
-        resource = Resource.create({
-            'service.name': os.getenv('OTEL_SERVICE_NAME', PACKAGE_NAME),
-            'service.version': _get_package_version(),
-        })
-
-        # Create and set tracer provider
-        provider = TracerProvider(resource=resource)
-        trace.set_tracer_provider(provider)
-
-        # Set up OTLP exporter
-        otlp_exporter = OTLPSpanExporter(
-            endpoint=os.getenv(
-                'OTEL_EXPORTER_OTLP_ENDPOINT',
-                'http://localhost:4318/v1/traces',
-            ),
-            # e.g. "authorization=Bearer token,x-custom-header=value"
-            headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
-        )
-
-        # Add batch span processor
-        span_processor = BatchSpanProcessor(otlp_exporter)
-        provider.add_span_processor(span_processor)
-
-        return trace.get_tracer(PACKAGE_NAME)
-
+        import opentelemetry  # noqa: F401
     except ImportError:
-        warnings.warn(
+        raise ImportError(
             "OTEL_SDK_DISABLED=false but opentelemetry not installed. "
             "Install with: pip install sik-llms[telemetry]",
-            UserWarning,
-            stacklevel=2,
         )
-        return None
+
+    from opentelemetry import trace
+    from opentelemetry.trace import NoOpTracerProvider
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.resources import Resource
+
+    # Check if user has already configured telemetry
+    current_provider = trace.get_tracer_provider()
+
+    if not isinstance(current_provider, NoOpTracerProvider):
+        # User has already set up a real provider - respect it
+        return trace.get_tracer(PACKAGE_NAME)
+
+    # No real provider exists - set up our default configuration
+    resource = Resource.create({
+        'service.name': os.getenv('OTEL_SERVICE_NAME', PACKAGE_NAME),
+        'service.version': _get_package_version(),
+    })
+
+    # Create and set tracer provider
+    provider = TracerProvider(resource=resource)
+    trace.set_tracer_provider(provider)
+
+    # Set up OTLP exporter
+    otlp_exporter = OTLPSpanExporter(
+        endpoint=os.getenv(
+            'OTEL_EXPORTER_OTLP_ENDPOINT',
+            'http://localhost:4318/v1/traces',
+        ),
+        # e.g. "authorization=Bearer token,x-custom-header=value"
+        headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
+    )
+
+    # Add batch span processor
+    span_processor = BatchSpanProcessor(otlp_exporter)
+    provider.add_span_processor(span_processor)
+
+    return trace.get_tracer(PACKAGE_NAME)
 
 
 def get_meter() -> object | None:
@@ -98,50 +96,55 @@ def get_meter() -> object | None:
     if not is_telemetry_enabled():
         return None
 
+    # Check if opentelemetry is installed before proceeding
     try:
-        from opentelemetry import metrics
-        from opentelemetry.metrics._internal import NoOpMeterProvider  # Note: internal API
-        from opentelemetry.sdk.metrics import MeterProvider
-        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-        from opentelemetry.sdk.resources import Resource
-
-        # Check if user has already configured metrics
-        current_provider = metrics.get_meter_provider()
-
-        if not isinstance(current_provider, NoOpMeterProvider):
-            # User has already set up a real provider - respect it
-            return metrics.get_meter(PACKAGE_NAME)
-
-        # No real provider exists - set up our default configuration
-        resource = Resource.create({
-            'service.name': os.getenv('OTEL_SERVICE_NAME', PACKAGE_NAME),
-            'service.version': _get_package_version(),
-        })
-
-        # Create OTLP metric exporter
-        otlp_exporter = OTLPMetricExporter(
-            endpoint=os.getenv(
-                'OTEL_EXPORTER_OTLP_ENDPOINT',
-                'http://localhost:4318/v1/metrics',
-            ).replace('/traces', '/metrics'),
-            headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
+        import opentelemetry  # noqa: F401
+    except ImportError:
+        raise ImportError(
+            "OTEL_SDK_DISABLED=false but opentelemetry not installed. "
+            "Install with: pip install sik-llms[telemetry]",
         )
 
-        # Create meter provider with periodic reader
-        reader = PeriodicExportingMetricReader(
-            exporter=otlp_exporter,
-            export_interval_millis=5000,  # Export every 5 seconds
-        )
+    from opentelemetry import metrics
+    from opentelemetry.metrics._internal import NoOpMeterProvider  # Note: internal API
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+    from opentelemetry.sdk.resources import Resource
 
-        provider = MeterProvider(resource=resource, metric_readers=[reader])
-        metrics.set_meter_provider(provider)
+    # Check if user has already configured metrics
+    current_provider = metrics.get_meter_provider()
 
+    if not isinstance(current_provider, NoOpMeterProvider):
+        # User has already set up a real provider - respect it
         return metrics.get_meter(PACKAGE_NAME)
 
-    except ImportError:
-        # Silently fail for metrics if traces are working
-        return None
+    # No real provider exists - set up our default configuration
+    resource = Resource.create({
+        'service.name': os.getenv('OTEL_SERVICE_NAME', PACKAGE_NAME),
+        'service.version': _get_package_version(),
+    })
+
+    # Create OTLP metric exporter
+    otlp_exporter = OTLPMetricExporter(
+        endpoint=os.getenv(
+            'OTEL_EXPORTER_OTLP_ENDPOINT',
+            'http://localhost:4318/v1/metrics',
+        ).replace('/traces', '/metrics'),
+        # e.g. "authorization=Bearer token,x-custom-header=value"
+        headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
+    )
+
+    # Create meter provider with periodic reader
+    reader = PeriodicExportingMetricReader(
+        exporter=otlp_exporter,
+        export_interval_millis=5000,  # Export every 5 seconds
+    )
+
+    provider = MeterProvider(resource=resource, metric_readers=[reader])
+    metrics.set_meter_provider(provider)
+
+    return metrics.get_meter(PACKAGE_NAME)
 
 
 def create_span_context(trace_id: str, span_id: str) -> object | None:
@@ -158,15 +161,21 @@ def create_span_context(trace_id: str, span_id: str) -> object | None:
     if not is_telemetry_enabled():
         return None
 
+    # Check if opentelemetry is installed before proceeding
     try:
         from opentelemetry.trace import SpanContext
-
+    except ImportError:
+        raise ImportError(
+            "OTEL_SDK_DISABLED=false but opentelemetry not installed. "
+            "Install with: pip install sik-llms[telemetry]",
+        )
+    try:
         return SpanContext(
             trace_id=int(trace_id, 16),
             span_id=int(span_id, 16),
             is_remote=True,
         )
-    except (ImportError, ValueError, TypeError):
+    except (ValueError, TypeError):
         return None
 
 
@@ -187,14 +196,18 @@ def create_span_link(
     if not is_telemetry_enabled():
         return None
 
+    # Check if opentelemetry is installed before proceeding
     try:
         from opentelemetry.trace import Link
-
-        span_context = create_span_context(trace_id, span_id)
-        if span_context:
-            return Link(context=span_context, attributes=attributes or {})
     except ImportError:
-        pass
+        raise ImportError(
+            "OTEL_SDK_DISABLED=false but opentelemetry not installed. "
+            "Install with: pip install sik-llms[telemetry]",
+        )
+
+    span_context = create_span_context(trace_id, span_id)
+    if span_context:
+        return Link(context=span_context, attributes=attributes or {})
 
     return None
 
@@ -232,9 +245,16 @@ def extract_current_trace_context() -> tuple[str | None, str | None]:
     if not is_telemetry_enabled():
         return None, None
 
+    # Check if opentelemetry is installed before proceeding
     try:
         from opentelemetry import trace
+    except ImportError:
+        raise ImportError(
+            "OTEL_SDK_DISABLED=false but opentelemetry not installed. "
+            "Install with: pip install sik-llms[telemetry]",
+        )
 
+    try:
         # Get current span
         current_span = trace.get_current_span()
         if not current_span or not current_span.is_recording():
@@ -251,7 +271,7 @@ def extract_current_trace_context() -> tuple[str | None, str | None]:
 
         return trace_id, span_id
 
-    except (ImportError, AttributeError, ValueError):
+    except (AttributeError, ValueError):
         # Gracefully handle any errors
         return None, None
 
