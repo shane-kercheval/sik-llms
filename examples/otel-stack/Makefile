@@ -22,7 +22,7 @@ start: ## Start the complete observability stack
 	@echo "=' To enable sik-llms telemetry:"
 	@echo "   export OTEL_SDK_DISABLED=false"
 	@echo "   export OTEL_SERVICE_NAME=\"my-llm-app\""
-	@echo "   export OTEL_EXPORTER_OTLP_ENDPOINT=\"http://localhost:4318/v1/traces\""
+	@echo "   export OTEL_EXPORTER_OTLP_ENDPOINT=\"http://localhost:4318\""
 
 stop: ## Stop the observability stack
 	@echo "🛑 Stopping OpenTelemetry observability stack..."
@@ -81,7 +81,9 @@ test-telemetry: ## Test telemetry with comprehensive examples (requires sik-llms
 	@echo ""
 	OTEL_SDK_DISABLED=false \
 	OTEL_SERVICE_NAME="my-llm-app" \
-	OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318/v1/traces" \
+	OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318" \
+	OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="http://localhost:4318/v1/traces" \
+	OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="http://localhost:4318/v1/metrics" \
 	uv run example_with_telemetry.py
 	@echo ""
 	@echo "🎯 Telemetry test complete! View traces at http://localhost:16686"

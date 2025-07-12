@@ -66,11 +66,19 @@ def get_tracer() -> object | None:
     trace.set_tracer_provider(provider)
 
     # Set up OTLP exporter
+    # Check for traces-specific endpoint first, then fall back to general endpoint
+    traces_endpoint = os.getenv('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT')
+    if not traces_endpoint:
+        base_endpoint = os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://localhost:4318')
+        if base_endpoint.endswith('/v1/metrics'):
+            traces_endpoint = base_endpoint.replace('/v1/metrics', '/v1/traces')
+        elif base_endpoint.endswith('/'):
+            traces_endpoint = base_endpoint + 'v1/traces'
+        else:
+            traces_endpoint = base_endpoint + '/v1/traces'
+
     otlp_exporter = OTLPSpanExporter(
-        endpoint=os.getenv(
-            'OTEL_EXPORTER_OTLP_ENDPOINT',
-            'http://localhost:4318/v1/traces',
-        ),
+        endpoint=traces_endpoint,
         # e.g. "authorization=Bearer token,x-custom-header=value"
         headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
     )
@@ -105,7 +113,6 @@ def get_meter() -> object | None:
         )
 
     from opentelemetry import metrics
-    from opentelemetry.metrics._internal import NoOpMeterProvider  # Note: internal API
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
@@ -114,8 +121,8 @@ def get_meter() -> object | None:
     # Check if user has already configured metrics
     current_provider = metrics.get_meter_provider()
 
-    if not isinstance(current_provider, NoOpMeterProvider):
-        # User has already set up a real provider - respect it
+    if isinstance(current_provider, MeterProvider):
+        # User has already set up a real SDK provider - respect it
         return metrics.get_meter(PACKAGE_NAME)
 
     # No real provider exists - set up our default configuration
@@ -125,11 +132,19 @@ def get_meter() -> object | None:
     })
 
     # Create OTLP metric exporter
+    # Check for metrics-specific endpoint first, then fall back to general endpoint
+    metrics_endpoint = os.getenv('OTEL_EXPORTER_OTLP_METRICS_ENDPOINT')
+    if not metrics_endpoint:
+        base_endpoint = os.getenv('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://localhost:4318')
+        if base_endpoint.endswith('/v1/traces'):
+            metrics_endpoint = base_endpoint.replace('/v1/traces', '/v1/metrics')
+        elif base_endpoint.endswith('/'):
+            metrics_endpoint = base_endpoint + 'v1/metrics'
+        else:
+            metrics_endpoint = base_endpoint + '/v1/metrics'
+
     otlp_exporter = OTLPMetricExporter(
-        endpoint=os.getenv(
-            'OTEL_EXPORTER_OTLP_ENDPOINT',
-            'http://localhost:4318/v1/metrics',
-        ).replace('/traces', '/metrics'),
+        endpoint=metrics_endpoint,
         # e.g. "authorization=Bearer token,x-custom-header=value"
         headers=_parse_headers(os.getenv('OTEL_EXPORTER_OTLP_HEADERS', '')),
     )

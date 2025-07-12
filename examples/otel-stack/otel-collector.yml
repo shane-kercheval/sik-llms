@@ -16,7 +16,7 @@ exporters:
     tls:
       insecure: true
   
-  # Send metrics to Prometheus
+  # Send metrics to Prometheus via scraping
   prometheus:
     endpoint: "0.0.0.0:8889"
     resource_to_telemetry_conversion:
