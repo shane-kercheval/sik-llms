@@ -83,7 +83,7 @@ This sends a test trace through the entire pipeline and verifies it reaches Jaeg
 
 #### View Traces in Jaeger
 1. Open http://localhost:16686
-2. Select service: `my-llm-app` 
+2. Select service: `my-llm-app`
 3. Click "Find Traces"
 4. Explore individual traces to see:
    - Request flows and timing

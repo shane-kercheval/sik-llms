@@ -80,7 +80,7 @@ test-telemetry: ## Test telemetry with comprehensive examples (requires sik-llms
 	@echo "Note: Run 'uv sync' first and set OpenAI API key"
 	@echo ""
 	OTEL_SDK_DISABLED=false \
-	OTEL_SERVICE_NAME="otel-stack-test" \
+	OTEL_SERVICE_NAME="my-llm-app" \
 	OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318/v1/traces" \
 	uv run example_with_telemetry.py
 	@echo ""
