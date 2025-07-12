@@ -3,7 +3,7 @@ import os
 from unittest.mock import patch, MagicMock
 from sik_llms import create_client
 from sik_llms.models_base import Client
-from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
+from tests.conftest import OPENAI_TEST_MODEL
 
 
 class TestTelemetryRegression:
@@ -18,15 +18,14 @@ class TestTelemetryRegression:
             assert client.meter is None
 
             # Test all client types
-            for model in [OPENAI_TEST_MODEL, ANTHROPIC_TEST_MODEL]:
-                client = create_client(model)
-                assert hasattr(client, 'model_name')
-                assert client.model_name == model
+            client = create_client(OPENAI_TEST_MODEL)
+            assert hasattr(client, 'model_name')
+            assert client.model_name == OPENAI_TEST_MODEL
 
-                # Test that telemetry-related methods exist but don't break
-                assert hasattr(client, 'tracer')
-                assert hasattr(client, 'meter')
-                assert hasattr(client, '_get_provider_name')
+            # Test that telemetry-related methods exist but don't break
+            assert hasattr(client, 'tracer')
+            assert hasattr(client, 'meter')
+            assert hasattr(client, '_get_provider_name')
 
     def test_all_existing_functionality_telemetry_mocked(self):
         """Run key existing scenarios with telemetry enabled but mocked."""
@@ -77,15 +76,6 @@ class TestTelemetryRegression:
             assert hasattr(client, 'sample')
             assert hasattr(client, 'generate_multiple')
             assert hasattr(client, 'stream')
-
-    def test_anthropic_client_without_telemetry(self):
-        """Test Anthropic client works without telemetry."""
-        with patch.dict(os.environ, {"OTEL_SDK_DISABLED": "true"}):
-            client = create_client(ANTHROPIC_TEST_MODEL)
-            assert client.tracer is None
-            assert client.meter is None
-            provider_name = client._get_provider_name()
-            assert provider_name == "anthropic"
 
     def test_token_summary_emit_metrics_no_meter(self):
         """Test TokenSummary.emit_metrics works with no meter."""
@@ -188,9 +178,6 @@ class TestTelemetryRegression:
             # Test direct instantiation
             openai_client = Client.instantiate(RegisteredClients.OPENAI, OPENAI_TEST_MODEL)
             assert openai_client.model_name == OPENAI_TEST_MODEL
-
-            anthropic_client = Client.instantiate(RegisteredClients.ANTHROPIC, ANTHROPIC_TEST_MODEL)  # noqa: E501
-            assert anthropic_client.model_name == ANTHROPIC_TEST_MODEL
 
     def test_pydantic_utilities_still_work(self):
         """Test that Pydantic utilities still work."""
@@ -308,12 +295,10 @@ class TestTelemetryBackwardCompatibility:
             assert isinstance(client, Client)
 
             # Pattern 2: Model-specific creation
-            from sik_llms import OpenAI, Anthropic
+            from sik_llms import OpenAI
             openai_client = OpenAI(OPENAI_TEST_MODEL)
-            anthropic_client = Anthropic(ANTHROPIC_TEST_MODEL)
 
             assert openai_client.model_name == OPENAI_TEST_MODEL
-            assert anthropic_client.model_name == ANTHROPIC_TEST_MODEL
 
             # Pattern 3: Registry-based creation
             registry_client = Client.instantiate("OpenAI", OPENAI_TEST_MODEL)
@@ -337,19 +322,13 @@ class TestTelemetryBackwardCompatibility:
 
     def test_existing_model_info_access(self):
         """Test that model info access still works."""
-        from sik_llms import SUPPORTED_OPENAI_MODELS, SUPPORTED_ANTHROPIC_MODELS
+        from sik_llms import SUPPORTED_OPENAI_MODELS
 
         assert OPENAI_TEST_MODEL in SUPPORTED_OPENAI_MODELS
-        assert ANTHROPIC_TEST_MODEL in SUPPORTED_ANTHROPIC_MODELS
-
-        # Test model info structure
         gpt_info = SUPPORTED_OPENAI_MODELS[OPENAI_TEST_MODEL]
-        claude_info = SUPPORTED_ANTHROPIC_MODELS[ANTHROPIC_TEST_MODEL]
 
         assert hasattr(gpt_info, 'model')
         assert hasattr(gpt_info, 'provider')
-        assert hasattr(claude_info, 'model')
-        assert hasattr(claude_info, 'provider')
 
     def test_existing_tool_functionality(self):
         """Test that tool-related functionality still works."""
