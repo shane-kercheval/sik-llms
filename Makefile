@@ -9,10 +9,18 @@ export
 build-env:
 	uv sync
 
+linting_src:
+	uv run ruff check src/sik_llms --fix --unsafe-fixes
+
+linting_examples:
+	uv run ruff check examples --fix --unsafe-fixes
+
+linting_tests:
+	uv run ruff check tests --fix --unsafe-fixes
+
 linting:
-	uv run ruff check src/sik_llms
-	uv run ruff check examples/cli.py
-	uv run ruff check tests
+	# Run all linters on source, examples, and tests
+	uv run ruff check src/sik_llms examples tests --fix --unsafe-fixes
 
 quicktests:
 	# only runs a subset of tests that are generally faster
@@ -21,7 +29,24 @@ quicktests:
 unittests:
 	uv run pytest --durations=0 --durations-min=0.1 tests
 
-tests: linting unittests
+# Telemetry-specific testing
+telemetry-tests:
+	# Run integration tests requiring Jaeger
+	uv run pytest -m "integration" tests/test_telemetry.py -v
+
+telemetry-unit-tests:
+	# Run only telemetry unit tests (no external dependencies)
+	uv run pytest -m "not integration" tests/test_telemetry.py tests/test_telemetry_regression.py -v
+
+# Enhanced test commands
+quicktests-with-telemetry:
+	# Run quicktests + telemetry unit tests
+	uv run pytest --durations=0 --durations-min=0.1 -k "not integration" tests
+
+telemetry-all:
+	uv run pytest --durations=0 --durations-min=0.1 tests/test_telemetry.py tests/test_telemetry_regression.py -v
+
+tests: linting unittests telemetry-all
 
 package-build:
 	rm -rf dist/*
@@ -44,3 +69,33 @@ tools:
 	uv run python examples/cli.py \
 		--mcp_config examples/mcp_fake_server_config.json \
 		-tools
+
+####
+# Telemetry Development
+####
+
+# Jaeger management for local development
+jaeger-start:
+	@echo "Starting Jaeger for telemetry testing..."
+	docker run -d --name jaeger-sik-llms \
+		-p 16686:16686 \
+		-p 4318:4318 \
+		jaegertracing/all-in-one:latest
+	@echo "Jaeger UI available at http://localhost:16686"
+
+jaeger-stop:
+	@echo "Stopping Jaeger..."
+	docker stop jaeger-sik-llms || true
+	docker rm jaeger-sik-llms || true
+
+jaeger-logs:
+	@echo "Jaeger container logs:"
+	docker logs jaeger-sik-llms
+
+# Telemetry example/demo
+telemetry-demo:
+	@echo "Running telemetry demo (requires Jaeger)..."
+	OTEL_SDK_DISABLED=false \
+	OTEL_SERVICE_NAME="sik-llms-demo" \
+	OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318" \
+	uv run python examples/telemetry_demo.py

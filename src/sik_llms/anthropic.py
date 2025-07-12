@@ -26,6 +26,7 @@ from sik_llms.models_base import (
     pydantic_model_to_tool,
 )
 from sik_llms.utilities import get_json_schema_type
+from sik_llms.telemetry import safe_span
 
 ANTHROPIC_MODEL_LOOKUPS = [
     ModelInfo(
@@ -327,6 +328,8 @@ class Anthropic(Client):
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
+        super().__init__(model_name, **model_kwargs)
+
         model_info = SUPPORTED_ANTHROPIC_MODELS.get(model_name)
         if not model_info:
             raise ValueError(f"Model '{model_name}' is not supported.")
@@ -388,7 +391,7 @@ class Anthropic(Client):
                 self.model_parameters.pop('top_k')
 
 
-    async def stream(  # noqa: PLR0912
+    async def stream(  # noqa: PLR0912, PLR0915
             self,
             messages: list[dict],
         ) -> AsyncGenerator[TextChunkEvent | TextResponse, None]:
@@ -396,124 +399,170 @@ class Anthropic(Client):
         Streams chat chunks and returns a final summary. Parameters passed here
         override those passed to the constructor.
         """
-        if self.response_format:
-            # Convert Pydantic model to Function
-            function = pydantic_model_to_tool(self.response_format)
-            # Create AnthropicFunctions client
-            functions_client = AnthropicTools(
-                model_name=self.model,
-                tools=[function],
-                tool_choice=ToolChoice.REQUIRED,
-                max_tokens=self.model_parameters.get('max_tokens', 5000),
-                temperature=0.2,
-            )
-            # Call functions client
+        with safe_span(
+            self.tracer,
+            "llm.anthropic.stream",
+            attributes={
+                "llm.model": self.model,
+                "llm.provider": "anthropic",
+                "llm.streaming": True,
+            },
+        ) as span:
+            # Add Anthropic-specific attributes
+            if span:
+                span.set_attribute("llm.api.vendor", "anthropic")
+                if hasattr(self, 'temperature') and 'temperature' in self.model_parameters:
+                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])  # noqa: E501
+                if hasattr(self, 'max_tokens') and 'max_tokens' in self.model_parameters:
+                    span.set_attribute("llm.request.max_tokens", self.model_parameters['max_tokens'])  # noqa: E501
+                if self.web_search:
+                    span.set_attribute("llm.web_search.enabled", True)
+                    span.set_attribute("llm.web_search.max_uses", self.max_web_searches)
+
+            start_time = perf_counter()
+
             try:
-                parsed = None
-                refusal = None
-                response = await functions_client.run_async(messages)
-                # Extract function call result and convert to Pydantic model
-                if response.tool_prediction:
+                if self.response_format:
+                    # Convert Pydantic model to Function
+                    function = pydantic_model_to_tool(self.response_format)
+                    # Create AnthropicFunctions client
+                    functions_client = AnthropicTools(
+                        model_name=self.model,
+                        tools=[function],
+                        tool_choice=ToolChoice.REQUIRED,
+                        max_tokens=self.model_parameters.get('max_tokens', 5000),
+                        temperature=0.2,
+                    )
+                    # Call functions client
                     try:
-                        # Create instance of Pydantic model from arguments
-                        parsed = self.response_format(**response.tool_prediction.arguments)
+                        parsed = None
+                        refusal = None
+                        response = await functions_client.run_async(messages)
+                        # Extract function call result and convert to Pydantic model
+                        if response.tool_prediction:
+                            try:
+                                # Create instance of Pydantic model from arguments
+                                parsed = self.response_format(**response.tool_prediction.arguments)
+                            except Exception as e:
+                                # If conversion fails, set refusal with error message
+                                refusal=f"Failed to parse response: response={response}, error={e!s}"  # noqa: E501
+                        else:
+                            # No function call, set refusal with model message
+                            refusal=response.message
+
+                        # Add timing to span
+                        if span:
+                            span.set_attribute("llm.request.duration", perf_counter() - start_time)
+                            span.set_attribute("llm.response.finish_reason", "completed")
+
+                        # Yield the response
+                        yield StructuredOutputResponse(
+                            parsed=parsed,
+                            refusal=refusal,
+                            input_tokens=response.input_tokens,
+                            output_tokens=response.output_tokens,
+                            input_cost=response.input_cost,
+                            output_cost=response.output_cost,
+                            duration_seconds=response.duration_seconds,
+                        )
+                        return
                     except Exception as e:
-                        # If conversion fails, set refusal with error message
-                        refusal=f"Failed to parse response: response={response}, error={e!s}"
-                else:
-                    # No function call, set refusal with model message
-                    refusal=response.message
-                # Yield the response
-                yield StructuredOutputResponse(
-                    parsed=parsed,
-                    refusal=refusal,
-                    input_tokens=response.input_tokens,
-                    output_tokens=response.output_tokens,
-                    input_cost=response.input_cost,
-                    output_cost=response.output_cost,
-                    duration_seconds=response.duration_seconds,
+                        # Handle any other errors
+                        if span:
+                            span.set_attribute("llm.request.error", str(e))
+                        yield ErrorEvent(
+                            content=f"Error: {e!s}",
+                            metadata={'error': e},
+                        )
+                        yield StructuredOutputResponse(
+                            parsed=None,
+                            refusal=f"Function call error: {e!s}",
+                            input_tokens=0,
+                            output_tokens=0,
+                            input_cost=0,
+                            output_cost=0,
+                            duration_seconds=0,
+                        )
+                        return
+
+                system_messages, anthropic_messages = _convert_messages(
+                    messages,
+                    cache_content=self.cache_content,
                 )
-                return
+                api_params = {
+                    'model': self.model,
+                    'messages': anthropic_messages,
+                    'stream': True,
+                    **self.model_parameters,
+                }
+                if system_messages:
+                    api_params['system'] = system_messages
+
+                if self.web_search:
+                    api_params['tools'] = [{
+                        'type': 'web_search_20250305',
+                        'name': 'web_search',
+                        'max_uses': self.max_web_searches,
+                    }]
+
+                input_tokens = 0
+                output_tokens = 0
+                cache_creation_input_tokens = 0
+                cache_read_input_tokens = 0
+
+                start_time = perf_counter()
+                chunks = []
+                response = await self.client.messages.create(**api_params)
+                async for chunk in response:
+                    if chunk.type == 'message_start':
+                        input_tokens += chunk.message.usage.input_tokens
+                        output_tokens += chunk.message.usage.output_tokens
+                        cache_creation_input_tokens += chunk.message.usage.cache_creation_input_tokens  # noqa: E501
+                        cache_read_input_tokens += chunk.message.usage.cache_read_input_tokens
+                    elif chunk.type == 'message_delta' and hasattr(chunk, 'usage'):
+                        output_tokens = chunk.usage.output_tokens
+                    parsed_chunk = _parse_completion_chunk(chunk)
+                    if parsed_chunk and parsed_chunk.content:
+                        yield parsed_chunk
+                        chunks.append(parsed_chunk)
+                end_time = perf_counter()
+
+                # Add timing to span
+                if span:
+                    span.set_attribute("llm.request.duration", end_time - start_time)
+                    span.set_attribute("llm.response.finish_reason", "completed")
+
+                # Process content for summary based on content types
+                processed_chunks = []
+                for chunk in chunks:
+                    # Ignore REDACTED_THINKING chunks for the summary
+                    # if chunk.content_type in (ContentType.TEXT, ContentType.THINKING):
+                    if isinstance(chunk, TextChunkEvent) or (isinstance(chunk, ThinkingChunkEvent) and not chunk.is_redacted):  # noqa: E501
+                        processed_chunks.append(chunk.content)
+
+                pricing_lookup = SUPPORTED_ANTHROPIC_MODELS[self.model].pricing
+                yield TextResponse(
+                    response=''.join(processed_chunks),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    input_cost=input_tokens * pricing_lookup['input'],
+                    output_cost=output_tokens * pricing_lookup['output'],
+                    cache_write_tokens=cache_creation_input_tokens,
+                    cache_read_tokens=cache_read_input_tokens,
+                    cache_write_cost=cache_creation_input_tokens * pricing_lookup['cache_write'],
+                    cache_read_cost=cache_read_input_tokens * pricing_lookup['cache_read'],
+                    duration_seconds=end_time - start_time,
+                )
+
             except Exception as e:
-                # Handle any other errors
-                yield ErrorEvent(
-                    content=f"Error: {e!s}",
-                    metadata={'error': e},
-                )
-                yield StructuredOutputResponse(
-                    parsed=None,
-                    refusal=f"Function call error: {e!s}",
-                    input_tokens=0,
-                    output_tokens=0,
-                    input_cost=0,
-                    output_cost=0,
-                    duration_seconds=0,
-                )
-                return
-
-        system_messages, anthropic_messages = _convert_messages(
-            messages,
-            cache_content=self.cache_content,
-        )
-        api_params = {
-            'model': self.model,
-            'messages': anthropic_messages,
-            'stream': True,
-            **self.model_parameters,
-        }
-        if system_messages:
-            api_params['system'] = system_messages
-
-        if self.web_search:
-            api_params['tools'] = [{
-                'type': 'web_search_20250305',
-                'name': 'web_search',
-                'max_uses': self.max_web_searches,
-            }]
-
-        input_tokens = 0
-        output_tokens = 0
-        cache_creation_input_tokens = 0
-        cache_read_input_tokens = 0
-
-        start_time = perf_counter()
-        chunks = []
-        response = await self.client.messages.create(**api_params)
-        async for chunk in response:
-            if chunk.type == 'message_start':
-                input_tokens += chunk.message.usage.input_tokens
-                output_tokens += chunk.message.usage.output_tokens
-                cache_creation_input_tokens += chunk.message.usage.cache_creation_input_tokens
-                cache_read_input_tokens += chunk.message.usage.cache_read_input_tokens
-            elif chunk.type == 'message_delta' and hasattr(chunk, 'usage'):
-                output_tokens = chunk.usage.output_tokens
-            parsed_chunk = _parse_completion_chunk(chunk)
-            if parsed_chunk and parsed_chunk.content:
-                yield parsed_chunk
-                chunks.append(parsed_chunk)
-        end_time = perf_counter()
-
-        # Process content for summary based on content types
-        processed_chunks = []
-        for chunk in chunks:
-            # Ignore REDACTED_THINKING chunks for the summary
-            # if chunk.content_type in (ContentType.TEXT, ContentType.THINKING):
-            if isinstance(chunk, TextChunkEvent) or (isinstance(chunk, ThinkingChunkEvent) and not chunk.is_redacted):  # noqa: E501
-                processed_chunks.append(chunk.content)
-
-        pricing_lookup = SUPPORTED_ANTHROPIC_MODELS[self.model].pricing
-        yield TextResponse(
-            response=''.join(processed_chunks),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            input_cost=input_tokens * pricing_lookup['input'],
-            output_cost=output_tokens * pricing_lookup['output'],
-            cache_write_tokens=cache_creation_input_tokens,
-            cache_read_tokens=cache_read_input_tokens,
-            cache_write_cost=cache_creation_input_tokens * pricing_lookup['cache_write'],
-            cache_read_cost=cache_read_input_tokens * pricing_lookup['cache_read'],
-            duration_seconds=end_time - start_time,
-        )
+                # Add error information to span
+                if span:
+                    span.set_attribute("llm.request.error", str(e))
+                    from opentelemetry import trace
+                    span.set_status(
+                        trace.Status(trace.StatusCode.ERROR, description=str(e)),
+                    )
+                raise
 
 
 def _tool_to_anthropic_schema(tool: Tool) -> dict[str, object]:  # noqa: PLR0912
@@ -619,6 +668,8 @@ class AnthropicTools(Client):
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
+        super().__init__(model_name, **model_kwargs)
+
         model_info = SUPPORTED_ANTHROPIC_MODELS.get(model_name)
         if not model_info:
             raise ValueError(f"Model '{model_name}' is not supported.")
@@ -646,53 +697,94 @@ class AnthropicTools(Client):
         self.model_parameters['tools'] = tools
         self.model_parameters['tool_choice'] = {'type': tool_choice}
 
-    async def stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[ToolPredictionResponse | None]:  # noqa: E501
+    async def stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[ToolPredictionResponse | None]:  # noqa: E501, PLR0912
         """Runs the tool prediction and returns the response."""
-        system_content, anthropic_messages = _convert_messages(messages)
-        api_params = {
-            'model': self.model,
-            'messages': anthropic_messages,
-            # i'm not sure it makes sense to stream chunks for tools, perhaps this will change
-            # in the future; but seems overly complicated for a tool call.
-            'stream': False,
-            **self.model_parameters,
-        }
-        if system_content:
-            api_params['system'] = system_content
-        start_time = perf_counter()
-        response = await self.client.messages.create(**api_params)
-        end_time = perf_counter()
+        with safe_span(
+            self.tracer,
+            "llm.anthropic.tools",
+            attributes={
+                "llm.model": self.model,
+                "llm.provider": "anthropic",
+                "llm.operation": "tool_calling",
+            },
+        ) as span:
+            # Add Anthropic-specific attributes
+            if span:
+                span.set_attribute("llm.api.vendor", "anthropic")
+                if 'temperature' in self.model_parameters:
+                    span.set_attribute("llm.request.temperature", self.model_parameters['temperature'])  # noqa: E501
+                if 'tools' in self.model_parameters:
+                    span.set_attribute("llm.tools.count", len(self.model_parameters['tools']))
 
-        tool_prediction = None
-        message = None
-        if len(response.content) > 1:
-            raise ValueError(f"Unexpected multiple content items in response: {response.content}")
-        if response.content[0].type == 'tool_use':
-            tool_prediction = ToolPrediction(
-                name=response.content[0].name,
-                arguments=response.content[0].input,
-                call_id=response.content[0].id,
-            )
-        elif response.content[0].type == 'text':
-            message = response.content[0].text
-        else:
-            raise ValueError(f"Unexpected content type: {response.content[0].type}")
+            try:
+                system_content, anthropic_messages = _convert_messages(messages)
+                api_params = {
+                    'model': self.model,
+                    'messages': anthropic_messages,
+                    # i'm not sure it makes sense to stream chunks for tools, perhaps this will
+                    # change in the future; but seems overly complicated for a tool call.
+                    'stream': False,
+                    **self.model_parameters,
+                }
+                if system_content:
+                    api_params['system'] = system_content
+                start_time = perf_counter()
+                response = await self.client.messages.create(**api_params)
+                end_time = perf_counter()
 
-        pricing_lookup = SUPPORTED_ANTHROPIC_MODELS[self.model].pricing
-        input_tokens = response.usage.input_tokens
-        output_tokens = response.usage.output_tokens
-        cache_creation_input_tokens = response.usage.cache_creation_input_tokens
-        cache_read_input_tokens = response.usage.cache_read_input_tokens
-        yield ToolPredictionResponse(
-            tool_prediction=tool_prediction,
-            message=message,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            input_cost=input_tokens * pricing_lookup['input'],
-            output_cost=output_tokens * pricing_lookup['output'],
-            cache_write_tokens=cache_creation_input_tokens,
-            cache_read_tokens=cache_read_input_tokens,
-            cache_write_cost=cache_creation_input_tokens * pricing_lookup['cache_write'],
-            cache_read_cost=cache_read_input_tokens * pricing_lookup['cache_read'],
-            duration_seconds=end_time - start_time,
-        )
+                # Add timing to span
+                if span:
+                    span.set_attribute("llm.request.duration", end_time - start_time)
+                    span.set_attribute("llm.response.finish_reason", "completed")
+
+                tool_prediction = None
+                message = None
+                if len(response.content) > 1:
+                    raise ValueError(f"Unexpected multiple content items in response: {response.content}")  # noqa: E501
+                if response.content[0].type == 'tool_use':
+                    tool_prediction = ToolPrediction(
+                        name=response.content[0].name,
+                        arguments=response.content[0].input,
+                        call_id=response.content[0].id,
+                    )
+
+                    # Add tool call info to span
+                    if span:
+                        span.set_attribute("llm.tool.name", response.content[0].name)
+                        span.set_attribute("llm.tool.arguments_count", len(response.content[0].input))  # noqa: E501
+                elif response.content[0].type == 'text':
+                    message = response.content[0].text
+
+                    if span:
+                        span.set_attribute("llm.response.type", "message")
+                else:
+                    raise ValueError(f"Unexpected content type: {response.content[0].type}")
+
+                pricing_lookup = SUPPORTED_ANTHROPIC_MODELS[self.model].pricing
+                input_tokens = response.usage.input_tokens
+                output_tokens = response.usage.output_tokens
+                cache_creation_input_tokens = response.usage.cache_creation_input_tokens
+                cache_read_input_tokens = response.usage.cache_read_input_tokens
+                yield ToolPredictionResponse(
+                    tool_prediction=tool_prediction,
+                    message=message,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    input_cost=input_tokens * pricing_lookup['input'],
+                    output_cost=output_tokens * pricing_lookup['output'],
+                    cache_write_tokens=cache_creation_input_tokens,
+                    cache_read_tokens=cache_read_input_tokens,
+                    cache_write_cost=cache_creation_input_tokens * pricing_lookup['cache_write'],
+                    cache_read_cost=cache_read_input_tokens * pricing_lookup['cache_read'],
+                    duration_seconds=end_time - start_time,
+                )
+
+            except Exception as e:
+                # Add error information to span
+                if span:
+                    span.set_attribute("llm.request.error", str(e))
+                    from opentelemetry import trace
+                    span.set_status(
+                        trace.Status(trace.StatusCode.ERROR, description=str(e)),
+                    )
+                raise

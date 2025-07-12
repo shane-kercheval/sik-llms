@@ -23,5 +23,6 @@ ignore = [
     "D103",  # undocumented-public-function
     "D404",  # first word of docstring should not be "This"
     "N802",  # invalid-function-name
-    "PLR0915"  # too many statements
+    "PLR0915",  # too many statements
+    "SIM117"  # nested with statements
 ]

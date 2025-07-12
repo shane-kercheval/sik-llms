@@ -13,6 +13,13 @@ from copy import deepcopy
 from enum import Enum, auto
 from typing import Any, Literal, TypeVar, Union, get_args, get_origin
 from sik_llms.utilities import Registry, _string_to_type
+from sik_llms.telemetry import (
+    get_tracer,
+    get_meter,
+    safe_span,
+    create_span_link,
+    extract_current_trace_context,
+)
 
 
 class ModelProvider(Enum):
@@ -220,6 +227,27 @@ class ToolResultEvent(AgentEvent):
     result: object
 
 
+class TraceContext(BaseModel):
+    """OpenTelemetry trace context information for span linking."""
+
+    trace_id: str | None = None
+    span_id: str | None = None
+
+    def create_link(self, attributes: dict[str, Any] | None = None) -> object | None:
+        """
+        Create a span link from this trace context.
+
+        Args:
+            attributes: Optional attributes for the link
+
+        Returns:
+            Link object or None if trace context is incomplete or telemetry is disabled
+        """
+        if not self.trace_id or not self.span_id:
+            return None
+        return create_span_link(self.trace_id, self.span_id, attributes)
+
+
 class TokenSummary(BaseModel):
     """Summary of a chat response."""
 
@@ -257,18 +285,88 @@ class TokenSummary(BaseModel):
             + (self.cache_read_cost or 0)
         )
 
+    def emit_metrics(self, meter=None, labels: dict[str, str] | None = None) -> None:  # noqa: ANN001
+        """
+        Emit OpenTelemetry metrics for this token summary.
+
+        Args:
+            meter: OpenTelemetry meter instance
+            labels: Additional labels/attributes for metrics
+        """
+        if not meter:
+            return
+
+        labels = labels or {}
+
+        try:
+            # Token counters
+            input_counter = meter.create_counter(
+                name="llm_tokens_input_total",
+                description="Total number of input tokens consumed",
+                unit="token",
+            )
+            output_counter = meter.create_counter(
+                name="llm_tokens_output_total",
+                description="Total number of output tokens generated",
+                unit="token",
+            )
+
+            # Duration histogram
+            duration_histogram = meter.create_histogram(
+                name="llm_request_duration_seconds",
+                description="Duration of LLM requests",
+                unit="s",
+            )
+
+            # Cost counter (if available)
+            if self.total_cost is not None:
+                cost_counter = meter.create_counter(
+                    name="llm_cost_total_usd",
+                    description="Total cost of LLM operations in USD",
+                    unit="USD",
+                )
+                cost_counter.add(self.total_cost, labels)
+
+            # Emit metrics
+            input_counter.add(self.input_tokens, labels)
+            output_counter.add(self.output_tokens, labels)
+            duration_histogram.record(self.duration_seconds, labels)
+
+            # Cache metrics if available
+            if self.cache_read_tokens:
+                cache_read_counter = meter.create_counter(
+                    name="llm_cache_read_tokens_total",
+                    description="Number of tokens read from cache",
+                    unit="token",
+                )
+                cache_read_counter.add(self.cache_read_tokens, labels)
+
+            if self.cache_write_tokens:
+                cache_write_counter = meter.create_counter(
+                    name="llm_cache_write_tokens_total",
+                    description="Number of tokens written to cache",
+                    unit="token",
+                )
+                cache_write_counter.add(self.cache_write_tokens, labels)
+
+        except Exception:
+            # Silently handle metric emission errors
+            pass
+
 
 class StructuredOutputResponse(TokenSummary):
     """Response containing structured output data."""
 
     parsed: BaseModel | None
     refusal: str | object | None
+    trace_context: TraceContext | None = None
 
 
 class TextResponse(TokenSummary):
     """Summary of a chat response."""
 
     response: str
+    trace_context: TraceContext | None = None
 
 
 class Parameter(BaseModel):
@@ -466,6 +564,7 @@ class ToolPredictionResponse(TokenSummary):
 
     tool_prediction: ToolPrediction | None
     message: str | None = None
+    trace_context: TraceContext | None = None
 
 
 ClientType = TypeVar('ClientType', bound='Client')
@@ -474,6 +573,14 @@ class Client(ABC):
     """Base class for model wrappers."""
 
     registry = Registry()
+
+    def __init__(self, model_name: str, **kwargs):  # noqa: ANN003, ARG002
+        """Initialize client with optional telemetry setup."""
+        self.model_name = model_name
+
+        # Initialize telemetry components
+        self.tracer = get_tracer()
+        self.meter = get_meter()
 
     @abstractmethod
     async def stream(
@@ -514,16 +621,39 @@ class Client(ABC):
                 Each message should be a dict with 'role' and 'content' keys.
         """
         async def run() -> TextResponse:
-            # Check if the stream method returns a generator or a direct value
-            result = self.stream(messages)
-            # If it's an async generator, collect the last response
-            if hasattr(result, '__aiter__'):
-                last_response = None
-                async for response in result:
-                    last_response = response
-                return last_response
-            # If it's a regular coroutine, just await and return the result
-            return await result
+            with safe_span(
+                self.tracer,
+                "llm.request",
+                attributes={
+                    "llm.model": self.model_name,
+                    "llm.provider": self._get_provider_name(),
+                    "llm.messages.count": len(messages),
+                    "llm.operation": "chat",
+                },
+            ) as span:
+                # Add message content length for observability
+                if span and messages:
+                    total_content_length = sum(
+                        len(str(msg.get("content", ""))) for msg in messages
+                    )
+                    span.set_attribute("llm.input.content_length", total_content_length)
+
+                # Check if the stream method returns a generator or a direct value
+                result = self.stream(messages)
+                # If it's an async generator, collect the last response
+                if hasattr(result, '__aiter__'):
+                    last_response = None
+                    async for response in result:
+                        last_response = response
+                    # Add trace context to the final response
+                    if last_response:
+                        self._add_trace_context(last_response)
+                    return last_response
+                # If it's a regular coroutine, just await and return the result
+                final_response = await result
+                if final_response:
+                    self._add_trace_context(final_response)
+                return final_response
 
         # Try to use the current event loop if one is running
         try:
@@ -551,10 +681,71 @@ class Client(ABC):
             messages:
                 List of messages to send to the model (i.e. model input).
         """
-        last_response = None
-        async for response in self.stream(messages):
-            last_response = response
-        return last_response
+        with safe_span(
+            self.tracer,
+            "llm.request",
+            attributes={
+                "llm.model": self.model_name,
+                "llm.provider": self._get_provider_name(),
+                "llm.messages.count": len(messages),
+                "llm.operation": "chat",
+            },
+        ) as span:
+            # Add message content length for observability
+            if span and messages:
+                total_content_length = sum(
+                    len(str(msg.get("content", ""))) for msg in messages
+                )
+                span.set_attribute("llm.input.content_length", total_content_length)
+
+            # Execute existing logic
+            last_response = None
+            async for response in self.stream(messages):
+                last_response = response
+
+            # Add trace context to the final response
+            if last_response:
+                self._add_trace_context(last_response)
+
+            # Emit metrics if available
+            if self.meter and isinstance(last_response, TokenSummary):
+                labels = {
+                    "llm_model": self.model_name,
+                    "llm_provider": self._get_provider_name(),
+                    "llm_operation": "chat",
+                }
+                last_response.emit_metrics(self.meter, labels)
+
+            # Add response metadata to span
+            if span and isinstance(last_response, TokenSummary):
+                span.set_attribute("llm.tokens.input", last_response.input_tokens)
+                span.set_attribute("llm.tokens.output", last_response.output_tokens)
+                span.set_attribute("llm.tokens.total", last_response.total_tokens)
+                span.set_attribute("llm.duration_seconds", last_response.duration_seconds)
+
+                if last_response.total_cost is not None:
+                    span.set_attribute("llm.cost.total", last_response.total_cost)
+
+            return last_response
+
+    def _get_provider_name(self) -> str:
+        """Get provider name for telemetry labels."""
+        class_name = self.__class__.__name__.lower()
+        if "openai" in class_name:
+            return "openai"
+        if "anthropic" in class_name:
+            return "anthropic"
+        return "unknown"
+
+    def _add_trace_context(
+            self,
+            response: TextResponse | ToolPredictionResponse | StructuredOutputResponse,
+        ) -> None:
+        """Add trace context to response if available."""
+        if hasattr(response, 'trace_context'):
+            trace_id, span_id = extract_current_trace_context()
+            if trace_id and span_id:
+                response.trace_context = TraceContext(trace_id=trace_id, span_id=span_id)
 
     async def sample(
         self,
@@ -570,8 +761,18 @@ class Client(ABC):
             n:
                 Number of responses to generate.
         """
-        tasks = [self.run_async(messages) for _ in range(n)]
-        return await asyncio.gather(*tasks)
+        with safe_span(
+            self.tracer,
+            "llm.sample",
+            attributes={
+                "llm.model": self.model_name,
+                "llm.provider": self._get_provider_name(),
+                "llm.sample.size": n,
+                "llm.operation": "sample",
+            },
+        ):
+            tasks = [self.run_async(messages) for _ in range(n)]
+            return await asyncio.gather(*tasks)
 
     async def generate_multiple(
         self,
@@ -596,24 +797,36 @@ class Client(ABC):
             sample_n:
                 Number of responses to generate for each set of messages.
         """
-        if not (isinstance(messages, list) and all(isinstance(m, list) for m in messages)):
-            raise TypeError("Messages must be a list of lists")
+        with safe_span(
+            self.tracer,
+            "llm.batch_generate",
+            attributes={
+                "llm.model": self.model_name,
+                "llm.provider": self._get_provider_name(),
+                "llm.batch.size": len(messages),
+                "llm.batch.sample_n": sample_n,
+                "llm.operation": "batch",
+            },
+        ):
+            # Execute existing logic
+            if not (isinstance(messages, list) and all(isinstance(m, list) for m in messages)):
+                raise TypeError("Messages must be a list of lists")
 
-        all_tasks = []
-        for message_set in messages:
-            for _ in range(sample_n):
-                all_tasks.append(self.run_async(message_set))
+            all_tasks = []
+            for message_set in messages:
+                for _ in range(sample_n):
+                    all_tasks.append(self.run_async(message_set))
 
-        all_results = await asyncio.gather(*all_tasks)
+            all_results = await asyncio.gather(*all_tasks)
 
-        if sample_n == 1:
-            # If sample_n is 1, return results directly as a flat list
-            return all_results
-        # If sample_n > 1, restructure into a list of lists
-        result_lists = []
-        for i in range(0, len(all_results), sample_n):
-            result_lists.append(all_results[i:i+sample_n])
-        return result_lists
+            if sample_n == 1:
+                # If sample_n is 1, return results directly as a flat list
+                return all_results
+            # If sample_n > 1, restructure into a list of lists
+            result_lists = []
+            for i in range(0, len(all_results), sample_n):
+                result_lists.append(all_results[i:i+sample_n])
+            return result_lists
 
 
     @classmethod

@@ -38,6 +38,12 @@ from sik_llms.anthropic import (
     SUPPORTED_ANTHROPIC_MODELS,
 )
 from sik_llms.reasoning_agent import ReasoningAgent
+from sik_llms.telemetry import (
+    is_telemetry_enabled,
+    get_tracer,
+    get_meter,
+    create_span_link,
+)
 
 SUPPORTED_MODELS: dict[str, ModelInfo] = {
     **SUPPORTED_OPENAI_MODELS,
@@ -116,4 +122,8 @@ __all__ = [  # noqa: RUF022
     'OpenAITools',
     'Anthropic',
     'AnthropicTools',
+    'is_telemetry_enabled',
+    'get_tracer',
+    'get_meter',
+    'create_span_link',
 ]
