@@ -189,7 +189,7 @@ class Test_get_json_schema_type:  # noqa: D101, N801
     def test_optional_types(self):
         """Test conversion of Optional types to JSON Schema types."""
         # Optional string (Union[str, None])
-        type_name, props = get_json_schema_type(Optional[str])  # noqa: UP007
+        type_name, props = get_json_schema_type(Optional[str])  # noqa: UP045
         assert type_name == 'string'
 
         # Optional int
@@ -289,7 +289,7 @@ class Test_get_json_schema_type:  # noqa: D101, N801
 
     def test_forward_references(self):
         """Test handling of forward references in type annotations."""
-        from typing import ForwardRef
+        from typing import ForwardRef  # noqa: PLC0415
 
         # Simple forward reference
         StringRef = ForwardRef('str')  # noqa: N806

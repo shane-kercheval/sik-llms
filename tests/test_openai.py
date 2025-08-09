@@ -23,6 +23,7 @@ from sik_llms import (
 from sik_llms.models_base import ImageContent, ImageSourceType, assistant_message
 from sik_llms.openai import _convert_messages
 from tests.conftest import (
+    OPENAI_TEST_FUNCTION_CALLING,
     OPENAI_TEST_MODEL,
     OPENAI_TEST_MODEL_SUPPORTS_TEMP,
     OPENAI_TEST_REASONING_MODEL,
@@ -751,7 +752,7 @@ class TestOpenAICaching:
         )
         assert response.total_cost == expected_total_cost
 
-    @pytest.mark.parametrize('model', [OPENAI_TEST_MODEL, OPENAI_TEST_MODEL_SUPPORTS_TEMP])
+    @pytest.mark.parametrize('model', [OPENAI_TEST_FUNCTION_CALLING])
     def test__OpenAI__caching__with_tools(
             self,
             model: str,

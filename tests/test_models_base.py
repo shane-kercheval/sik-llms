@@ -375,7 +375,7 @@ class TestParameterClass:
 
     def test_parameter_with_any_type_rejected(self):
         """Test that Any type is rejected."""
-        from typing import Any
+        from typing import Any  # noqa: PLC0415
         with pytest.raises(ValueError, match="Any is not supported"):
             Parameter(
                 name="test_param",
