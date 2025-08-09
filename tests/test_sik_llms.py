@@ -7,6 +7,8 @@ from sik_llms import (
     user_message,
     TextChunkEvent,
     TextResponse,
+    SUPPORTED_OPENAI_MODELS,
+    SUPPORTED_ANTHROPIC_MODELS,
 )
 from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
 
@@ -19,7 +21,7 @@ async def test__create_client__openai() -> None:
     assert client.client.api_key
     assert client.client.api_key != 'None'
     assert client.client.base_url
-    assert client.model == OPENAI_TEST_MODEL
+    assert client.model == SUPPORTED_OPENAI_MODELS[OPENAI_TEST_MODEL].model
 
     responses = []
     async for response in client.stream(messages=[user_message("What is the capital of France?")]):
@@ -79,6 +81,7 @@ async def test__generate_multiple__requires_list_of_list() -> None:
             # This should be a list of lists, but we are passing a single list
             messages=[user_message("What is the capital of France? Return only the city name.")],
         )
+
 
 @pytest.mark.asyncio
 async def test__generate_multiple() -> None:
@@ -156,7 +159,7 @@ async def test__create_client__anthropic() -> None:
     assert client.client.api_key
     assert client.client.api_key != 'None'
     assert client.client.base_url
-    assert client.model == ANTHROPIC_TEST_MODEL
+    assert client.model == SUPPORTED_ANTHROPIC_MODELS[ANTHROPIC_TEST_MODEL].model
 
     responses = []
     async for response in client.stream(messages=[user_message("What is the capital of France?")]):

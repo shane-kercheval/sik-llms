@@ -13,7 +13,7 @@ from sik_llms import (
     TextResponse,
     ReasoningAgent,
 )
-from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
+from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_FUNCTION_CALLING
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -74,7 +74,7 @@ def weather_tool():
 
 def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str):
     agent = ReasoningAgent(
-        model_name=OPENAI_TEST_MODEL,
+        model_name=OPENAI_TEST_FUNCTION_CALLING,
         tools=[calculator_tool],
     )
     prompt = agent._create_reasoning_prompt()
@@ -111,7 +111,7 @@ def test__create_reasoning_prompt__multiple_tools(
         func=lambda location, units: f"Weather for {location}: 70{units}, Sunny with some clouds",
     )
     agent = ReasoningAgent(
-        model_name=OPENAI_TEST_MODEL,
+        model_name=OPENAI_TEST_FUNCTION_CALLING,
         tools=[calculator_tool, weather_multi_param_tool],
     )
     prompt = agent._create_reasoning_prompt()
@@ -129,7 +129,7 @@ def test__create_reasoning_prompt__multiple_tools(
 
 @pytest.mark.parametrize('model_name', [
     pytest.param(
-        OPENAI_TEST_MODEL,
+        OPENAI_TEST_FUNCTION_CALLING,
         id="OpenAI",
     ),
     pytest.param(
@@ -156,7 +156,7 @@ def test__create_reasoning_prompt__no_tools(test_files_path: str, model_name: st
 @pytest.mark.asyncio
 async def test__execute_tool__async(calculator_tool: Tool):
     agent = ReasoningAgent(
-        model_name=OPENAI_TEST_MODEL,
+        model_name=OPENAI_TEST_FUNCTION_CALLING,
         tools=[calculator_tool],
     )
     # check that the tool is executed successfully
@@ -185,7 +185,7 @@ async def test__execute_tool__sync():
         func=weather_sync,
     )
     agent = ReasoningAgent(
-        model_name=OPENAI_TEST_MODEL,
+        model_name=OPENAI_TEST_FUNCTION_CALLING,
         tools=[tool],
     )
     # check that the tool is executed successfully
@@ -198,7 +198,7 @@ async def test__execute_tool__sync():
 # @pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
-        OPENAI_TEST_MODEL,
+        OPENAI_TEST_FUNCTION_CALLING,
         id="OpenAI",
     ),
     pytest.param(
@@ -256,7 +256,7 @@ async def test_reasoning_agent__no_final_answer(calculator_tool: Tool):
     """Test the ReasoningAgent with a calculator tool using GPT-4o-mini."""
     # Create the reasoning agent
     agent = ReasoningAgent(
-        model_name=OPENAI_TEST_MODEL,
+        model_name=OPENAI_TEST_FUNCTION_CALLING,
         tools=[calculator_tool],
         max_iterations=2,
         generate_final_response=False,
@@ -299,7 +299,7 @@ async def test_reasoning_agent__no_final_answer(calculator_tool: Tool):
 @pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
-        OPENAI_TEST_MODEL,
+        OPENAI_TEST_FUNCTION_CALLING,
         id="OpenAI",
     ),
     pytest.param(
@@ -400,7 +400,7 @@ async def test_reasoning_agent_no_tools_needed(tools: list | None):
     """Test the ReasoningAgent with a question that doesn't need tools."""
     # Create the reasoning agent
     agent = ReasoningAgent(
-        model_name=OPENAI_TEST_MODEL,
+        model_name=OPENAI_TEST_FUNCTION_CALLING,
         tools=tools,  # No tools
         max_iterations=2,
         temperature=0,
@@ -427,7 +427,7 @@ async def test_reasoning_agent_no_tools_needed(tools: list | None):
 @pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
-        OPENAI_TEST_MODEL,
+        OPENAI_TEST_FUNCTION_CALLING,
         id="OpenAI",
     ),
     pytest.param(

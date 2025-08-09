@@ -19,7 +19,7 @@ from sik_llms import (
 from sik_llms.anthropic import _tool_to_anthropic_schema
 from sik_llms.models_base import pydantic_model_to_parameters
 from sik_llms.openai import _tool_to_openai_schema
-from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL, ClientConfig
+from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_FUNCTION_CALLING, ClientConfig
 
 load_dotenv()
 
@@ -220,7 +220,7 @@ class TestPydanticModelToParameters:
         """Test conversion of a model with Optional fields."""
         class ModelWithOptional(BaseModel):
             name: str
-            age: Optional[int]  # Using Optional syntax  # noqa: UP007
+            age: Optional[int]  # Using Optional syntax  # noqa: UP045
             email: str | None   # Using pipe syntax
 
         ModelWithOptional(name='shane', email=None, age=None)
@@ -628,7 +628,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),
@@ -686,7 +686,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),
@@ -731,7 +731,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),
@@ -785,7 +785,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),
@@ -856,7 +856,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),
@@ -916,7 +916,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),
@@ -960,7 +960,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),
@@ -1028,7 +1028,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),
@@ -1116,7 +1116,7 @@ class TestTools:
         pytest.param(
             ClientConfig(
                 client_type=RegisteredClients.OPENAI_TOOLS,
-                model_name=OPENAI_TEST_MODEL,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
             ),
             id="OpenAI",
         ),

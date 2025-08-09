@@ -109,11 +109,31 @@ ANTHROPIC_MODEL_LOOKUPS = [
             'max_output_extended_thinking': 64_000,
         },
     ),
+
+    ModelInfo(
+        model='claude-opus-4-1-20250805',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=32_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 15.00 / 1_000_000, 'output': 75.00 / 1_000_000,
+            'cache_write': 18.75 / 1_000_000, 'cache_read': 1.50 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        supports_reasoning=True,
+        knowledge_cutoff_date=date(year=2025, month=3, day=31),
+        metadata={
+            'max_output_extended_thinking': 64_000,
+        },
+    ),
 ]
 SUPPORTED_ANTHROPIC_MODELS = {model.model: model for model in ANTHROPIC_MODEL_LOOKUPS}
 SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-20241022']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-20241022']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-20250219']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-20250514']  # noqa: E501
+
 
 
 # Default thinking budget tokens for each reasoning effort level
@@ -334,7 +354,7 @@ class Anthropic(Client):
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set")
         self.client = AsyncAnthropic(api_key=api_key)
-        self.model = model_name
+        self.model = model_info.model
 
         self.web_search = web_search
         self.max_web_searches = max_web_searches
@@ -627,7 +647,7 @@ class AnthropicTools(Client):
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set")
         self.client = AsyncAnthropic(api_key=api_key)
-        self.model = model_name
+        self.model = model_info.model
 
         self.model_parameters = {k: v for k, v in model_kwargs.items() if v is not None}
         if not self.model_parameters.get('max_tokens'):

@@ -11,8 +11,10 @@ from sik_llms import (
     user_message,
     ImageContent,
     ImageSourceType,
+    SUPPORTED_OPENAI_MODELS,
 )
 from sik_llms.models_base import Parameter
+from tests.conftest import OPENAI_TEST_MODEL
 
 
 class TestMesssages:
@@ -190,10 +192,10 @@ class TestClientRegistration:
         # Test instantiation with enum registration
         client = Client.instantiate(
             RegisteredClients.OPENAI,
-            model_name='gpt-4o',
+            model_name=OPENAI_TEST_MODEL,
             max_tokens=100,
         )
-        assert client.model == 'gpt-4o'
+        assert client.model == SUPPORTED_OPENAI_MODELS[OPENAI_TEST_MODEL].model
         # openai deprecated max_tokens in favor of max_completion_tokens
         assert client.model_parameters['max_completion_tokens'] == 100
 
@@ -373,7 +375,7 @@ class TestParameterClass:
 
     def test_parameter_with_any_type_rejected(self):
         """Test that Any type is rejected."""
-        from typing import Any
+        from typing import Any  # noqa: PLC0415
         with pytest.raises(ValueError, match="Any is not supported"):
             Parameter(
                 name="test_param",

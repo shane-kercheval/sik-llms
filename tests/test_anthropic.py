@@ -19,6 +19,7 @@ from sik_llms import (
     TextResponse,
     ReasoningEffort,
     ThinkingChunkEvent,
+    SUPPORTED_ANTHROPIC_MODELS,
 )
 from sik_llms.anthropic import _convert_messages
 from sik_llms.models_base import ImageContent, ImageSourceType
@@ -40,10 +41,12 @@ class TestAnthropic:
             'claude-3-7-sonnet-20250219',
             'claude-sonnet-4-20250514',
             'claude-opus-4-20250514',
+            'claude-opus-4-1-20250805',
             # primary models
             'claude-3-5-haiku-latest',
             'claude-3-5-sonnet-latest',
             'claude-3-7-sonnet-latest',
+            'claude-sonnet-4-latest',
         ],
     )
     async def test__all_models(self, model_name: str):
@@ -77,7 +80,7 @@ class TestAnthropicSync:  # noqa: D101
             api_key='fake_key',
         )
         assert isinstance(model, Anthropic)
-        assert model.model == ANTHROPIC_TEST_MODEL
+        assert model.model == SUPPORTED_ANTHROPIC_MODELS[ANTHROPIC_TEST_MODEL].model
         assert model.client is not None
         assert model.client.api_key == 'fake_key'
 
@@ -90,7 +93,7 @@ class TestAnthropicSync:  # noqa: D101
             max_tokens=100,
         )
         assert isinstance(model, Anthropic)
-        assert model.model == ANTHROPIC_TEST_MODEL
+        assert model.model == SUPPORTED_ANTHROPIC_MODELS[ANTHROPIC_TEST_MODEL].model
         assert model.model_parameters['temperature'] == 0.5
         assert model.model_parameters['max_tokens'] == 100
 
@@ -101,7 +104,7 @@ class TestAnthropicSync:  # noqa: D101
             api_key='fake_key',
         )
         assert isinstance(model, Anthropic)
-        assert model.model == ANTHROPIC_TEST_MODEL
+        assert model.model == SUPPORTED_ANTHROPIC_MODELS[ANTHROPIC_TEST_MODEL].model
         assert model.model_parameters['max_tokens'] > 0
 
 
