@@ -53,6 +53,7 @@ class ModelInfo(BaseModel):
     supports_tools: bool = False
     supports_structured_output: bool = False
     supports_images: bool = False
+    supports_temperature: bool = True
     knowledge_cutoff_date: date | None = None
     metadata: dict[str, Any] | None = None
 

@@ -18,10 +18,15 @@ from sik_llms import (
     TextChunkEvent,
     TextResponse,
     OpenAITools,
+    SUPPORTED_OPENAI_MODELS,
 )
 from sik_llms.models_base import ImageContent, ImageSourceType, assistant_message
 from sik_llms.openai import _convert_messages
-from tests.conftest import OPENAI_TEST_MODEL, OPENAI_TEST_REASONING_MODEL
+from tests.conftest import (
+    OPENAI_TEST_MODEL,
+    OPENAI_TEST_MODEL_SUPPORTS_TEMP,
+    OPENAI_TEST_REASONING_MODEL,
+)
 
 load_dotenv()
 
@@ -45,7 +50,7 @@ class TestOpenAIRegistration:
             model_name=OPENAI_TEST_MODEL,
         )
         assert isinstance(client, OpenAI)
-        assert client.model == OPENAI_TEST_MODEL
+        assert client.model == SUPPORTED_OPENAI_MODELS[OPENAI_TEST_MODEL].model
         assert client.client is not None
         assert client.client.api_key
         assert client.client.api_key != 'None'
@@ -99,7 +104,7 @@ class TestOpenAIRegistration:
             ],
         )
         assert isinstance(client, OpenAITools)
-        assert client.model == OPENAI_TEST_MODEL
+        assert client.model == SUPPORTED_OPENAI_MODELS[OPENAI_TEST_MODEL].model
         assert client.client is not None
         assert client.client.api_key
         assert client.client.api_key != 'None'
@@ -434,16 +439,24 @@ class TestConvertMessages:
 class TestReasoningModelsDoNotSetCertainParameters:
     """When using reasoning models, certain parameters should not be set."""
 
-    def test__check_parameters_for_none_reasoning(self):
+    @pytest.mark.parametrize(('model', 'supports_temp'), [
+        (OPENAI_TEST_MODEL, False),
+        (OPENAI_TEST_MODEL_SUPPORTS_TEMP, True),
+    ])
+    def test__check_parameters_for_none_reasoning(self, model: str, supports_temp: bool):
         client = OpenAI(
-            model_name=OPENAI_TEST_MODEL,
+            model_name=model,
             reasoning_effort=None,
             temperature=0.5,
             top_p=0.9,
         )
         assert client.reasoning_effort is None
-        assert 'temperature' in client.model_parameters
-        assert 'top_p' in client.model_parameters
+        if supports_temp:
+            assert 'temperature' in client.model_parameters
+            assert 'top_p' in client.model_parameters
+        else:
+            assert 'temperature' not in client.model_parameters
+            assert 'top_p' not in client.model_parameters
 
     def test__does_not_set_params__reasoning_model(self):
         client = OpenAI(
@@ -462,7 +475,7 @@ class TestReasoningModelsDoNotSetCertainParameters:
     @pytest.mark.parametrize('reasoning_effort', [None, ReasoningEffort.LOW])
     def test__does_not_set_params__reasoning_effort(self, reasoning_effort: ReasoningEffort | None):  # noqa: E501
         client = OpenAI(
-            model_name=OPENAI_TEST_REASONING_MODEL if reasoning_effort else OPENAI_TEST_MODEL,
+            model_name=OPENAI_TEST_REASONING_MODEL if reasoning_effort else OPENAI_TEST_MODEL_SUPPORTS_TEMP,  # noqa: E501
             reasoning_effort=reasoning_effort,
             temperature=0.5,
             top_p=0.9,
@@ -478,9 +491,9 @@ class TestReasoningModelsDoNotSetCertainParameters:
 class TestOpenAI:
     """Test the OpenAI Completion Wrapper."""
 
-    @pytest.mark.parametrize(
-        'model_name',
-        [
+    async def test__all_models(self):
+        # Define all models to test
+        models = [
             # versioned models
             'gpt-4.1-2025-04-14',
             'gpt-4.1-mini-2025-04-14',
@@ -494,29 +507,46 @@ class TestOpenAI:
             'gpt-4.1',
             'gpt-4.1-mini',
             'gpt-4.1-nano',
+            'gpt-5',
+            'gpt-5-mini',
+            'gpt-5-nano',
             'gpt-4o',
             'gpt-4o-mini',
             'o3-mini',
             'o1',
-        ],
-    )
-    async def test__all_models(self, model_name: str):
-        # Create an instance of the wrapper
-        client = OpenAI(model_name=model_name)
+        ]
+
         messages = [
             system_message("You are a helpful assistant."),
             user_message("Respond with exactly \"42\"."),
         ]
-        response = await client.run_async(messages=messages)
-        assert isinstance(response, TextResponse)
-        assert '42' in response.response
-        assert response.input_tokens > 0
-        assert response.output_tokens > 0
-        assert response.total_tokens > 0
-        assert response.input_cost > 0
-        assert response.output_cost > 0
-        assert response.total_cost > 0
-        assert response.duration_seconds > 0
+
+        async def test_single_model(model_name: str) -> tuple[str, TextResponse]:
+            client = OpenAI(model_name=model_name)
+            response = await client.run_async(messages=messages)
+            return model_name, response
+
+        # Run all models concurrently
+        tasks = [test_single_model(model) for model in models]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Validate all responses
+        for i, result in enumerate(results):
+            model_name = models[i]
+            if isinstance(result, Exception):
+                pytest.fail(f"Model {model_name} failed with exception: {result}")
+            else:
+                model_name_result, response = result
+                assert model_name_result == model_name
+                assert isinstance(response, TextResponse)
+                assert '42' in response.response
+                assert response.input_tokens > 0, f"Model {model_name} failed input token count"
+                assert response.output_tokens > 0, f"Model {model_name} failed output token count"
+                assert response.total_tokens > 0, f"Model {model_name} failed total token count"
+                assert response.input_cost > 0, f"Model {model_name} failed input cost"
+                assert response.output_cost > 0, f"Model {model_name} failed output cost"
+                assert response.total_cost > 0, f"Model {model_name} failed total cost"
+                assert response.duration_seconds > 0, f"Model {model_name} failed duration seconds"
 
     @pytest.mark.stochastic(samples=10, threshold=0.8)
     async def test__async_openai(self):
@@ -547,7 +577,7 @@ class TestOpenAI:
     async def test__openai_logprobs(self):
         # Create an instance of the wrapper
         client = OpenAI(
-            model_name=OPENAI_TEST_MODEL,
+            model_name=OPENAI_TEST_MODEL_SUPPORTS_TEMP,
             logprobs=True,
         )
         messages = [
@@ -658,7 +688,7 @@ class TestOpenAICaching:
         cache_content = f"{first_word} is the first word. {Faker().text(max_nb_chars=length)}"
 
         client = create_client(
-            model_name=OPENAI_TEST_MODEL,
+            model_name='gpt-4o-mini',
             temperature=0.1,
             cache_content=[cache_content] if use_init else None,
         )
@@ -721,14 +751,20 @@ class TestOpenAICaching:
         )
         assert response.total_cost == expected_total_cost
 
-    def test__OpenAI__caching__with_tools(self, complex_weather_tool: Tool, restaurant_tool: Tool):
+    @pytest.mark.parametrize('model', [OPENAI_TEST_MODEL, OPENAI_TEST_MODEL_SUPPORTS_TEMP])
+    def test__OpenAI__caching__with_tools(
+            self,
+            model: str,
+            complex_weather_tool: Tool,
+            restaurant_tool: Tool,
+        ):
         # we need to make the text long enough to trigger the cache
         text = "[THE FOLLOWING IS TEST DATA FOR TESTING PURPOSES ONLY; **INGNORE THE FOLLOWING TEXT**]"  # noqa: E501
         text += Faker().text(max_nb_chars=15_000)
         complex_weather_tool.parameters[-1].description = "\n\n" + text
 
         client = OpenAITools(
-            model_name=OPENAI_TEST_MODEL,
+            model_name=model,
             tools=[complex_weather_tool, restaurant_tool],
         )
         messages=[

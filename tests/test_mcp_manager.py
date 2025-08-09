@@ -16,7 +16,11 @@ from sik_llms.models_base import (
     user_message,
 )
 from sik_llms.reasoning_agent import ReasoningAgent
-from tests.conftest import ANTRHOPIC_TEST_THINKING_MODEL, OPENAI_TEST_MODEL
+from tests.conftest import (
+    ANTRHOPIC_TEST_THINKING_MODEL,
+    OPENAI_TEST_MODEL,
+    OPENAI_TEST_MODEL_SUPPORTS_TEMP,
+)
 
 
 @pytest.mark.asyncio
@@ -181,10 +185,9 @@ async def test_reasoning_agent_with_mcp__test_prompt(
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.stochastic(samples=5, threshold=0.5)
 @pytest.mark.parametrize('model_name', [
     pytest.param(
-        OPENAI_TEST_MODEL,
+        OPENAI_TEST_MODEL_SUPPORTS_TEMP,
         id="OpenAI",
     ),
     pytest.param(
@@ -197,7 +200,7 @@ async def test_reasoning_agent_with_mcp__test_prompt(
     ),
 ])
 async def test_reasoning_agent_with_calculator(mcp_fake_server_config: dict, model_name: str):
-    """Test the ReasoningAgent with a calculator tool using GPT-4o-mini."""
+    """Test the ReasoningAgent with a calculator tool."""
     async with MCPClientManager(mcp_fake_server_config) as manager:
         agent = ReasoningAgent(
             model_name=model_name,

@@ -34,51 +34,6 @@ load_dotenv()
 # Define all OpenAI models
 OPENAI_MODEL_INFOS = [
     ####
-    # GPT-4.1
-    ####
-    ModelInfo(
-        model='gpt-4.1-2025-04-14',
-        provider=ModelProvider.OPENAI,
-        max_output_tokens=32_768,
-        context_window_size=1_047_576,
-        pricing={
-            'input': 2.00 / 1_000_000, 'output': 8.00 / 1_000_000,
-            'cached': 0.50 / 1_000_000,
-        },
-        supports_tools=True,
-        supports_structured_output=True,
-        supports_images=True,
-        knowledge_cutoff_date=date(year=2024, month=5, day=31),
-    ),
-    ModelInfo(
-        model='gpt-4.1-mini-2025-04-14',
-        provider=ModelProvider.OPENAI,
-        max_output_tokens=32_768,
-        context_window_size=1_047_576,
-        pricing={
-            'input': 0.40 / 1_000_000, 'output': 1.60 / 1_000_000,
-            'cached': 0.10 / 1_000_000,
-        },
-        supports_tools=True,
-        supports_structured_output=True,
-        supports_images=True,
-        knowledge_cutoff_date=date(year=2024, month=5, day=31),
-    ),
-    ModelInfo(
-        model='gpt-4.1-nano-2025-04-14',
-        provider=ModelProvider.OPENAI,
-        max_output_tokens=32_768,
-        context_window_size=1_047_576,
-        pricing={
-            'input': 0.10 / 1_000_000, 'output': 0.40 / 1_000_000,
-            'cached': 0.025 / 1_000_000,
-        },
-        supports_tools=True,
-        supports_structured_output=True,
-        supports_images=True,
-        knowledge_cutoff_date=date(year=2024, month=5, day=31),
-    ),
-    ####
     # GPT-4o
     ####
     ModelInfo(
@@ -125,6 +80,102 @@ OPENAI_MODEL_INFOS = [
         knowledge_cutoff_date=date(year=2023, month=9, day=30),
     ),
     ####
+    # GPT-4.1
+    ####
+    ModelInfo(
+        model='gpt-4.1-2025-04-14',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=32_768,
+        context_window_size=1_047_576,
+        pricing={
+            'input': 2.00 / 1_000_000, 'output': 8.00 / 1_000_000,
+            'cached': 0.50 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2024, month=5, day=31),
+    ),
+    ModelInfo(
+        model='gpt-4.1-mini-2025-04-14',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=32_768,
+        context_window_size=1_047_576,
+        pricing={
+            'input': 0.40 / 1_000_000, 'output': 1.60 / 1_000_000,
+            'cached': 0.10 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2024, month=5, day=31),
+    ),
+    ModelInfo(
+        model='gpt-4.1-nano-2025-04-14',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=32_768,
+        context_window_size=1_047_576,
+        pricing={
+            'input': 0.10 / 1_000_000, 'output': 0.40 / 1_000_000,
+            'cached': 0.025 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2024, month=5, day=31),
+    ),
+    ####
+    # GPT-5
+    ####
+        ModelInfo(
+        model='gpt-5-2025-08-07',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=128_000,
+        context_window_size=400_000,
+        pricing={
+            'input': 1.25 / 1_000_000, 'output': 10.00 / 1_000_000,
+            'cached': 0.125 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        supports_temperature=False,
+        knowledge_cutoff_date=date(year=2024, month=9, day=30),
+    ),
+    ModelInfo(
+        model='gpt-5-mini-2025-08-07',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=128_000,
+        context_window_size=400_000,
+        pricing={
+            'input': 0.25 / 1_000_000, 'output': 2.00 / 1_000_000,
+            'cached': 0.025 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        supports_temperature=False,
+        knowledge_cutoff_date=date(year=2024, month=5, day=30),
+    ),
+    ModelInfo(
+        model='gpt-5-nano-2025-08-07',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=128_000,
+        context_window_size=400_000,
+        pricing={
+            'input': 0.05 / 1_000_000, 'output': 0.40 / 1_000_000,
+            'cached': 0.005 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        supports_temperature=False,
+        knowledge_cutoff_date=date(year=2024, month=5, day=30),
+    ),
+    ####
     # o3
     ####
     ModelInfo(
@@ -140,6 +191,7 @@ OPENAI_MODEL_INFOS = [
         supports_tools=True,
         supports_structured_output=True,
         supports_images=True,
+        supports_temperature=False,
         knowledge_cutoff_date=date(year=2023, month=9, day=30),
     ),
     ####
@@ -158,16 +210,20 @@ OPENAI_MODEL_INFOS = [
         supports_tools=True,
         supports_structured_output=True,
         supports_images=True,
+        supports_temperature=False,
         knowledge_cutoff_date=date(year=2023, month=9, day=30),
     ),
 ]
 
 SUPPORTED_OPENAI_MODELS = {model.model: model for model in OPENAI_MODEL_INFOS}
+SUPPORTED_OPENAI_MODELS['gpt-4o'] = SUPPORTED_OPENAI_MODELS['gpt-4o-2024-11-20']
+SUPPORTED_OPENAI_MODELS['gpt-4o-mini'] = SUPPORTED_OPENAI_MODELS['gpt-4o-mini-2024-07-18']
 SUPPORTED_OPENAI_MODELS['gpt-4.1'] = SUPPORTED_OPENAI_MODELS['gpt-4.1-2025-04-14']
 SUPPORTED_OPENAI_MODELS['gpt-4.1-mini'] = SUPPORTED_OPENAI_MODELS['gpt-4.1-mini-2025-04-14']
 SUPPORTED_OPENAI_MODELS['gpt-4.1-nano'] = SUPPORTED_OPENAI_MODELS['gpt-4.1-nano-2025-04-14']
-SUPPORTED_OPENAI_MODELS['gpt-4o'] = SUPPORTED_OPENAI_MODELS['gpt-4o-2024-11-20']
-SUPPORTED_OPENAI_MODELS['gpt-4o-mini'] = SUPPORTED_OPENAI_MODELS['gpt-4o-mini-2024-07-18']
+SUPPORTED_OPENAI_MODELS['gpt-5'] = SUPPORTED_OPENAI_MODELS['gpt-5-2025-08-07']
+SUPPORTED_OPENAI_MODELS['gpt-5-mini'] = SUPPORTED_OPENAI_MODELS['gpt-5-mini-2025-08-07']
+SUPPORTED_OPENAI_MODELS['gpt-5-nano'] = SUPPORTED_OPENAI_MODELS['gpt-5-nano-2025-08-07']
 SUPPORTED_OPENAI_MODELS['o3-mini'] = SUPPORTED_OPENAI_MODELS['o3-mini-2025-01-31']
 SUPPORTED_OPENAI_MODELS['o1'] = SUPPORTED_OPENAI_MODELS['o1-2024-12-17']
 
@@ -351,7 +407,7 @@ class OpenAI(Client):
             base_url=server_url,
             api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
         )
-        self.model = model_name
+        self.model = model_info.model if model_info else model_name
         self.model_parameters = model_kwargs or {}
         self.reasoning_effort = reasoning_effort
         self.response_format = response_format
@@ -364,7 +420,7 @@ class OpenAI(Client):
             else:
                 self.model_parameters['reasoning_effort'] = reasoning_effort
         # logprobs, temp, top_p are not supported with reasoning or reasoning models
-        if reasoning_effort or (self.model and any(self.model.startswith(prefix) for prefix in ['o1', 'o3'])):  # noqa: E501
+        if reasoning_effort or (model_info and not model_info.supports_temperature):
             self.model_parameters.pop('logprobs', None)
             self.model_parameters.pop('temperature', None)
             self.model_parameters.pop('top_p', None)
@@ -622,10 +678,16 @@ class OpenAITools(Client):
             base_url=server_url,
             api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
         )
-        self.model = model_name
+        model_info = SUPPORTED_OPENAI_MODELS.get(model_name)
+        self.model = model_info.model if model_info else model_name
         self.model_parameters = model_kwargs or {}
         if 'temperature' not in self.model_parameters:
             self.model_parameters['temperature'] = 0.2
+
+        if model_info and not model_info.supports_temperature:
+            self.model_parameters.pop('logprobs', None)
+            self.model_parameters.pop('temperature', None)
+            self.model_parameters.pop('top_p', None)
 
         if tool_choice == ToolChoice.REQUIRED:
             self.model_parameters['tool_choice'] = 'required'
