@@ -16,7 +16,7 @@ See [examples](https://github.com/shane-kercheval/sik-llms/blob/main/examples/ex
 from sik_llms import create_client, user_message, ResponseChunk
 
 model = create_client(
-    model_name='gpt-4o-mini',  # or e.g. 'claude-3-7-sonnet-latest'
+    model_name='gpt-4o-mini',  # or e.g. 'claude-3-7-sonnet'
     temperature=0.1,
 )
 messages = [
