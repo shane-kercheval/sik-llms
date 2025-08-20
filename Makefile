@@ -38,7 +38,7 @@ chat:
 		-chat \
 		--mcp_config examples/mcp_fake_server_config.json \
 		--model 'gpt-4o'
-# --model claude-3-5-sonnet-latest
+# --model claude-3-5-sonnet
 
 tools:
 	uv run python examples/cli.py \

@@ -129,11 +129,11 @@ ANTHROPIC_MODEL_LOOKUPS = [
     ),
 ]
 SUPPORTED_ANTHROPIC_MODELS = {model.model: model for model in ANTHROPIC_MODEL_LOOKUPS}
-SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-20241022']  # noqa: E501
-SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-sonnet-20241022']  # noqa: E501
-SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-20250219']  # noqa: E501
-SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-latest'] = SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-20250514']  # noqa: E501
-
+SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-20241022']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-20250219']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4'] = SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-20250514']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-opus-4'] = SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-20250514']
+SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-1'] = SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-1-20250805']  # noqa: E501
 
 
 # Default thinking budget tokens for each reasoning effort level

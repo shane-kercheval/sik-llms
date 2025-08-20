@@ -43,10 +43,11 @@ class TestAnthropic:
             'claude-opus-4-20250514',
             'claude-opus-4-1-20250805',
             # primary models
-            'claude-3-5-haiku-latest',
-            'claude-3-5-sonnet-latest',
-            'claude-3-7-sonnet-latest',
-            'claude-sonnet-4-latest',
+            'claude-3-5-haiku',
+            'claude-3-7-sonnet',
+            'claude-sonnet-4',
+            'claude-opus-4',
+            'claude-opus-4-1',
         ],
     )
     async def test__all_models(self, model_name: str):
