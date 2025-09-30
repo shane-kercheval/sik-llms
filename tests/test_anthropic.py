@@ -32,41 +32,57 @@ load_dotenv()
 class TestAnthropic:
     """Test the Anthropic Completion Wrapper."""
 
-    @pytest.mark.parametrize(
-        'model_name',
-        [
+    async def test__all_models(self):
+        # Define all models to test
+        models = [
             # versioned models
             'claude-3-5-haiku-20241022',
             'claude-3-5-sonnet-20241022',
             'claude-3-7-sonnet-20250219',
             'claude-sonnet-4-20250514',
+            'claude-sonnet-4-5-20250929',
             'claude-opus-4-20250514',
             'claude-opus-4-1-20250805',
             # primary models
             'claude-3-5-haiku',
             'claude-3-7-sonnet',
             'claude-sonnet-4',
+            'claude-sonnet-4-5',
             'claude-opus-4',
             'claude-opus-4-1',
-        ],
-    )
-    async def test__all_models(self, model_name: str):
-        # Create an instance of the wrapper
-        client = Anthropic(model_name=model_name)
+        ]
+
         messages = [
             system_message("You are a helpful assistant."),
             user_message("Respond with exactly \"42\"."),
         ]
-        response = await client.run_async(messages=messages)
-        assert isinstance(response, TextResponse)
-        assert '42' in response.response
-        assert response.input_tokens > 0
-        assert response.output_tokens > 0
-        assert response.total_tokens > 0
-        assert response.input_cost > 0
-        assert response.output_cost > 0
-        assert response.total_cost > 0
-        assert response.duration_seconds > 0
+
+        async def test_single_model(model_name: str) -> tuple[str, TextResponse]:
+            client = Anthropic(model_name=model_name)
+            response = await client.run_async(messages=messages)
+            return model_name, response
+
+        # Run all models concurrently
+        tasks = [test_single_model(model) for model in models]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Validate all responses
+        for i, result in enumerate(results):
+            model_name = models[i]
+            if isinstance(result, Exception):
+                pytest.fail(f"Model {model_name} failed with exception: {result}")
+            else:
+                model_name_result, response = result
+                assert model_name_result == model_name
+                assert isinstance(response, TextResponse)
+                assert '42' in response.response
+                assert response.input_tokens > 0, f"Model {model_name} failed input token count"
+                assert response.output_tokens > 0, f"Model {model_name} failed output token count"
+                assert response.total_tokens > 0, f"Model {model_name} failed total token count"
+                assert response.input_cost > 0, f"Model {model_name} failed input cost"
+                assert response.output_cost > 0, f"Model {model_name} failed output cost"
+                assert response.total_cost > 0, f"Model {model_name} failed total cost"
+                assert response.duration_seconds > 0, f"Model {model_name} failed duration seconds"
 
 
 class TestAnthropicSync:  # noqa: D101
