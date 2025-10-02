@@ -34,7 +34,7 @@ class TestStructuredOutputs:
         ),
     ])
     @pytest.mark.parametrize('run_async', [True, False])
-    async def test__anthropic__structured_outputs(self, model_name: str, run_async: bool):
+    async def test__structured_outputs(self, model_name: str, run_async: bool):
         class CalendarEvent(BaseModel):
             name: str
             date: str
@@ -59,6 +59,11 @@ class TestStructuredOutputs:
         assert response.parsed.participants
         assert 'Alice' in response.parsed.participants
         assert 'Bob' in response.parsed.participants
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        assert response.duration_seconds > 0
 
     @pytest.mark.stochastic(samples=5, threshold=0.5)
     @pytest.mark.parametrize('model_name', [
@@ -75,7 +80,7 @@ class TestStructuredOutputs:
             ),
         ),
     ])
-    async def test__anthropic__structured_outputs__nested(self, model_name: str):
+    async def test__structured_outputs__nested(self, model_name: str):
         class Address(BaseModel):
             street: str
             street_2: str | None = None
@@ -111,3 +116,8 @@ class TestStructuredOutputs:
         assert response.parsed.address.city == 'Anytown'
         assert response.parsed.address.state in ('Washington', 'WA')
         assert response.parsed.address.zip_code == '12345'
+        assert response.input_tokens > 0
+        assert response.output_tokens > 0
+        assert response.input_cost > 0
+        assert response.output_cost > 0
+        assert response.duration_seconds > 0

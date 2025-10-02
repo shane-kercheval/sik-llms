@@ -427,12 +427,12 @@ class OpenAI(Client):
 
         # NOTE: max_tokens is deprecated in favor of max_completion_tokens
         # NOTE that they do have different meanings so popping is not technically correct; but yolo
-        max_tokens = self.model_parameters.pop('max_tokens', None)
+        max_tokens = self.model_parameters.pop('max_tokens', None) or \
+            self.model_parameters.get('max_completion_tokens', None) or \
+            self.model_parameters.get('max_output_tokens', None)  # used by new "Responses" api
         if max_tokens:
             self.model_parameters['max_completion_tokens'] = max_tokens
-        # if we're using an openai model, let's set default max_completion_tokens
-        if 'max_completion_tokens' not in self.model_parameters and model_info:
-            self.model_parameters['max_completion_tokens'] = min(8_000, model_info.max_output_tokens)  # noqa: E501
+
 
     async def stream(
             self,
@@ -451,7 +451,7 @@ class OpenAI(Client):
             if not model_info or not model_info.supports_structured_output:
                 raise ValueError(f"Structured output is not supported for this model: `{self.model}`")  # noqa: E501
             start_time = perf_counter()
-            completion = await self.client.beta.chat.completions.parse(
+            completion = await self.client.chat.completions.parse(
                 model=self.model,
                 messages=messages,
                 store=False,

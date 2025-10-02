@@ -325,7 +325,8 @@ class Anthropic(Client):
         """
         Initialize the Anthropic client.
 
-        If not provided, `max_tokens` will be set to 8_000.
+        If not provided, `max_tokens` will be set to 8_000. (Anthropic requires max_tokens to be
+        set.)
 
         Args:
             model_name:
