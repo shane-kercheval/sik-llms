@@ -95,9 +95,15 @@ class TestStructuredOutputs:
             email: str | None = None
             address: Address
 
+        # Also test max output tokens
+        if model_name == OPENAI_TEST_MODEL:
+            args = {'max_output_tokens': 5_000}
+        else:
+            args = {'max_tokens': 5_000}
         client = create_client(
             model_name=model_name,
             response_format=Contact,
+            **args,
         )
         messages=[
             system_message("Extract the information."),

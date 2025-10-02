@@ -428,8 +428,8 @@ class OpenAI(Client):
         # NOTE: max_tokens is deprecated in favor of max_completion_tokens
         # NOTE that they do have different meanings so popping is not technically correct; but yolo
         max_tokens = self.model_parameters.pop('max_tokens', None) or \
-            self.model_parameters.get('max_completion_tokens', None) or \
-            self.model_parameters.get('max_output_tokens', None)  # used by new "Responses" api
+            self.model_parameters.pop('max_completion_tokens', None) or \
+            self.model_parameters.pop('max_output_tokens', None)  # used by new "Responses" api
         if max_tokens:
             self.model_parameters['max_completion_tokens'] = max_tokens
 
