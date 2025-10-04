@@ -437,6 +437,8 @@ class OpenAI(Client):
         self.reasoning_effort = reasoning_effort
         self.response_format = response_format
         self.cache_content = cache_content
+        # Allow callers (e.g. Azure deployments) to run without pricing metadata, or to supply
+        # region-specific overrides when cost reporting is still desired.
         self.pricing_lookup = pricing_override or (model_info.pricing if model_info else None)
         if response_format:
             self.model_parameters['response_format'] = response_format

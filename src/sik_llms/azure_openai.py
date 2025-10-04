@@ -38,6 +38,7 @@ def _convert_model_info(info: ModelInfo) -> ModelInfo:
     azure_info = info.model_copy()
     azure_info.provider = ModelProvider.AZURE_OPENAI
     # Azure pricing varies per region and is not aligned 1:1 with OpenAI list pricing.
+    # Leave pricing unset so callers can optionally inject an override when they know their rates.
     azure_info.pricing = None
     metadata = azure_info.metadata.copy() if azure_info.metadata else {}
     metadata['requires_deployment'] = True
