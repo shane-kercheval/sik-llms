@@ -19,6 +19,7 @@ class ModelProvider(Enum):
     """Enum for model providers."""
 
     OPENAI = 'OpenAI'
+    AZURE_OPENAI = 'Azure OpenAI'
     ANTHROPIC = 'Anthropic'
     OTHER = 'Other'
 
@@ -28,6 +29,8 @@ class RegisteredClients(Enum):
 
     OPENAI = 'OpenAI'
     OPENAI_TOOLS = 'OpenAITools'
+    AZURE_OPENAI = 'AzureOpenAI'
+    AZURE_OPENAI_TOOLS = 'AzureOpenAITools'
     ANTHROPIC = 'Anthropic'
     ANTHROPIC_TOOLS = 'AnthropicTools'
     REASONING_AGENT = 'ReasoningAgent'

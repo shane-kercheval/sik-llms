@@ -37,11 +37,17 @@ from sik_llms.anthropic import (
     AnthropicTools,
     SUPPORTED_ANTHROPIC_MODELS,
 )
+from sik_llms.azure_openai import (
+    AzureOpenAI,
+    AzureOpenAITools,
+    SUPPORTED_AZURE_OPENAI_MODELS,
+)
 from sik_llms.reasoning_agent import ReasoningAgent
 
 SUPPORTED_MODELS: dict[str, ModelInfo] = {
     **SUPPORTED_OPENAI_MODELS,
     **SUPPORTED_ANTHROPIC_MODELS,
+    **SUPPORTED_AZURE_OPENAI_MODELS,
 }
 
 def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
@@ -49,6 +55,8 @@ def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | E
         return client_type
     if model_name in SUPPORTED_OPENAI_MODELS:
         return RegisteredClients.OPENAI
+    if model_name in SUPPORTED_AZURE_OPENAI_MODELS:
+        return RegisteredClients.AZURE_OPENAI
     if model_name in SUPPORTED_ANTHROPIC_MODELS:
         return RegisteredClients.ANTHROPIC
     raise ValueError(f"Unknown model name '{model_name}'")
@@ -80,7 +88,22 @@ def create_client(
     Returns:
         A model instance.
     """
-    client_type = _get_client_type(model_name, client_type)
+    if client_type is None:
+        azure_hint_keys = {
+            'azure_endpoint',
+            'deployment_name',
+            'use_responses_api',
+            'azure_ad_token',
+            'azure_ad_token_provider',
+            'default_headers',
+            'default_query',
+        }
+        if any(key in client_kwargs for key in azure_hint_keys):
+            client_type = RegisteredClients.AZURE_OPENAI
+        else:
+            client_type = _get_client_type(model_name, client_type)
+    else:
+        client_type = _get_client_type(model_name, client_type)
     return Client.instantiate(client_type=client_type, model_name=model_name, **client_kwargs)
 
 
@@ -114,6 +137,8 @@ __all__ = [  # noqa: RUF022
     'ReasoningAgent',
     'OpenAI',
     'OpenAITools',
+    'AzureOpenAI',
+    'AzureOpenAITools',
     'Anthropic',
     'AnthropicTools',
 ]

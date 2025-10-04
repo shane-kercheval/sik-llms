@@ -368,6 +368,11 @@ class OpenAI(Client):
             cache_content: list[str] | str | None = None,
             server_url: str | None = None,
             api_key: str | None = None,
+            *,
+            client: object | None = None,
+            supported_models: dict[str, ModelInfo] | None = None,
+            api_model_name: str | None = None,
+            pricing_override: dict[str, float] | None = None,
             **model_kwargs: dict,
             ) -> None:
         """
@@ -396,22 +401,43 @@ class OpenAI(Client):
             api_key:
                 The API key to use for the API call. If not provided, the API key will be read from
                 the OPENAI_API_KEY environment variable.
+            client:
+                Optional pre-configured OpenAI-compatible async client. When provided, the
+                `server_url`/`api_key` parameters are ignored.
+            supported_models:
+                Optional mapping of model names to `ModelInfo` metadata used for validation and
+                pricing calculations.
+            api_model_name:
+                Optional override for the identifier sent to the API (e.g. an Azure deployment
+                name).
+            pricing_override:
+                Optional pricing dictionary to use instead of the metadata defaults.
             **model_kwargs: Additional parameters to pass to the API call
         """
-        model_info = SUPPORTED_OPENAI_MODELS.get(model_name)
-        if server_url is None and not model_info:
-            raise ValueError(f"Model '{model_name}' is not supported.")
+        self.supported_models = supported_models or SUPPORTED_OPENAI_MODELS
+        model_info = self.supported_models.get(model_name) if model_name else None
 
-        self.server_url = server_url
-        self.client = AsyncOpenAI(
-            base_url=server_url,
-            api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
-        )
-        self.model = model_info.model if model_info else model_name
+        if client is None:
+            if server_url is None and not model_info:
+                raise ValueError(f"Model '{model_name}' is not supported.")
+            self.server_url = server_url
+            self.client = AsyncOpenAI(
+                base_url=server_url,
+                api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
+            )
+        else:
+            self.client = client
+            self.server_url = server_url or getattr(client, 'base_url', None)
+
+        self.model_info = model_info
+        self.model = api_model_name or (model_info.model if model_info else model_name)
+        if not self.model:
+            raise ValueError("A model name or deployment identifier must be provided.")
         self.model_parameters = model_kwargs or {}
         self.reasoning_effort = reasoning_effort
         self.response_format = response_format
         self.cache_content = cache_content
+        self.pricing_lookup = pricing_override or (model_info.pricing if model_info else None)
         if response_format:
             self.model_parameters['response_format'] = response_format
         if reasoning_effort:
@@ -420,7 +446,7 @@ class OpenAI(Client):
             else:
                 self.model_parameters['reasoning_effort'] = reasoning_effort
         # logprobs, temp, top_p are not supported with reasoning or reasoning models
-        if reasoning_effort or (model_info and not model_info.supports_temperature):
+        if reasoning_effort or (self.model_info and not self.model_info.supports_temperature):
             self.model_parameters.pop('logprobs', None)
             self.model_parameters.pop('temperature', None)
             self.model_parameters.pop('top_p', None)
@@ -442,13 +468,13 @@ class OpenAI(Client):
         Streams chat chunks and returns a final summary. Note that any parameters passed to this
         method will override the parameters passed to the constructor.
         """
-        model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
-        pricing_lookup = model_info.pricing if model_info else None
+        model_info = self.model_info
+        pricing_lookup = self.pricing_lookup
 
         messages = _convert_messages(messages, self.cache_content)
         model_parameters = deepcopy(self.model_parameters)
         if self.response_format:
-            if not model_info or not model_info.supports_structured_output:
+            if model_info and not model_info.supports_structured_output:
                 raise ValueError(f"Structured output is not supported for this model: `{self.model}`")  # noqa: E501
             start_time = perf_counter()
             completion = await self.client.chat.completions.parse(
@@ -466,7 +492,9 @@ class OpenAI(Client):
                 and hasattr(completion.usage.prompt_tokens_details, 'cached_tokens')
             ):
                 cached_tokens = completion.usage.prompt_tokens_details.cached_tokens
-                cached_cost = cached_tokens * pricing_lookup.get('cached', 0)
+                cached_cost = None
+                if pricing_lookup and cached_tokens is not None:
+                    cached_cost = cached_tokens * pricing_lookup.get('cached', 0)
                 input_tokens -= cached_tokens  # remove cached tokens from input tokens
             else:
                 cached_tokens = None
@@ -477,8 +505,16 @@ class OpenAI(Client):
                 input_tokens=input_tokens,
                 output_tokens=completion.usage.completion_tokens,
                 cache_read_tokens=cached_tokens,
-                input_cost=completion.usage.prompt_tokens * pricing_lookup['input'],
-                output_cost=completion.usage.completion_tokens * pricing_lookup['output'],
+                input_cost=(
+                    input_tokens * pricing_lookup['input']
+                    if pricing_lookup and 'input' in pricing_lookup
+                    else None
+                ),
+                output_cost=(
+                    completion.usage.completion_tokens * pricing_lookup['output']
+                    if pricing_lookup and 'output' in pricing_lookup
+                    else None
+                ),
                 cache_read_cost=cached_cost,
                 duration_seconds=end_time - start_time,
             )
@@ -527,14 +563,19 @@ class OpenAI(Client):
                         cached_tokens += chunk.usage.prompt_tokens_details.cached_tokens
             end_time = perf_counter()
             input_tokens -= cached_tokens  # remove cached tokens from input tokens
-            if pricing_lookup:
-                input_cost = input_tokens * pricing_lookup['input']
-                output_cost = output_tokens * pricing_lookup['output']
+            input_cost = (
+                input_tokens * pricing_lookup['input']
+                if pricing_lookup and 'input' in pricing_lookup
+                else None
+            )
+            output_cost = (
+                output_tokens * pricing_lookup['output']
+                if pricing_lookup and 'output' in pricing_lookup
+                else None
+            )
+            cache_cost = None
+            if pricing_lookup and cached_tokens is not None:
                 cache_cost = cached_tokens * pricing_lookup.get('cached', 0)
-            else:
-                input_cost = None
-                output_cost = None
-                cache_cost = None
             yield TextResponse(
                 response=''.join([chunk.content for chunk in chunks]),
                 input_tokens=input_tokens,
@@ -645,6 +686,11 @@ class OpenAITools(Client):
             tool_choice: ToolChoice = ToolChoice.REQUIRED,
             server_url: str | None = None,
             api_key: str | None = None,
+            *,
+            client: object | None = None,
+            supported_models: dict[str, ModelInfo] | None = None,
+            api_model_name: str | None = None,
+            pricing_override: dict[str, float] | None = None,
             **model_kwargs: dict,
             ) -> None:
         """
@@ -662,29 +708,48 @@ class OpenAITools(Client):
             api_key:
                 The API key to use for the API call. If not provided, the API key will be read from
                 the OPENAI_API_KEY environment variable.
+            client:
+                Optional pre-configured OpenAI-compatible async client. When provided, the
+                `server_url`/`api_key` parameters are ignored.
+            supported_models:
+                Optional mapping of model names to `ModelInfo` metadata used for validation and
+                pricing calculations.
+            api_model_name:
+                Optional override for the identifier sent to the API (e.g. an Azure deployment
+                name).
+            pricing_override:
+                Optional pricing dictionary to use instead of the metadata defaults.
             **model_kwargs:
                 Additional parameters to pass to the API call
         """
-        if (
-            server_url is None  # using OpenAI provider
-            and (
-                model_name not in SUPPORTED_OPENAI_MODELS
-                or not SUPPORTED_OPENAI_MODELS[model_name].supports_tools
-            )
-        ):
-            raise ValueError(f"Model '{model_name}' is not supported.")
+        self.supported_models = supported_models or SUPPORTED_OPENAI_MODELS
+        model_info = self.supported_models.get(model_name)
 
-        self.client = AsyncOpenAI(
-            base_url=server_url,
-            api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
-        )
-        model_info = SUPPORTED_OPENAI_MODELS.get(model_name)
-        self.model = model_info.model if model_info else model_name
+        if client is None:
+            if (
+                server_url is None
+                and (
+                    model_info is None
+                    or not model_info.supports_tools
+                )
+            ):
+                raise ValueError(f"Model '{model_name}' is not supported.")
+            self.client = AsyncOpenAI(
+                base_url=server_url,
+                api_key=api_key or os.getenv('OPENAI_API_KEY') or 'None',
+            )
+        else:
+            self.client = client
+
+        self.model_info = model_info
+        self.model = api_model_name or (model_info.model if model_info else model_name)
+        if not self.model:
+            raise ValueError("A model name or deployment identifier must be provided.")
         self.model_parameters = model_kwargs or {}
         if 'temperature' not in self.model_parameters:
             self.model_parameters['temperature'] = 0.2
 
-        if model_info and not model_info.supports_temperature:
+        if self.model_info and not self.model_info.supports_temperature:
             self.model_parameters.pop('logprobs', None)
             self.model_parameters.pop('temperature', None)
             self.model_parameters.pop('top_p', None)
@@ -696,6 +761,7 @@ class OpenAITools(Client):
         else:
             raise ValueError(f"Invalid tool_choice: `{tool_choice}`")
         self.model_parameters['tools'] = [_tool_to_openai_schema(t) for t in tools]
+        self.pricing_lookup = pricing_override or (model_info.pricing if model_info else None)
 
     async def stream(self, messages: list[dict[str, str]]) -> AsyncGenerator[ToolPredictionResponse | None]:  # noqa: E501
         """
@@ -704,8 +770,8 @@ class OpenAITools(Client):
         Args:
             messages: List of messages to send to the model.
         """
-        model_info = SUPPORTED_OPENAI_MODELS.get(self.model)
-        pricing_lookup = model_info.pricing if model_info else None
+        model_info = self.model_info
+        pricing_lookup = self.pricing_lookup
 
         model_parameters = deepcopy(self.model_parameters)
         start = perf_counter()
@@ -738,6 +804,9 @@ class OpenAITools(Client):
         if pricing_lookup:
             input_cost = input_tokens * pricing_lookup['input']
             output_cost = output_tokens * pricing_lookup['output']
+        else:
+            input_cost = None
+            output_cost = None
 
         if completion.choices[0].message.tool_calls:
             message = None
