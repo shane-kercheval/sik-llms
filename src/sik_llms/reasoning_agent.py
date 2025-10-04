@@ -24,6 +24,7 @@ from sik_llms.models_base import (
 )
 from sik_llms.openai import SUPPORTED_OPENAI_MODELS
 from sik_llms.anthropic import SUPPORTED_ANTHROPIC_MODELS
+from sik_llms.gemini import SUPPORTED_GEMINI_MODELS
 
 
 PROMPT__REASONING_AGENT = resources.read_text('sik_llms.prompts', 'reasoning_prompt.txt')
@@ -53,6 +54,8 @@ def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | E
         return RegisteredClients.OPENAI
     if model_name in SUPPORTED_ANTHROPIC_MODELS:
         return RegisteredClients.ANTHROPIC
+    if model_name in SUPPORTED_GEMINI_MODELS:
+        return RegisteredClients.GEMINI
     raise ValueError(f"Unknown model name '{model_name}' or client when trying to infer client type")  # noqa: E501
 
 
@@ -113,6 +116,8 @@ class ReasoningAgent(Client):
                     tools_client_type = RegisteredClients.OPENAI_TOOLS
                 elif client_type == RegisteredClients.ANTHROPIC:
                     tools_client_type = RegisteredClients.ANTHROPIC_TOOLS
+                elif client_type == RegisteredClients.GEMINI:
+                    tools_client_type = RegisteredClients.GEMINI_TOOLS
                 else:
                     raise ValueError("Unknown client type for tools when trying to infer tools_client_type")  # noqa: E501
 

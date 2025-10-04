@@ -1,6 +1,7 @@
 """Test public functions from sik_llms module."""
 import os
 from time import perf_counter
+from types import SimpleNamespace
 import pytest
 from sik_llms import (
     create_client,
@@ -9,8 +10,14 @@ from sik_llms import (
     TextResponse,
     SUPPORTED_OPENAI_MODELS,
     SUPPORTED_ANTHROPIC_MODELS,
+    SUPPORTED_GEMINI_MODELS,
+    Gemini,
 )
-from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_MODEL
+from tests.conftest import (
+    ANTHROPIC_TEST_MODEL,
+    OPENAI_TEST_MODEL,
+    GEMINI_TEST_MODEL,
+)
 
 
 @pytest.mark.asyncio
@@ -34,6 +41,24 @@ async def test__create_client__openai() -> None:
     response = client(messages=[user_message("What is the capital of France?")])
     assert isinstance(response, TextResponse)
     assert 'Paris' in response.response
+
+
+def test__create_client__gemini(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests that model can be created for Gemini."""
+    monkeypatch.setenv('GOOGLE_API_KEY', 'test-key')
+
+    class DummyAsyncClient:
+        def __init__(self, **kwargs: object) -> None:
+            self.api_key = kwargs.get('api_key')
+            self.kwargs = kwargs
+            self.models = SimpleNamespace()
+
+    monkeypatch.setattr('sik_llms.gemini.genai.Client', DummyAsyncClient)
+
+    client = create_client(model_name=GEMINI_TEST_MODEL)
+    assert isinstance(client, Gemini)
+    assert client.client.api_key == 'test-key'
+    assert client.model == SUPPORTED_GEMINI_MODELS[GEMINI_TEST_MODEL].model
 
 
 @pytest.mark.asyncio

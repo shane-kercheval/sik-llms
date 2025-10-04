@@ -1,4 +1,5 @@
 """Tests for the ReasoningAgent class."""
+
 import os
 import re
 import pytest
@@ -12,22 +13,28 @@ from sik_llms import (
     ToolResultEvent,
     TextResponse,
     ReasoningAgent,
+    RegisteredClients,
 )
-from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_FUNCTION_CALLING
+from sik_llms.models_base import Client
+from tests.conftest import ANTHROPIC_TEST_MODEL, OPENAI_TEST_FUNCTION_CALLING, GEMINI_TEST_MODEL
+from types import SimpleNamespace
 from dotenv import load_dotenv
+
+MonkeyPatch = pytest.MonkeyPatch
+
 load_dotenv()
 
 
 async def calculator_async(expression: str) -> str:
-        """Execute calculator tool."""
-        try:
-            # Only allow simple arithmetic for safety
-            allowed_chars = set('0123456789+-*/() .')
-            if not all(c in allowed_chars for c in expression):
-                return "Error: Invalid characters in expression"
-            return str(eval(expression))
-        except Exception as e:
-            return f"Error: {e!s}"
+    """Execute calculator tool."""
+    try:
+        # Only allow simple arithmetic for safety
+        allowed_chars = set("0123456789+-*/() .")
+        if not all(c in allowed_chars for c in expression):
+            return "Error: Invalid characters in expression"
+        return str(eval(expression))
+    except Exception as e:
+        return f"Error: {e!s}"
 
 
 async def weather_async(location: str) -> str:
@@ -40,11 +47,11 @@ async def weather_async(location: str) -> str:
 def calculator_tool():
     """Fixture for a calculator tool."""
     return Tool(
-        name='calculator',
+        name="calculator",
         description="Perform mathematical calculations",
         parameters=[
             Parameter(
-                name='expression',
+                name="expression",
                 param_type=str,
                 required=True,
                 description="The mathematical expression to evaluate (e.g., '2 + 2', '5 * 10')",
@@ -58,11 +65,11 @@ def calculator_tool():
 def weather_tool():
     """Fixture for a weather tool."""
     return Tool(
-        name='get_weather',
+        name="get_weather",
         description="Get the current weather for a location",
         parameters=[
             Parameter(
-                name='location',
+                name="location",
                 param_type=str,
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
@@ -78,34 +85,34 @@ def test__create_reasoning_prompt(calculator_tool: Tool, test_files_path: str):
         tools=[calculator_tool],
     )
     prompt = agent._create_reasoning_prompt()
-    with open(f'{test_files_path}/reasoning_prompt_calculator_tool.txt', 'w') as f:
+    with open(f"{test_files_path}/reasoning_prompt_calculator_tool.txt", "w") as f:
         f.write(prompt)
     # check that the tool is in the prompt
-    assert 'calculator' in prompt
+    assert "calculator" in prompt
     # check that the parameter is in the prompt
-    assert 'expression' in prompt
+    assert "expression" in prompt
 
 
 def test__create_reasoning_prompt__multiple_tools(
-        calculator_tool: Tool,
-        test_files_path: str,
-    ):
+    calculator_tool: Tool,
+    test_files_path: str,
+):
     weather_multi_param_tool = Tool(
-        name='get_weather',
+        name="get_weather",
         description="Get the current weather for a location",
         parameters=[
             Parameter(
-                name='location',
+                name="location",
                 param_type=str,
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
             ),
             Parameter(
-                name='units',
+                name="units",
                 param_type=str,
                 required=True,
                 description="Temperature units",
-                enum=['°F', '°C'],
+                enum=["°F", "°C"],
             ),
         ],
         func=lambda location, units: f"Weather for {location}: 70{units}, Sunny with some clouds",
@@ -115,32 +122,71 @@ def test__create_reasoning_prompt__multiple_tools(
         tools=[calculator_tool, weather_multi_param_tool],
     )
     prompt = agent._create_reasoning_prompt()
-    with open(f'{test_files_path}/reasoning_prompt_calculator_weather_tool.txt', 'w') as f:
+    with open(f"{test_files_path}/reasoning_prompt_calculator_weather_tool.txt", "w") as f:
         f.write(prompt)
     # check that the calculator tool is in the prompt
-    assert 'calculator' in prompt
+    assert "calculator" in prompt
     # check that the parameter is in the prompt
-    assert 'expression' in prompt
+    assert "expression" in prompt
     # check that the weather tool is in the prompt
-    assert 'get_weather' in prompt
+    assert "get_weather" in prompt
     # check that the parameter is in the prompt
-    assert 'location' in prompt
+    assert "location" in prompt
 
 
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_FUNCTION_CALLING,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
+def test_reasoning_agent_uses_gemini_clients(
+    monkeypatch: MonkeyPatch,
+    calculator_tool: Tool,
+) -> None:
+    """Ensure ReasoningAgent routes Gemini models through Gemini client types."""
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+
+    captured: list[tuple[RegisteredClients, str]] = []
+
+    def fake_instantiate(  # pragma: no cover
+        _cls: type[Client],
+        client_type: RegisteredClients | str,
+        model_name: str,
+        **_model_kwargs: object,
+    ) -> SimpleNamespace:
+        captured.append((client_type, model_name))
+
+        async def _noop_stream(*_args: object, **_kwargs: object) -> list[object]:
+            return []
+
+        return SimpleNamespace(stream=_noop_stream)
+
+    monkeypatch.setattr(Client, "instantiate", classmethod(fake_instantiate))
+
+    agent = ReasoningAgent(
+        model_name=GEMINI_TEST_MODEL,
+        tools=[calculator_tool],
+    )
+
+    agent._get_reasoning_client()
+    agent._get_tools_client("calculator")
+
+    assert (RegisteredClients.GEMINI, GEMINI_TEST_MODEL) in captured
+    assert (RegisteredClients.GEMINI_TOOLS, GEMINI_TEST_MODEL) in captured
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        pytest.param(
+            OPENAI_TEST_FUNCTION_CALLING,
+            id="OpenAI",
         ),
-    ),
-])
+        pytest.param(
+            ANTHROPIC_TEST_MODEL,
+            id="Anthropic",
+            marks=pytest.mark.skipif(
+                os.getenv("ANTHROPIC_API_KEY") is None,
+                reason="ANTHROPIC_API_KEY is not set",
+            ),
+        ),
+    ],
+)
 def test__create_reasoning_prompt__no_tools(test_files_path: str, model_name: str):
     agent = ReasoningAgent(
         model_name=model_name,
@@ -148,9 +194,9 @@ def test__create_reasoning_prompt__no_tools(test_files_path: str, model_name: st
     )
     # check that the prompt signals that there are no tools
     prompt = agent._create_reasoning_prompt()
-    with open(f'{test_files_path}/reasoning_prompt_no_tools.txt', 'w') as f:
+    with open(f"{test_files_path}/reasoning_prompt_no_tools.txt", "w") as f:
         f.write(prompt)
-    assert 'No tools' in prompt
+    assert "No tools" in prompt
 
 
 @pytest.mark.asyncio
@@ -160,8 +206,8 @@ async def test__execute_tool__async(calculator_tool: Tool):
         tools=[calculator_tool],
     )
     # check that the tool is executed successfully
-    result = await agent._execute_tool('calculator', {'expression': '234 * 22'})
-    assert result == '5148'
+    result = await agent._execute_tool("calculator", {"expression": "234 * 22"})
+    assert result == "5148"
 
 
 @pytest.mark.asyncio
@@ -172,11 +218,11 @@ async def test__execute_tool__sync():
         return f"Weather for {location}: 72°F, Sunny with some clouds"
 
     tool = Tool(
-        name='get_weather',
+        name="get_weather",
         description="Get the current weather for a location",
         parameters=[
             Parameter(
-                name='location',
+                name="location",
                 param_type=str,
                 required=True,
                 description="The city and state/country (e.g., 'San Francisco, CA')",
@@ -189,27 +235,30 @@ async def test__execute_tool__sync():
         tools=[tool],
     )
     # check that the tool is executed successfully
-    result = await agent._execute_tool('get_weather', {'location': 'New York, NY'})
-    assert result == 'Weather for New York, NY: 72°F, Sunny with some clouds'
+    result = await agent._execute_tool("get_weather", {"location": "New York, NY"})
+    assert result == "Weather for New York, NY: 72°F, Sunny with some clouds"
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
 # @pytest.mark.stochastic(samples=5, threshold=0.5)
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_FUNCTION_CALLING,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        pytest.param(
+            OPENAI_TEST_FUNCTION_CALLING,
+            id="OpenAI",
         ),
-    ),
-])
+        pytest.param(
+            ANTHROPIC_TEST_MODEL,
+            id="Anthropic",
+            marks=pytest.mark.skipif(
+                os.getenv("ANTHROPIC_API_KEY") is None,
+                reason="ANTHROPIC_API_KEY is not set",
+            ),
+        ),
+    ],
+)
 async def test_reasoning_agent_with_calculator(calculator_tool: Tool, model_name: str):
     """Test the ReasoningAgent with a calculator tool using GPT-4o-mini."""
     # Create the reasoning agent
@@ -242,7 +291,9 @@ async def test_reasoning_agent_with_calculator(calculator_tool: Tool, model_name
     # Last result should be a TextResponse with the full response
     last_result = results[-1]
     assert isinstance(last_result, TextResponse), "Last result should be TextResponse"
-    assert re.search(r'65[,]?968', last_result.response) is not None, "Final answer should contain 65968 or 65,968"  # noqa: E501
+    assert re.search(r"65[,]?968", last_result.response) is not None, (
+        "Final answer should contain 65968 or 65,968"
+    )
 
     # Check token accounting
     assert last_result.input_tokens > 0, "Should have input tokens"
@@ -297,45 +348,50 @@ async def test_reasoning_agent__no_final_answer(calculator_tool: Tool):
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.stochastic(samples=5, threshold=0.5)
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_FUNCTION_CALLING,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        pytest.param(
+            OPENAI_TEST_FUNCTION_CALLING,
+            id="OpenAI",
         ),
-    ),
-])
-@pytest.mark.parametrize('location', [
-    pytest.param(
-        "New York",
-        id="New York",
-    ),
-    pytest.param(
-        "London",
-        id="London - Returns None",
-    ),
-])
+        pytest.param(
+            ANTHROPIC_TEST_MODEL,
+            id="Anthropic",
+            marks=pytest.mark.skipif(
+                os.getenv("ANTHROPIC_API_KEY") is None,
+                reason="ANTHROPIC_API_KEY is not set",
+            ),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "location",
+    [
+        pytest.param(
+            "New York",
+            id="New York",
+        ),
+        pytest.param(
+            "London",
+            id="London - Returns None",
+        ),
+    ],
+)
 async def test_reasoning_agent__with_non_string_tool_return_values(model_name: str, location: str):
-
     # this function returns a dict if the location is found, otherwise None
     async def weather(location: str, units: str) -> str:
         weather_data = {
-            'New York': '68',
-            'San Francisco': '62',
-            'Miami': '85',
-            'Chicago': '55',
-            'Los Angeles': '75',
+            "New York": "68",
+            "San Francisco": "62",
+            "Miami": "85",
+            "Chicago": "55",
+            "Los Angeles": "75",
         }
         for city in weather_data:  # noqa: PLC0206
             if city.lower() in location.lower():
                 temp = weather_data[city]
-                if units == 'C':
+                if units == "C":
                     # C = (°F - 32) x (5/9)
 
                     temp = round((temp - 32) * 5 / 9)
@@ -353,11 +409,11 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
                 description="The name of the city (e.g., 'San Francisco', 'New York', 'London')",
             ),
             Parameter(
-                name='units',
+                name="units",
                 param_type=str,
                 required=True,
                 description="The units for temperature",
-                enum=['F', 'C'],
+                enum=["F", "C"],
             ),
         ],
         func=weather,
@@ -395,7 +451,7 @@ async def test_reasoning_agent__with_non_string_tool_return_values(model_name: s
 @pytest.mark.asyncio
 @pytest.mark.integration
 # @pytest.mark.stochastic(samples=5, threshold=0.5)
-@pytest.mark.parametrize('tools', [[], None])
+@pytest.mark.parametrize("tools", [[], None])
 async def test_reasoning_agent_no_tools_needed(tools: list | None):
     """Test the ReasoningAgent with a question that doesn't need tools."""
     # Create the reasoning agent
@@ -425,27 +481,30 @@ async def test_reasoning_agent_no_tools_needed(tools: list | None):
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.stochastic(samples=5, threshold=0.5)
-@pytest.mark.parametrize('model_name', [
-    pytest.param(
-        OPENAI_TEST_FUNCTION_CALLING,
-        id="OpenAI",
-    ),
-    pytest.param(
-        ANTHROPIC_TEST_MODEL,
-        id="Anthropic",
-        marks=pytest.mark.skipif(
-            os.getenv('ANTHROPIC_API_KEY') is None,
-            reason="ANTHROPIC_API_KEY is not set",
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        pytest.param(
+            OPENAI_TEST_FUNCTION_CALLING,
+            id="OpenAI",
         ),
-    ),
-])
+        pytest.param(
+            ANTHROPIC_TEST_MODEL,
+            id="Anthropic",
+            marks=pytest.mark.skipif(
+                os.getenv("ANTHROPIC_API_KEY") is None,
+                reason="ANTHROPIC_API_KEY is not set",
+            ),
+        ),
+    ],
+)
 async def test_reasoning_agent_with_lambda_function(model_name: str):
     weather_tool = Tool(
-        name='get_weather',
+        name="get_weather",
         description="Get the current weather for a location",
         parameters=[
             Parameter(
-                name='location',
+                name="location",
                 param_type=str,
                 required=True,
                 description="The city (e.g., 'San Francisco')",

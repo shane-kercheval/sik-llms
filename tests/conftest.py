@@ -31,6 +31,9 @@ OPENAI_TEST_REASONING_MODEL = 'o3-mini'
 ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku'
 ANTRHOPIC_TEST_THINKING_MODEL = 'claude-3-7-sonnet'
 
+GEMINI_TEST_MODEL = 'gemini-2.5-flash'
+GEMINI_TEST_FUNCTION_CALLING = 'gemini-2.5-pro'
+
 
 @dataclass
 class ClientConfig:
