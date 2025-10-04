@@ -24,6 +24,7 @@ from sik_llms.models_base import (
 )
 from sik_llms.openai import SUPPORTED_OPENAI_MODELS
 from sik_llms.anthropic import SUPPORTED_ANTHROPIC_MODELS
+from sik_llms.azure_openai import SUPPORTED_AZURE_OPENAI_MODELS
 
 
 PROMPT__REASONING_AGENT = resources.read_text('sik_llms.prompts', 'reasoning_prompt.txt')
@@ -51,6 +52,8 @@ def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | E
         return client_type
     if model_name in SUPPORTED_OPENAI_MODELS:
         return RegisteredClients.OPENAI
+    if model_name in SUPPORTED_AZURE_OPENAI_MODELS:
+        return RegisteredClients.AZURE_OPENAI
     if model_name in SUPPORTED_ANTHROPIC_MODELS:
         return RegisteredClients.ANTHROPIC
     raise ValueError(f"Unknown model name '{model_name}' or client when trying to infer client type")  # noqa: E501
@@ -111,6 +114,8 @@ class ReasoningAgent(Client):
             if not tools_client_type:
                 if client_type == RegisteredClients.OPENAI:
                     tools_client_type = RegisteredClients.OPENAI_TOOLS
+                elif client_type == RegisteredClients.AZURE_OPENAI:
+                    tools_client_type = RegisteredClients.AZURE_OPENAI_TOOLS
                 elif client_type == RegisteredClients.ANTHROPIC:
                     tools_client_type = RegisteredClients.ANTHROPIC_TOOLS
                 else:
