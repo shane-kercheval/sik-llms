@@ -201,7 +201,7 @@ def _collect_usage_metadata(response) -> tuple[int, int, int | None]:  # noqa: A
     """Return token accounting from a Gemini response."""
     usage = getattr(response, "usage_metadata", None)
     if not usage:
-        return 0, 0, 0, None
+        return 0, 0, None
 
     input_tokens = getattr(usage, "prompt_token_count", 0) or 0
     output_tokens = getattr(usage, "candidates_token_count", 0) or 0
@@ -432,11 +432,14 @@ class Gemini(Client):
         final_future = loop.create_future()
 
         def worker() -> None:
+            final_response = None
             try:
                 stream = self.client.models.generate_content_stream(**request_kwargs)
                 for chunk in stream:
+                    final_response = chunk
                     loop.call_soon_threadsafe(queue.put_nowait, chunk)
-                final_response = stream.get_final_response()
+                if hasattr(stream, "get_final_response"):
+                    final_response = stream.get_final_response()
                 if not final_future.done():
                     loop.call_soon_threadsafe(final_future.set_result, final_response)
             except Exception as exc:
