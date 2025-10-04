@@ -20,6 +20,7 @@ class ModelProvider(Enum):
 
     OPENAI = 'OpenAI'
     ANTHROPIC = 'Anthropic'
+    GOOGLE = 'Google'
     OTHER = 'Other'
 
 
@@ -30,6 +31,8 @@ class RegisteredClients(Enum):
     OPENAI_TOOLS = 'OpenAITools'
     ANTHROPIC = 'Anthropic'
     ANTHROPIC_TOOLS = 'AnthropicTools'
+    GEMINI = 'Gemini'
+    GEMINI_TOOLS = 'GeminiTools'
     REASONING_AGENT = 'ReasoningAgent'
 
 
