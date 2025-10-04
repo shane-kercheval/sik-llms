@@ -2,8 +2,8 @@
 
 - Easy llm interface; eliminates parsing json responses or building up json for functions/tools
     - OpenAI and any OpenAI-compatible API
-- Anthropic
-- Azure OpenAI (chat, tools, Responses API helper)
+    - Anthropic
+    - Azure OpenAI (chat, tools, Responses API helper)
 - Sync and Async support
 - Functions/Tools
 - Structured Output
