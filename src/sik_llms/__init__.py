@@ -47,7 +47,6 @@ from sik_llms.reasoning_agent import ReasoningAgent
 SUPPORTED_MODELS: dict[str, ModelInfo] = {
     **SUPPORTED_OPENAI_MODELS,
     **SUPPORTED_ANTHROPIC_MODELS,
-    **SUPPORTED_AZURE_OPENAI_MODELS,
 }
 
 def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
