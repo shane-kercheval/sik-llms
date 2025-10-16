@@ -21,7 +21,7 @@ from sik_llms import (
     SUPPORTED_OPENAI_MODELS,
 )
 from sik_llms.models_base import ImageContent, ImageSourceType, assistant_message
-from sik_llms.openai import _convert_messages
+from sik_llms.openai import OPENAI_MODEL_NAMES, _convert_messages
 from tests.conftest import (
     OPENAI_TEST_FUNCTION_CALLING,
     OPENAI_TEST_MODEL,
@@ -494,29 +494,6 @@ class TestOpenAI:
 
     async def test__all_models(self):
         # Define all models to test
-        models = [
-            # versioned models
-            'gpt-4.1-2025-04-14',
-            'gpt-4.1-mini-2025-04-14',
-            'gpt-4.1-nano-2025-04-14',
-            'gpt-4o-mini-2024-07-18',
-            'gpt-4o-2024-08-06',
-            'gpt-4o-2024-11-20',
-            'o3-mini-2025-01-31',
-            'o1-2024-12-17',
-            # primary models
-            'gpt-4.1',
-            'gpt-4.1-mini',
-            'gpt-4.1-nano',
-            'gpt-5',
-            'gpt-5-mini',
-            'gpt-5-nano',
-            'gpt-4o',
-            'gpt-4o-mini',
-            'o3-mini',
-            'o1',
-        ]
-
         messages = [
             system_message("You are a helpful assistant."),
             user_message("Respond with exactly \"42\"."),
@@ -528,12 +505,12 @@ class TestOpenAI:
             return model_name, response
 
         # Run all models concurrently
-        tasks = [test_single_model(model) for model in models]
+        tasks = [test_single_model(model) for model in OPENAI_MODEL_NAMES]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Validate all responses
         for i, result in enumerate(results):
-            model_name = models[i]
+            model_name = OPENAI_MODEL_NAMES[i]
             if isinstance(result, Exception):
                 pytest.fail(f"Model {model_name} failed with exception: {result}")
             else:

@@ -4,7 +4,6 @@ from copy import deepcopy
 import os
 from faker import Faker
 import pytest
-import random
 from dotenv import load_dotenv
 from sik_llms import (
     Client,
@@ -21,9 +20,12 @@ from sik_llms import (
     ThinkingChunkEvent,
     SUPPORTED_ANTHROPIC_MODELS,
 )
-from sik_llms.anthropic import _convert_messages
+from sik_llms.anthropic import ANTHROPIC_MODEL_NAMES, _convert_messages
 from sik_llms.models_base import ImageContent, ImageSourceType
-from tests.conftest import ANTHROPIC_TEST_MODEL, ANTRHOPIC_TEST_THINKING_MODEL
+from tests.conftest import (
+    ANTHROPIC_TEST_MODEL,
+    ANTRHOPIC_TEST_THINKING_MODEL,
+)
 load_dotenv()
 
 
@@ -33,25 +35,6 @@ class TestAnthropic:
     """Test the Anthropic Completion Wrapper."""
 
     async def test__all_models(self):
-        # Define all models to test
-        models = [
-            # versioned models
-            'claude-3-5-haiku-20241022',
-            'claude-3-5-sonnet-20241022',
-            'claude-3-7-sonnet-20250219',
-            'claude-sonnet-4-20250514',
-            'claude-sonnet-4-5-20250929',
-            'claude-opus-4-20250514',
-            'claude-opus-4-1-20250805',
-            # primary models
-            'claude-3-5-haiku',
-            'claude-3-7-sonnet',
-            'claude-sonnet-4',
-            'claude-sonnet-4-5',
-            'claude-opus-4',
-            'claude-opus-4-1',
-        ]
-
         messages = [
             system_message("You are a helpful assistant."),
             user_message("Respond with exactly \"42\"."),
@@ -63,12 +46,12 @@ class TestAnthropic:
             return model_name, response
 
         # Run all models concurrently
-        tasks = [test_single_model(model) for model in models]
+        tasks = [test_single_model(model) for model in ANTHROPIC_MODEL_NAMES]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Validate all responses
         for i, result in enumerate(results):
-            model_name = models[i]
+            model_name = ANTHROPIC_MODEL_NAMES[i]
             if isinstance(result, Exception):
                 pytest.fail(f"Model {model_name} failed with exception: {result}")
             else:
@@ -591,12 +574,22 @@ class TestAnthropicCaching:
         Tests that the first call results in a cache-miss and the second call results in a
         cache-hit. The tokens written to the cache should be read on the second call.
 
-        If use_init than we pass the cache content in the constructor, otherwise we create the
-        system message with the cache content directly.
+        If use_init than we pass the cache content in the Anthropic constructor, otherwise we
+        create the system message with the cache content directly. Both should work the same.
         """
-        length = random.randint(15_000, 20_000)
-        first_word = Faker().words(nb=1)[0]
-        cache_content = f"{first_word} is the first word. {Faker().text(max_nb_chars=length)}"
+        # https://docs.claude.com/en/docs/build-with-claude/prompt-caching#how-does-prompt-caching-work-with-extended-thinking
+        # The minimum cacheable prompt length is:
+        # 1024 tokens for Claude Opus 4.1, Claude Opus 4, Claude Sonnet 4.5, Claude Sonnet 4,
+        # Claude Sonnet 3.7, Claude Sonnet 3.5 (deprecated) and Claude Opus 3 (deprecated)
+        # 2048 tokens for Claude Haiku 4.5, Claude Haiku 3.5 and Claude Haiku 3
+
+        num_characters = 2048 * 20  # seems to only work if i set this to higher number
+        # the length is changed
+        words = Faker().words(nb=50)
+        # grab the longest word to ask for so there is less chance of ambiguity e.g. if the word
+        # chosen is "the" and the model response with "the first word is not known"
+        first_word = sorted(words, key=len, reverse=True)[0]
+        cache_content = f"`{first_word}` is the first word. {Faker().text(max_nb_chars=num_characters)}"  # noqa: E501
 
         client = Anthropic(
             model_name=ANTHROPIC_TEST_MODEL,
@@ -621,7 +614,7 @@ class TestAnthropicCaching:
 
         # first run should result in a cache-miss & write
         response = client(messages=messages)
-        assert first_word in response.response
+        assert first_word.lower() in response.response.lower()
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.cache_write_tokens > 0
@@ -646,7 +639,7 @@ class TestAnthropicCaching:
 
         # second run should result in a cache-hit
         response = client(messages=messages)
-        assert first_word in response.response
+        assert first_word.lower() in response.response.lower()
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.cache_write_tokens == 0
@@ -672,7 +665,7 @@ class TestAnthropicCaching:
 
         # we need to make the text long enough to trigger the cache
         text = "[THE FOLLOWING IS TEST DATA FOR TESTING PURPOSES ONLY; **INGNORE THE FOLLOWING TEXT**]"  # noqa: E501
-        text += Faker().text(max_nb_chars=15_000)
+        text += Faker().text(max_nb_chars=2_048 * 20)
         complex_weather_tool.parameters[-1].description = "\n\n" + text
 
         client = AnthropicTools(
@@ -861,7 +854,9 @@ class TestAnthropicReasoning:
         """Test that the extended thinking chunks have the correct content types."""
         model = Client.instantiate(
             client_type=RegisteredClients.ANTHROPIC,
-            model_name=ANTRHOPIC_TEST_THINKING_MODEL,
+            # model_name=ANTRHOPIC_TEST_THINKING_MODEL,
+            # later models don't seem to work with redacted magic string
+            model_name='claude-3-7-sonnet',
             thinking_budget_tokens=2000,
         )
         # Use a prompt that should trigger some thinking content
