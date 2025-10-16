@@ -28,8 +28,8 @@ OPENAI_TEST_FUNCTION_CALLING = 'gpt-4o-mini'
 OPENAI_TEST_MODEL_SUPPORTS_TEMP = 'gpt-4o-mini'
 OPENAI_TEST_REASONING_MODEL = 'o3-mini'
 
-ANTHROPIC_TEST_MODEL = 'claude-3-5-haiku'
-ANTRHOPIC_TEST_THINKING_MODEL = 'claude-3-7-sonnet'
+ANTHROPIC_TEST_MODEL = 'claude-4-5-haiku'
+ANTRHOPIC_TEST_THINKING_MODEL = 'claude-sonnet-4-5'
 
 
 @dataclass

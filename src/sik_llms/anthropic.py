@@ -44,6 +44,20 @@ ANTHROPIC_MODEL_LOOKUPS = [
     ),
 
     ModelInfo(
+        model='claude-haiku-4-5-20251001',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=64_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 1.00 / 1_000_000, 'output': 5.00 / 1_000_000,
+            'cache_write': 2.00 / 1_000_000, 'cache_read': 0.10 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        knowledge_cutoff_date=date(year=2025, month=2, day=1),
+    ),
+
+    ModelInfo(
         model='claude-3-5-sonnet-20241022',
         provider=ModelProvider.ANTHROPIC,
         max_output_tokens=8_192,
@@ -54,7 +68,7 @@ ANTHROPIC_MODEL_LOOKUPS = [
         },
         supports_tools=True,
         supports_images=True,
-        knowledge_cutoff_date=date(year=2024, month=4, day=30),
+        knowledge_cutoff_date=date(year=2024, month=4, day=1),
     ),
 
     ModelInfo(
@@ -69,7 +83,7 @@ ANTHROPIC_MODEL_LOOKUPS = [
         supports_tools=True,
         supports_images=True,
         supports_reasoning=True,
-        knowledge_cutoff_date=date(year=2024, month=11, day=30),
+        knowledge_cutoff_date=date(year=2024, month=11, day=1),
         metadata={
             'max_output_extended_thinking': 64_000,
         },
@@ -87,7 +101,7 @@ ANTHROPIC_MODEL_LOOKUPS = [
         supports_tools=True,
         supports_images=True,
         supports_reasoning=True,
-        knowledge_cutoff_date=date(year=2025, month=3, day=31),
+        knowledge_cutoff_date=date(year=2025, month=1, day=1),
         metadata={
             'max_output_extended_thinking': 64_000,
         },
@@ -105,7 +119,7 @@ ANTHROPIC_MODEL_LOOKUPS = [
         supports_tools=True,
         supports_images=True,
         supports_reasoning=True,
-        knowledge_cutoff_date=date(year=2025, month=7, day=31),
+        knowledge_cutoff_date=date(year=2025, month=1, day=1),
         metadata={
             'max_output_extended_thinking': 64_000,
         },
@@ -123,7 +137,7 @@ ANTHROPIC_MODEL_LOOKUPS = [
         supports_tools=True,
         supports_images=True,
         supports_reasoning=True,
-        knowledge_cutoff_date=date(year=2025, month=3, day=31),
+        knowledge_cutoff_date=date(year=2025, month=1, day=1),
         metadata={
             'max_output_extended_thinking': 64_000,
         },
@@ -141,7 +155,7 @@ ANTHROPIC_MODEL_LOOKUPS = [
         supports_tools=True,
         supports_images=True,
         supports_reasoning=True,
-        knowledge_cutoff_date=date(year=2025, month=3, day=31),
+        knowledge_cutoff_date=date(year=2025, month=1, day=1),
         metadata={
             'max_output_extended_thinking': 64_000,
         },
@@ -149,12 +163,13 @@ ANTHROPIC_MODEL_LOOKUPS = [
 ]
 SUPPORTED_ANTHROPIC_MODELS = {model.model: model for model in ANTHROPIC_MODEL_LOOKUPS}
 SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-20241022']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-4-5-haiku'] = SUPPORTED_ANTHROPIC_MODELS['claude-haiku-4-5-20251001']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-20250219']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4'] = SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-20250514']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-5'] = SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-5-20250929']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-opus-4'] = SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-20250514']
 SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-1'] = SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-1-20250805']  # noqa: E501
-
+ANTHROPIC_MODEL_NAMES = list(SUPPORTED_ANTHROPIC_MODELS.keys())
 
 # Default thinking budget tokens for each reasoning effort level
 REASONING_EFFORT_BUDGET = {
