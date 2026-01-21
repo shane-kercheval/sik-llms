@@ -113,6 +113,26 @@ def mcp_error_server_config(test_files_path: str) -> dict:
 
 
 @pytest.fixture
+def mcp_complex_types_server_config(test_files_path: str) -> dict:
+    """Config for MCP server with complex parameter types (arrays of objects, nested objects)."""
+    return {
+        "mcpServers": {
+            "fake-server-complex-types": {
+                "command": "uv",
+                "args": [
+                    "run",
+                    "--directory",
+                    str(test_files_path),
+                    "mcp",
+                    "run",
+                    "mcp_fake_server_complex_types.py",
+                ],
+            },
+        },
+    }
+
+
+@pytest.fixture
 def simple_weather_tool() -> Tool:
     """Create a simple weather tool with one required parameter."""
     return Tool(

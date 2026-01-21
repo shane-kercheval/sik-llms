@@ -30,11 +30,42 @@ class ServerConfig:
 
 
 @dataclass
+class ServerMetadata:
+    """Metadata about a connected MCP server."""
+
+    name: str
+    version: str
+    title: str | None = None
+    instructions: str | None = None
+
+
+@dataclass
 class ToolInfo:
     """Information about a tool."""
 
     server_name: str
     tool: Tool
+
+
+def _resolve_refs(schema: dict | list | object, definitions: dict) -> dict | list | object:
+    """Recursively resolve $ref references in a schema using $defs."""
+    if isinstance(schema, dict):
+        if '$ref' in schema:
+            # Extract the definition name from the reference
+            ref_path = schema['$ref'].split('/')
+            if len(ref_path) > 1 and ref_path[1] == '$defs':
+                def_name = ref_path[-1]
+                if def_name in definitions:
+                    # Return a copy of the definition with refs resolved
+                    resolved = definitions[def_name].copy()
+                    return _resolve_refs(resolved, definitions)
+            return schema  # Can't resolve, return as-is
+
+        # Recursively process all values
+        return {k: _resolve_refs(v, definitions) for k, v in schema.items()}
+    if isinstance(schema, list):
+        return [_resolve_refs(item, definitions) for item in schema]
+    return schema
 
 
 class MCPClientManager:
@@ -53,6 +84,7 @@ class MCPClientManager:
         self.configs = configs
         self.servers: dict[str, ClientSession] = {}
         self.tool_map: dict[str, ToolInfo] = {}
+        self.server_metadata: dict[str, ServerMetadata] = {}
         self.exit_stack = AsyncExitStack()
         self.silent = silent
 
@@ -150,8 +182,16 @@ class MCPClientManager:
         session = await self.exit_stack.enter_async_context(
             ClientSession(stdio_transport[0], stdio_transport[1]),
         )
-        await session.initialize()
+        init_result = await session.initialize()
         self.servers[config.name] = session
+
+        # Store server metadata including instructions
+        self.server_metadata[config.name] = ServerMetadata(
+            name=init_result.serverInfo.name,
+            version=init_result.serverInfo.version,
+            title=init_result.serverInfo.title,
+            instructions=init_result.instructions,
+        )
 
         # Get and register tools
         response = await session.list_tools()
@@ -167,7 +207,7 @@ class MCPClientManager:
                 tool=self._convert_to_tool(tool),
             )
 
-    def _convert_to_tool(self, mcp_tool: object) -> Tool:
+    def _convert_to_tool(self, mcp_tool: object) -> Tool:  # noqa: PLR0912, PLR0915
         """Convert an MCP tool to a custom Tool object."""
         tool_name = mcp_tool.name.strip()
         parameters = []
@@ -191,6 +231,14 @@ class MCPClientManager:
             # Determine if this property is required
             is_required = prop_name in required_props
 
+            # Initialize variables
+            prop_type = None
+            param_type = str
+            valid_values = None
+            description = None
+            any_of_types = []
+            json_schema = None
+
             # Check if this is a reference to a definition
             if '$ref' in prop_schema:
                 # Extract the definition name from the reference
@@ -210,24 +258,34 @@ class MCPClientManager:
 
                         # Get description from definition
                         description = definition.get('description')
-                    else:
-                        # Definition not found, use string as default
-                        param_type = str
-                        valid_values = None
-                        description = None
-                else:
-                    # Unknown reference format, use string as default
-                    param_type = str
-                    valid_values = None
-                    description = None
+
+                        # For object types, capture the full resolved schema
+                        if prop_type == 'object':
+                            resolved_def = _resolve_refs(definition, definitions)
+                            schema_keys = {
+                                'properties', 'required', 'additionalProperties',
+                            }
+                            json_schema = {
+                                k: v for k, v in resolved_def.items() if k in schema_keys
+                            }
             else:
                 # Handle regular properties (non-references)
-                any_of_types = []
                 if 'anyOf' in prop_schema:
+                    # Process anyOf schemas
                     for schema in prop_schema.get('anyOf', []):
                         schema_type = schema.get('type')
                         if schema_type in type_mapping:
                             any_of_types.append(type_mapping[schema_type])
+
+                    # Check if anyOf contains complex types (array/object with structure)
+                    has_complex_anyof = any(
+                        s.get('type') in ('array', 'object') or 'items' in s or 'properties' in s
+                        for s in prop_schema.get('anyOf', [])
+                    )
+                    if has_complex_anyof:
+                        # Capture the full anyOf structure with resolved refs
+                        resolved_anyof = _resolve_refs(prop_schema['anyOf'], definitions)
+                        json_schema = {'anyOf': resolved_anyof}
 
                 # Get the base type of the property
                 prop_type = prop_schema.get('type')
@@ -236,6 +294,17 @@ class MCPClientManager:
                 # Extract valid values and description
                 valid_values = prop_schema.get('enum')
                 description = prop_schema.get('description')
+
+                # For array and object types without anyOf, preserve the raw JSON schema
+                if prop_type in ('array', 'object') and json_schema is None:
+                    schema_keys = {
+                        'items', 'properties', 'required', 'additionalProperties',
+                        'minItems', 'maxItems',
+                    }
+                    raw_schema = {k: v for k, v in prop_schema.items() if k in schema_keys}
+                    if raw_schema:
+                        # Resolve any $ref in the schema
+                        json_schema = _resolve_refs(raw_schema, definitions)
 
             # Clean up description if present
             if description:
@@ -247,7 +316,8 @@ class MCPClientManager:
                 required=is_required,
                 description=description,
                 valid_values=valid_values,
-                any_of=any_of_types if 'any_of_types' in locals() and any_of_types else None,
+                any_of=any_of_types if any_of_types else None,
+                json_schema=json_schema,
             )
             parameters.append(param)
 
@@ -296,6 +366,65 @@ class MCPClientManager:
         if not tool_info:
             raise ValueError(f"Tool '{tool_name}' not found")
         return tool_info.tool
+
+    def get_server_metadata(self) -> dict[str, ServerMetadata]:
+        """Return metadata for all connected servers."""
+        return self.server_metadata.copy()
+
+    def get_tools_by_server(self) -> dict[str, list[Tool]]:
+        """Return tools grouped by server name."""
+        result: dict[str, list[Tool]] = {}
+        for tool_info in self.tool_map.values():
+            server = tool_info.server_name
+            if server not in result:
+                result[server] = []
+            result[server].append(tool_info.tool)
+        return result
+
+    def format_tools_with_instructions(self) -> str:
+        """
+        Format all tools grouped by server with instructions.
+
+        Returns a string suitable for injection into an LLM prompt.
+        Each server section includes its instructions (if any) followed by its tools.
+        """
+        tools_by_server = self.get_tools_by_server()
+        if not tools_by_server:
+            return "No tools available."
+
+        sections = []
+
+        for server_name, tools in tools_by_server.items():
+            metadata = self.server_metadata.get(server_name)
+
+            # Server header - use title if available, otherwise server name
+            display_name = metadata.title if metadata and metadata.title else server_name
+            section = f"### {display_name}\n\n"
+
+            # Instructions (if any)
+            if metadata and metadata.instructions:
+                section += f"**Server Instructions:**\n{metadata.instructions}\n\n"
+
+            # Tools
+            section += "**Available Tools:**\n\n"
+            for tool in tools:
+                section += f"#### `{tool.name}`\n"
+                if tool.description:
+                    if "\n" in tool.description:
+                        section += f"{tool.description.strip()}\n"
+                    else:
+                        section += f"{tool.description.strip()}\n"
+                if tool.parameters:
+                    section += "Parameters:\n"
+                    for param in tool.parameters:
+                        req = "(required)" if param.required else "(optional)"
+                        desc = f": {param.description.strip()}" if param.description else ""
+                        section += f"  - `{param.name}` {req}{desc}\n"
+                section += "\n"
+
+            sections.append(section.strip())
+
+        return "\n\n---\n\n".join(sections)
 
     async def call_tool(self, tool_name: str, args: dict[str, object]) -> CallToolResult:
         """

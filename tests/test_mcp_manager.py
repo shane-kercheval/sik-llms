@@ -24,6 +24,53 @@ from tests.conftest import (
 
 
 @pytest.mark.asyncio
+async def test__mcp_manager__preserves_complex_array_schema(
+    mcp_complex_types_server_config: dict,
+) -> None:
+    """Test that MCP tools with complex array schemas preserve the items structure."""
+    async with MCPClientManager(mcp_complex_types_server_config) as manager:
+        tool = manager.get_tool('update_with_arguments')
+
+        # Find the 'arguments' parameter
+        args_param = next(p for p in tool.parameters if p.name == 'arguments')
+
+        # Should have json_schema - for Optional[list[...]] it will be wrapped in anyOf
+        assert args_param.json_schema is not None, "Should have json_schema for array of objects"
+
+        # The schema is: anyOf: [{type: array, items: {...}}, {type: null}]
+        assert 'anyOf' in args_param.json_schema, "Should have anyOf for optional array"
+        anyof_schemas = args_param.json_schema['anyOf']
+
+        # Find the array schema in anyOf
+        array_schema = next((s for s in anyof_schemas if s.get('type') == 'array'), None)
+        assert array_schema is not None, "Should have array type in anyOf"
+
+        # Check that items structure is preserved with resolved $ref
+        assert 'items' in array_schema, "Should have items in array schema"
+        assert array_schema['items']['type'] == 'object'
+        assert 'properties' in array_schema['items']
+        assert 'name' in array_schema['items']['properties']
+
+
+@pytest.mark.asyncio
+async def test__mcp_manager__preserves_complex_object_schema(
+    mcp_complex_types_server_config: dict,
+) -> None:
+    """Test that MCP tools with complex object schemas preserve the properties structure."""
+    async with MCPClientManager(mcp_complex_types_server_config) as manager:
+        tool = manager.get_tool('connect_server')
+
+        # Find the 'config' parameter
+        config_param = next(p for p in tool.parameters if p.name == 'config')
+
+        # Should have json_schema with properties structure
+        assert config_param.json_schema is not None, "Should have json_schema for object"
+        assert 'properties' in config_param.json_schema, "Should have properties in json_schema"
+        assert 'host' in config_param.json_schema['properties']
+        assert 'port' in config_param.json_schema['properties']
+
+
+@pytest.mark.asyncio
 async def test_mcp_manager(mcp_fake_server_config: dict):
     async with MCPClientManager(mcp_fake_server_config) as manager:
         tools = manager.get_tool_infos()

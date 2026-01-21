@@ -617,6 +617,117 @@ class TestPydanticModelToParameters:
         assert "retries" not in required
         assert "settings" not in required
 
+    def test_parameter_json_schema_preserves_array_items(self) -> None:
+        """Test that json_schema field preserves complex array item structure."""
+        # This simulates what MCP tools provide for arrays of objects
+        param = Parameter(
+            name="arguments",
+            param_type=list,
+            required=False,
+            description="List of argument definitions",
+            json_schema={
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Argument name"},
+                        "description": {"type": "string", "description": "Argument description"},
+                        "required": {"type": "boolean", "description": "Whether required"},
+                    },
+                    "required": ["name"],
+                },
+            },
+        )
+
+        tool = Tool(
+            name="update_prompt",
+            parameters=[param],
+            description="Update a prompt",
+        )
+
+        # Test OpenAI format
+        openai_format = _tool_to_openai_schema(tool)
+        args_schema = openai_format["function"]["parameters"]["properties"]["arguments"]
+
+        assert args_schema["type"] == "array"
+        assert args_schema["description"] == "List of argument definitions"
+        assert "items" in args_schema
+        assert args_schema["items"]["type"] == "object"
+        assert "properties" in args_schema["items"]
+        assert "name" in args_schema["items"]["properties"]
+        assert "description" in args_schema["items"]["properties"]
+        assert "required" in args_schema["items"]["properties"]
+        # OpenAI requires ALL nested object properties to be listed as required
+        assert set(args_schema["items"]["required"]) == {"name", "description", "required"}
+
+        # Test Anthropic format
+        anthropic_format = _tool_to_anthropic_schema(tool)
+        args_schema = anthropic_format["input_schema"]["properties"]["arguments"]
+
+        assert args_schema["type"] == "array"
+        assert args_schema["description"] == "List of argument definitions"
+        assert "items" in args_schema
+        assert args_schema["items"]["type"] == "object"
+        assert "properties" in args_schema["items"]
+
+    def test_parameter_json_schema_preserves_object_properties(self) -> None:
+        """Test that json_schema field preserves complex object structure."""
+        param = Parameter(
+            name="config",
+            param_type=dict,
+            required=True,
+            description="Configuration object",
+            json_schema={
+                "properties": {
+                    "host": {"type": "string"},
+                    "port": {"type": "integer"},
+                    "ssl": {"type": "boolean"},
+                },
+                "required": ["host", "port"],
+                "additionalProperties": False,
+            },
+        )
+
+        tool = Tool(
+            name="connect",
+            parameters=[param],
+            description="Connect to server",
+        )
+
+        openai_format = _tool_to_openai_schema(tool)
+        config_schema = openai_format["function"]["parameters"]["properties"]["config"]
+
+        assert config_schema["type"] == "object"
+        assert "properties" in config_schema
+        assert "host" in config_schema["properties"]
+        assert "port" in config_schema["properties"]
+        assert "ssl" in config_schema["properties"]
+        # OpenAI requires ALL nested object properties to be listed as required
+        # This is enforced by _tool_to_openai_schema regardless of json_schema's required
+        assert set(config_schema["required"]) == {"host", "port", "ssl"}
+        assert config_schema["additionalProperties"] is False
+
+    def test_parameter_without_json_schema_uses_default(self) -> None:
+        """Test that parameters without json_schema use default conversion."""
+        param = Parameter(
+            name="items",
+            param_type=list,
+            required=True,
+            description="List of items",
+            # No json_schema - should use default string array
+        )
+
+        tool = Tool(
+            name="process",
+            parameters=[param],
+            description="Process items",
+        )
+
+        openai_format = _tool_to_openai_schema(tool)
+        items_schema = openai_format["function"]["parameters"]["properties"]["items"]
+
+        assert items_schema["type"] == "array"
+        assert items_schema["items"]["type"] == "string"  # Default
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration  # these tests make API calls
