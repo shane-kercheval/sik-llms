@@ -34,11 +34,21 @@ class RegisteredClients(Enum):
 
 
 class ReasoningEffort(Enum):
-    """Enum for reasoning effort levels."""
+    """
+    Enum for reasoning effort levels.
 
+    OpenAI: All values are supported. GPT-5.1+ defaults to NONE. Earlier models default to MEDIUM.
+            XHIGH is only supported for GPT-5.2+.
+    Anthropic: NONE is not supported (extended thinking requires minimum 1024 tokens).
+               Values are converted to thinking_budget_tokens.
+    """
+
+    NONE = 'none'
+    MINIMAL = 'minimal'
     LOW = 'low'
     MEDIUM = 'medium'
     HIGH = 'high'
+    XHIGH = 'xhigh'
 
 
 class ModelInfo(BaseModel):

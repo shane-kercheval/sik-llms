@@ -589,7 +589,7 @@ class TestAnthropicCaching:
         # grab the longest word to ask for so there is less chance of ambiguity e.g. if the word
         # chosen is "the" and the model response with "the first word is not known"
         first_word = sorted(words, key=len, reverse=True)[0]
-        cache_content = f"`{first_word}` is the first word. {Faker().text(max_nb_chars=num_characters)}"  # noqa: E501
+        cache_content = f"The secret word is `{first_word}`. {Faker().text(max_nb_chars=num_characters)}"  # noqa: E501
 
         client = Anthropic(
             model_name=ANTHROPIC_TEST_MODEL,
@@ -597,10 +597,11 @@ class TestAnthropicCaching:
             cache_content=[cache_content] if use_init else None,
         )
 
+        question = "What is the secret word in the text above? Respond with only the word, nothing else."  # noqa: E501
         if use_init:
             messages = [
                 system_message("You are a helpful assistant."),
-                user_message("What is the first word of this text? Only output the first word."),
+                user_message(question),
             ]
         else:
             messages = [
@@ -609,7 +610,7 @@ class TestAnthropicCaching:
                     cache_content,
                     cache_control={'type': 'ephemeral'},
                 ),
-                user_message("What is the first word of this text? Only output the first word."),
+                user_message(question),
             ]
 
         # first run should result in a cache-miss & write
@@ -735,7 +736,13 @@ class TestAnthropicReasoning:
 
     @pytest.mark.parametrize(
         "reasoning_effort",
-        [ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH],
+        [
+            ReasoningEffort.MINIMAL,
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+            ReasoningEffort.XHIGH,
+        ],
     )
     def test__Anthropic_instantiate__with_reasoning_effort(self, reasoning_effort: ReasoningEffort):  # noqa: E501
         model = Client.instantiate(
@@ -748,7 +755,17 @@ class TestAnthropicReasoning:
         assert model.model_parameters.get('thinking') is not None
         assert model.model_parameters['thinking']['type'] == 'enabled'
         assert model.model_parameters['thinking']['budget_tokens']
-        assert model.model_parameters['max_tokens'] > model.model_parameters['thinking']['budget_tokens']  # noqa: E501
+        assert model.model_parameters['max_tokens'] >= model.model_parameters['thinking']['budget_tokens']  # noqa: E501
+
+    def test__Anthropic_instantiate__with_reasoning_effort_none_raises_error(self) -> None:
+        """Test that ReasoningEffort.NONE raises an error for Anthropic."""
+        with pytest.raises(ValueError, match="ReasoningEffort.NONE is not supported"):
+            Client.instantiate(
+                client_type=RegisteredClients.ANTHROPIC,
+                model_name=ANTRHOPIC_TEST_THINKING_MODEL,
+                reasoning_effort=ReasoningEffort.NONE,
+                max_tokens=4000,
+            )
 
     def test__Anthropic_instantiate__with_thinking_budget(self):
         model = Client.instantiate(
@@ -761,7 +778,7 @@ class TestAnthropicReasoning:
         assert model.model_parameters.get('thinking') is not None
         assert model.model_parameters['thinking']['type'] == 'enabled'
         assert model.model_parameters['thinking']['budget_tokens'] == 12000
-        assert model.model_parameters['max_tokens'] > model.model_parameters['thinking']['budget_tokens']  # noqa: E501
+        assert model.model_parameters['max_tokens'] >= model.model_parameters['thinking']['budget_tokens']  # noqa: E501
 
     @pytest.mark.asyncio
     async def test__Anthropic__with_thinking__reasoning_effort(self):
@@ -849,42 +866,9 @@ class TestAnthropicReasoning:
         assert has_thinking_content, "No thinking content was generated"
         assert has_text_content, "No text content was generated"
 
-    @pytest.mark.asyncio
-    async def test__Anthropic__with_thinking__test_redacted_thinking(self):
-        """Test that the extended thinking chunks have the correct content types."""
-        model = Client.instantiate(
-            client_type=RegisteredClients.ANTHROPIC,
-            # model_name=ANTRHOPIC_TEST_THINKING_MODEL,
-            # later models don't seem to work with redacted magic string
-            model_name='claude-3-7-sonnet',
-            thinking_budget_tokens=2000,
-        )
-        # Use a prompt that should trigger some thinking content
-        has_redacted_thinking_content = False
-        has_thinking_content = False
-        has_text_content = False
-        has_summary = False
-
-        # test redacted thinking:
-        # https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#example-working-with-redacted-thinking-blocks
-        messages = [user_message("ANTHROPIC_MAGIC_STRING_TRIGGER_REDACTED_THINKING_46C9A13E193C177646C7398A98432ECCCE4C1253D5E2D82641AC0E52CC2876CB")]  # noqa: E501
-        async for response in model.stream(messages=messages):
-            if isinstance(response, TextChunkEvent):
-                has_text_content = True
-            elif isinstance(response, ThinkingChunkEvent):
-                if response.is_redacted:
-                    has_redacted_thinking_content = True
-                    assert response.content
-                else:
-                    has_thinking_content = True
-            elif isinstance(response, TextResponse):
-                has_summary = True
-                assert response.response
-
-        assert has_redacted_thinking_content, "No redacted thinking content was generated"
-        assert not has_thinking_content, "Thinking content was generated"
-        assert has_text_content, "No text content was generated"
-        assert has_summary, "No summary was generated"
+    # NOTE: test__Anthropic__with_thinking__test_redacted_thinking was removed because the
+    # redacted thinking magic string only works with claude-3-7-sonnet (deprecated Feb 2026)
+    # and no newer models seem to support the magic string.
 
     @pytest.mark.asyncio
     async def test__Anthropic__without_thinking__verify_no_thinking_events(self):

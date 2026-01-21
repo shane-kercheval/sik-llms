@@ -1,4 +1,18 @@
-"""Helper functions for interacting with the Anthropic API."""
+"""
+Helper functions for interacting with the Anthropic API.
+
+Prompt Caching Pricing Note:
+    Anthropic offers two cache TTL options with different pricing:
+    - 5-minute cache (default): write cost is 1.25x base input price
+    - 1-hour cache (explicit): write cost is 2x base input price
+    - Cache reads: 0.1x base input price (same for both TTLs)
+
+    This module uses the default 5-minute cache TTL, so all `cache_write` pricing values
+    reflect the 1.25x multiplier. If 1-hour caching support is added in the future,
+    a separate `cache_write_1h` pricing key should be introduced.
+
+    See: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
+"""
 from copy import deepcopy
 from datetime import date
 import os
@@ -29,19 +43,20 @@ from sik_llms.utilities import get_json_schema_type
 
 
 ANTHROPIC_MODEL_LOOKUPS = [
-    ModelInfo(
-        model='claude-3-5-haiku-20241022',
-        provider=ModelProvider.ANTHROPIC,
-        max_output_tokens=8_192,
-        context_window_size=200_000,
-        pricing={
-            'input': 0.80 / 1_000_000, 'output': 4.0 / 1_000_000,
-            'cache_write': 1.00 / 1_000_000, 'cache_read': 0.08 / 1_000_000,
-        },
-        supports_tools=True,
-        supports_images=True,
-        knowledge_cutoff_date=date(year=2024, month=7, day=31),
-    ),
+    # DEPRECATED: Retiring Feb 19, 2026. Replacement: claude-haiku-4-5-20251001
+    # ModelInfo(
+    #     model='claude-3-5-haiku-20241022',
+    #     provider=ModelProvider.ANTHROPIC,
+    #     max_output_tokens=8_192,
+    #     context_window_size=200_000,
+    #     pricing={
+    #         'input': 0.80 / 1_000_000, 'output': 4.0 / 1_000_000,
+    #         'cache_write': 1.00 / 1_000_000, 'cache_read': 0.08 / 1_000_000,
+    #     },
+    #     supports_tools=True,
+    #     supports_images=True,
+    #     knowledge_cutoff_date=date(year=2024, month=7, day=31),
+    # ),
 
     ModelInfo(
         model='claude-haiku-4-5-20251001',
@@ -50,44 +65,46 @@ ANTHROPIC_MODEL_LOOKUPS = [
         context_window_size=200_000,
         pricing={
             'input': 1.00 / 1_000_000, 'output': 5.00 / 1_000_000,
-            'cache_write': 2.00 / 1_000_000, 'cache_read': 0.10 / 1_000_000,
+            'cache_write': 1.25 / 1_000_000, 'cache_read': 0.10 / 1_000_000,
         },
         supports_tools=True,
         supports_images=True,
         knowledge_cutoff_date=date(year=2025, month=2, day=1),
     ),
 
-    ModelInfo(
-        model='claude-3-5-sonnet-20241022',
-        provider=ModelProvider.ANTHROPIC,
-        max_output_tokens=8_192,
-        context_window_size=200_000,
-        pricing={
-            'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
-            'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
-        },
-        supports_tools=True,
-        supports_images=True,
-        knowledge_cutoff_date=date(year=2024, month=4, day=1),
-    ),
+    # RETIRED: Oct 28, 2025. Replacement: claude-sonnet-4-5-20250929
+    # ModelInfo(
+    #     model='claude-3-5-sonnet-20241022',
+    #     provider=ModelProvider.ANTHROPIC,
+    #     max_output_tokens=8_192,
+    #     context_window_size=200_000,
+    #     pricing={
+    #         'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
+    #         'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
+    #     },
+    #     supports_tools=True,
+    #     supports_images=True,
+    #     knowledge_cutoff_date=date(year=2024, month=4, day=1),
+    # ),
 
-    ModelInfo(
-        model='claude-3-7-sonnet-20250219',
-        provider=ModelProvider.ANTHROPIC,
-        max_output_tokens=64_000,
-        context_window_size=200_000,
-        pricing={
-            'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
-            'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
-        },
-        supports_tools=True,
-        supports_images=True,
-        supports_reasoning=True,
-        knowledge_cutoff_date=date(year=2024, month=11, day=1),
-        metadata={
-            'max_output_extended_thinking': 64_000,
-        },
-    ),
+    # DEPRECATED: Retiring Feb 19, 2026. Replacement: claude-sonnet-4-5-20250929
+    # ModelInfo(
+    #     model='claude-3-7-sonnet-20250219',
+    #     provider=ModelProvider.ANTHROPIC,
+    #     max_output_tokens=64_000,
+    #     context_window_size=200_000,
+    #     pricing={
+    #         'input': 3.00 / 1_000_000, 'output': 15.00 / 1_000_000,
+    #         'cache_write': 3.75 / 1_000_000, 'cache_read': 0.30 / 1_000_000,
+    #     },
+    #     supports_tools=True,
+    #     supports_images=True,
+    #     supports_reasoning=True,
+    #     knowledge_cutoff_date=date(year=2024, month=11, day=1),
+    #     metadata={
+    #         'max_output_extended_thinking': 64_000,
+    #     },
+    # ),
 
     ModelInfo(
         model='claude-sonnet-4-20250514',
@@ -160,22 +177,45 @@ ANTHROPIC_MODEL_LOOKUPS = [
             'max_output_extended_thinking': 64_000,
         },
     ),
+
+    ModelInfo(
+        model='claude-opus-4-5-20251101',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=64_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 5.00 / 1_000_000, 'output': 25.00 / 1_000_000,
+            'cache_write': 6.25 / 1_000_000, 'cache_read': 0.50 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        supports_reasoning=True,
+        knowledge_cutoff_date=date(year=2025, month=5, day=1),
+        metadata={
+            'max_output_extended_thinking': 64_000,
+        },
+    ),
 ]
 SUPPORTED_ANTHROPIC_MODELS = {model.model: model for model in ANTHROPIC_MODEL_LOOKUPS}
-SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-20241022']  # noqa: E501
-SUPPORTED_ANTHROPIC_MODELS['claude-4-5-haiku'] = SUPPORTED_ANTHROPIC_MODELS['claude-haiku-4-5-20251001']  # noqa: E501
-SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-20250219']  # noqa: E501
+# DEPRECATED aliases (models retiring Feb 19, 2026):
+# SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-5-haiku-20241022']  # noqa: E501
+# SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet'] = SUPPORTED_ANTHROPIC_MODELS['claude-3-7-sonnet-20250219']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-haiku-4-5'] = SUPPORTED_ANTHROPIC_MODELS['claude-haiku-4-5-20251001']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4'] = SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-20250514']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-5'] = SUPPORTED_ANTHROPIC_MODELS['claude-sonnet-4-5-20250929']  # noqa: E501
 SUPPORTED_ANTHROPIC_MODELS['claude-opus-4'] = SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-20250514']
 SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-1'] = SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-1-20250805']  # noqa: E501
+SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-5'] = SUPPORTED_ANTHROPIC_MODELS['claude-opus-4-5-20251101']  # noqa: E501
 ANTHROPIC_MODEL_NAMES = list(SUPPORTED_ANTHROPIC_MODELS.keys())
 
-# Default thinking budget tokens for each reasoning effort level
+# Default thinking budget tokens for each reasoning effort level.
+# Note: NONE is not supported for Anthropic (extended thinking requires minimum 1024 tokens).
 REASONING_EFFORT_BUDGET = {
+    ReasoningEffort.MINIMAL: 1_024,
     ReasoningEffort.LOW: 4_000,
     ReasoningEffort.MEDIUM: 16_000,
     ReasoningEffort.HIGH: 32_000,
+    ReasoningEffort.XHIGH: 64_000,
 }
 
 
@@ -413,6 +453,11 @@ class Anthropic(Client):
 
             if reasoning_effort:
                 # if reasoning_effort is set then thinking_budget_tokens is not set
+                if reasoning_effort == ReasoningEffort.NONE:
+                    raise ValueError(
+                        "ReasoningEffort.NONE is not supported for Anthropic. "
+                        "Extended thinking requires a minimum of 1024 tokens.",
+                    )
                 thinking_budget_tokens = REASONING_EFFORT_BUDGET[reasoning_effort]
             if thinking_budget_tokens < 1024:
                 raise ValueError("thinking_budget_tokens must be at least 1024")

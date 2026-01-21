@@ -23,12 +23,12 @@ def pytest_runtest_setup(item: pytest.Item):
         pytest.skip("Skipping test in CI environment")
 
 
-OPENAI_TEST_MODEL = 'gpt-5-nano'
-OPENAI_TEST_FUNCTION_CALLING = 'gpt-4o-mini'
-OPENAI_TEST_MODEL_SUPPORTS_TEMP = 'gpt-4o-mini'
+OPENAI_TEST_MODEL = 'gpt-4.1-nano'
+OPENAI_TEST_FUNCTION_CALLING = 'gpt-4.1-mini'
+OPENAI_TEST_MODEL_SUPPORTS_TEMP = 'gpt-4.1-nano'
 OPENAI_TEST_REASONING_MODEL = 'o3-mini'
 
-ANTHROPIC_TEST_MODEL = 'claude-4-5-haiku'
+ANTHROPIC_TEST_MODEL = 'claude-haiku-4-5'
 ANTRHOPIC_TEST_THINKING_MODEL = 'claude-sonnet-4-5'
 
 

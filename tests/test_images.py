@@ -40,8 +40,9 @@ class TestImagesChat:
 
     async def test_url_image(self, model_name: str):
         """Test handling of URL-based images."""
+        # Using httpbin test image - Wikipedia URLs are often blocked by APIs
         image = ImageContent.from_url(
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/320px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+            "https://httpbin.org/image/jpeg",
         )
 
         client = create_client(model_name=model_name)
@@ -100,8 +101,9 @@ class TestImagesChat:
 
     async def test_multiple_images(self, model_name: str, test_image_bytes: Path):
         """Test handling multiple images in one message."""
+        # Using httpbin test image - Wikipedia URLs are often blocked by APIs
         image1 = ImageContent.from_url(
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/320px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+            "https://httpbin.org/image/jpeg",
         )
         image2 = ImageContent.from_bytes(
             test_image_bytes,

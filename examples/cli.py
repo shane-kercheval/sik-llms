@@ -46,7 +46,7 @@ async def reasoning_agent_chat(  # noqa: PLR0912
         manager: MCPClientManager,
         messages: list[dict],
         agent_mode: bool=True,
-        model: str='gpt-4o-mini',
+        model: str='gpt-4.1-nano',
         temperature: float=0.1,
     ) -> str:
     """Handle chat using the reasoning agent or chat."""
@@ -108,7 +108,7 @@ async def reasoning_agent_chat(  # noqa: PLR0912
 )
 @click.option(
     '--model',
-    default='gpt-4o-mini',
+    default='gpt-4.1-nano',
     help='Model name to use for the client',
 )
 @click.option('-tools', is_flag=True, help='Display available tools')

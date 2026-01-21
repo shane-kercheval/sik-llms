@@ -1,4 +1,21 @@
-"""Helper functions for OpenAI API."""
+"""
+Helper functions for OpenAI API.
+
+Prompt Caching Pricing Note:
+    OpenAI offers automatic prompt caching with discounts that vary by model family:
+    - GPT-4o family: 50% discount on cached input tokens
+    - GPT-4.1 family: 75% discount on cached input tokens
+    - GPT-5 family: 90% discount on cached input tokens
+    - o-series (o1, o3): 50% discount on cached input tokens
+
+    Unlike Anthropic, OpenAI's caching is automatic (no explicit cache_control needed)
+    and there is no cache write cost - only cache read discounts.
+
+    Note: o-series models use internal "reasoning tokens" that are billed as output tokens
+    but not visible in API responses. Actual costs may be higher than visible output suggests.
+
+    See: https://openai.com/api/pricing/
+"""
 from copy import deepcopy
 from datetime import date
 from functools import cache
@@ -176,6 +193,44 @@ OPENAI_MODEL_INFOS = [
         knowledge_cutoff_date=date(year=2024, month=5, day=30),
     ),
     ####
+    # GPT-5.1
+    ####
+    ModelInfo(
+        model='gpt-5.1-2025-11-13',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=128_000,
+        context_window_size=400_000,
+        pricing={
+            'input': 1.25 / 1_000_000, 'output': 10.00 / 1_000_000,
+            'cached': 0.125 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        supports_temperature=False,
+        knowledge_cutoff_date=date(year=2024, month=9, day=30),
+    ),
+    ####
+    # GPT-5.2
+    ####
+    ModelInfo(
+        model='gpt-5.2-2025-12-11',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=128_000,
+        context_window_size=400_000,
+        pricing={
+            'input': 1.75 / 1_000_000, 'output': 14.00 / 1_000_000,
+            'cached': 0.18 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        supports_temperature=False,
+        knowledge_cutoff_date=date(year=2025, month=8, day=31),
+    ),
+    ####
     # o3
     ####
     ModelInfo(
@@ -193,6 +248,22 @@ OPENAI_MODEL_INFOS = [
         supports_images=True,
         supports_temperature=False,
         knowledge_cutoff_date=date(year=2023, month=9, day=30),
+    ),
+    ModelInfo(
+        model='o3-2025-04-16',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=100_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 2.00 / 1_000_000, 'output': 8.00 / 1_000_000,
+            'cached': 1.00 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        supports_temperature=False,
+        knowledge_cutoff_date=date(year=2024, month=6, day=30),
     ),
     ####
     # o1
@@ -224,7 +295,10 @@ SUPPORTED_OPENAI_MODELS['gpt-4.1-nano'] = SUPPORTED_OPENAI_MODELS['gpt-4.1-nano-
 SUPPORTED_OPENAI_MODELS['gpt-5'] = SUPPORTED_OPENAI_MODELS['gpt-5-2025-08-07']
 SUPPORTED_OPENAI_MODELS['gpt-5-mini'] = SUPPORTED_OPENAI_MODELS['gpt-5-mini-2025-08-07']
 SUPPORTED_OPENAI_MODELS['gpt-5-nano'] = SUPPORTED_OPENAI_MODELS['gpt-5-nano-2025-08-07']
+SUPPORTED_OPENAI_MODELS['gpt-5.1'] = SUPPORTED_OPENAI_MODELS['gpt-5.1-2025-11-13']
+SUPPORTED_OPENAI_MODELS['gpt-5.2'] = SUPPORTED_OPENAI_MODELS['gpt-5.2-2025-12-11']
 SUPPORTED_OPENAI_MODELS['o3-mini'] = SUPPORTED_OPENAI_MODELS['o3-mini-2025-01-31']
+SUPPORTED_OPENAI_MODELS['o3'] = SUPPORTED_OPENAI_MODELS['o3-2025-04-16']
 SUPPORTED_OPENAI_MODELS['o1'] = SUPPORTED_OPENAI_MODELS['o1-2024-12-17']
 OPENAI_MODEL_NAMES = list(SUPPORTED_OPENAI_MODELS.keys())
 
