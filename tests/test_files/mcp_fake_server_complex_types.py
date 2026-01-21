@@ -16,7 +16,7 @@ class ArgumentDefinition(BaseModel):
 
 @mcp.tool()
 async def update_with_arguments(
-    content: str,
+    content: str,  # noqa: ARG001
     arguments: list[ArgumentDefinition] | None = None,
 ) -> str:
     """

@@ -7,7 +7,6 @@ import re
 import pytest
 from mcp.types import CallToolResult, TextContent
 from sik_llms.mcp_manager import MCPClientManager
-from sik_llms.openai import _tool_to_openai_schema
 from sik_llms.models_base import (
     ErrorEvent,
     TextResponse,

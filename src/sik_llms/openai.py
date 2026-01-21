@@ -649,7 +649,7 @@ def _apply_openai_object_requirements(schema: dict | list | object) -> dict | li
     return schema
 
 
-def _tool_to_openai_schema(tool: Tool) -> dict[str, object]:
+def _tool_to_openai_schema(tool: Tool) -> dict[str, object]:  # noqa: PLR0912
     """
     Convert the tool to the format expected by OpenAI API.
 

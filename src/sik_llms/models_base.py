@@ -368,7 +368,7 @@ class Parameter(BaseModel):
     description: str | None = None
     valid_values: list[Any] | None = None  # For enum-like constraints
     any_of: list[Any] | None = None  # For union types
-    json_schema: dict[str, Any] | None = None  # Raw JSON schema for complex types (e.g., array items)
+    json_schema: dict[str, Any] | None = None  # Raw JSON schema for complex types (e.g., array items)  # noqa: E501
 
     model_config = {
         "arbitrary_types_allowed": True,  # Allow any type for param_type field

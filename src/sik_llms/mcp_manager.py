@@ -63,10 +63,9 @@ def _resolve_refs(schema: dict | list | object, definitions: dict) -> dict | lis
 
         # Recursively process all values
         return {k: _resolve_refs(v, definitions) for k, v in schema.items()}
-    elif isinstance(schema, list):
+    if isinstance(schema, list):
         return [_resolve_refs(item, definitions) for item in schema]
-    else:
-        return schema
+    return schema
 
 
 class MCPClientManager:
@@ -208,7 +207,7 @@ class MCPClientManager:
                 tool=self._convert_to_tool(tool),
             )
 
-    def _convert_to_tool(self, mcp_tool: object) -> Tool:
+    def _convert_to_tool(self, mcp_tool: object) -> Tool:  # noqa: PLR0912, PLR0915
         """Convert an MCP tool to a custom Tool object."""
         tool_name = mcp_tool.name.strip()
         parameters = []
