@@ -30,6 +30,16 @@ class ServerConfig:
 
 
 @dataclass
+class ServerMetadata:
+    """Metadata about a connected MCP server."""
+
+    name: str
+    version: str
+    title: str | None = None
+    instructions: str | None = None
+
+
+@dataclass
 class ToolInfo:
     """Information about a tool."""
 
@@ -53,6 +63,7 @@ class MCPClientManager:
         self.configs = configs
         self.servers: dict[str, ClientSession] = {}
         self.tool_map: dict[str, ToolInfo] = {}
+        self.server_metadata: dict[str, ServerMetadata] = {}
         self.exit_stack = AsyncExitStack()
         self.silent = silent
 
@@ -150,8 +161,16 @@ class MCPClientManager:
         session = await self.exit_stack.enter_async_context(
             ClientSession(stdio_transport[0], stdio_transport[1]),
         )
-        await session.initialize()
+        init_result = await session.initialize()
         self.servers[config.name] = session
+
+        # Store server metadata including instructions
+        self.server_metadata[config.name] = ServerMetadata(
+            name=init_result.serverInfo.name,
+            version=init_result.serverInfo.version,
+            title=init_result.serverInfo.title,
+            instructions=init_result.instructions,
+        )
 
         # Get and register tools
         response = await session.list_tools()
@@ -296,6 +315,65 @@ class MCPClientManager:
         if not tool_info:
             raise ValueError(f"Tool '{tool_name}' not found")
         return tool_info.tool
+
+    def get_server_metadata(self) -> dict[str, ServerMetadata]:
+        """Return metadata for all connected servers."""
+        return self.server_metadata.copy()
+
+    def get_tools_by_server(self) -> dict[str, list[Tool]]:
+        """Return tools grouped by server name."""
+        result: dict[str, list[Tool]] = {}
+        for tool_info in self.tool_map.values():
+            server = tool_info.server_name
+            if server not in result:
+                result[server] = []
+            result[server].append(tool_info.tool)
+        return result
+
+    def format_tools_with_instructions(self) -> str:
+        """
+        Format all tools grouped by server with instructions.
+
+        Returns a string suitable for injection into an LLM prompt.
+        Each server section includes its instructions (if any) followed by its tools.
+        """
+        tools_by_server = self.get_tools_by_server()
+        if not tools_by_server:
+            return "No tools available."
+
+        sections = []
+
+        for server_name, tools in tools_by_server.items():
+            metadata = self.server_metadata.get(server_name)
+
+            # Server header - use title if available, otherwise server name
+            display_name = metadata.title if metadata and metadata.title else server_name
+            section = f"### {display_name}\n\n"
+
+            # Instructions (if any)
+            if metadata and metadata.instructions:
+                section += f"**Server Instructions:**\n{metadata.instructions}\n\n"
+
+            # Tools
+            section += "**Available Tools:**\n\n"
+            for tool in tools:
+                section += f"#### `{tool.name}`\n"
+                if tool.description:
+                    if "\n" in tool.description:
+                        section += f"{tool.description.strip()}\n"
+                    else:
+                        section += f"{tool.description.strip()}\n"
+                if tool.parameters:
+                    section += "Parameters:\n"
+                    for param in tool.parameters:
+                        req = "(required)" if param.required else "(optional)"
+                        desc = f": {param.description.strip()}" if param.description else ""
+                        section += f"  - `{param.name}` {req}{desc}\n"
+                section += "\n"
+
+            sections.append(section.strip())
+
+        return "\n\n---\n\n".join(sections)
 
     async def call_tool(self, tool_name: str, args: dict[str, object]) -> CallToolResult:
         """

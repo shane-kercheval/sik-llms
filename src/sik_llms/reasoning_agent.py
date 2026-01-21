@@ -70,6 +70,7 @@ class ReasoningAgent(Client):
             model_name: str,
             client_type: str | RegisteredClients | None = None,
             tools: list[Tool] | None = None,
+            tools_context: str | None = None,
             tools_model_name: str | None = None,
             tools_client_type: str | RegisteredClients | None = None,
             generate_final_response: bool = True,
@@ -86,6 +87,11 @@ class ReasoningAgent(Client):
                 The client type to use for the reasoning model.
             tools:
                 Optional list of tools the agent can use
+            tools_context:
+                Optional pre-formatted string describing tools and their context.
+                If provided, this is used instead of auto-generating tool descriptions.
+                Useful for including MCP server instructions alongside tool definitions.
+                Can be generated via MCPClientManager.format_tools_with_instructions().
             tools_model_name:
                 The model name to use for the tools client. If tools are provided, and
                 tools_model_name is not specified, the tools client will use the same
@@ -127,13 +133,17 @@ class ReasoningAgent(Client):
         if tools and any(t.func is None for t in tools):
             raise ValueError("All tools must have a callable function")
         self.tools = tools or []
+        self.tools_context = tools_context
         self.max_iterations = max_iterations
         # Set up the system prompt for reasoning
         self.reasoning_system_prompt = self._create_reasoning_prompt()
 
     def _create_reasoning_prompt(self) -> str:
-        """Default system prompt for reasoning."""
-        if self.tools:
+        """Create the system prompt for reasoning."""
+        # Use pre-formatted tools_context if provided (e.g., from MCP with server instructions)
+        if self.tools_context:
+            tools_description = self.tools_context
+        elif self.tools:
             tools_description = "Here are the available tools:\n\n"
             for tool in self.tools:
                 tools_description += f"### `{tool.name.strip()}`:\n\n"
