@@ -47,6 +47,28 @@ class ToolInfo:
     tool: Tool
 
 
+def _resolve_refs(schema: dict | list | object, definitions: dict) -> dict | list | object:
+    """Recursively resolve $ref references in a schema using $defs."""
+    if isinstance(schema, dict):
+        if '$ref' in schema:
+            # Extract the definition name from the reference
+            ref_path = schema['$ref'].split('/')
+            if len(ref_path) > 1 and ref_path[1] == '$defs':
+                def_name = ref_path[-1]
+                if def_name in definitions:
+                    # Return a copy of the definition with refs resolved
+                    resolved = definitions[def_name].copy()
+                    return _resolve_refs(resolved, definitions)
+            return schema  # Can't resolve, return as-is
+
+        # Recursively process all values
+        return {k: _resolve_refs(v, definitions) for k, v in schema.items()}
+    elif isinstance(schema, list):
+        return [_resolve_refs(item, definitions) for item in schema]
+    else:
+        return schema
+
+
 class MCPClientManager:
     """Manages connections to MCP servers."""
 
@@ -210,6 +232,14 @@ class MCPClientManager:
             # Determine if this property is required
             is_required = prop_name in required_props
 
+            # Initialize variables
+            prop_type = None
+            param_type = str
+            valid_values = None
+            description = None
+            any_of_types = []
+            json_schema = None
+
             # Check if this is a reference to a definition
             if '$ref' in prop_schema:
                 # Extract the definition name from the reference
@@ -229,24 +259,34 @@ class MCPClientManager:
 
                         # Get description from definition
                         description = definition.get('description')
-                    else:
-                        # Definition not found, use string as default
-                        param_type = str
-                        valid_values = None
-                        description = None
-                else:
-                    # Unknown reference format, use string as default
-                    param_type = str
-                    valid_values = None
-                    description = None
+
+                        # For object types, capture the full resolved schema
+                        if prop_type == 'object':
+                            resolved_def = _resolve_refs(definition, definitions)
+                            schema_keys = {
+                                'properties', 'required', 'additionalProperties',
+                            }
+                            json_schema = {
+                                k: v for k, v in resolved_def.items() if k in schema_keys
+                            }
             else:
                 # Handle regular properties (non-references)
-                any_of_types = []
                 if 'anyOf' in prop_schema:
+                    # Process anyOf schemas
                     for schema in prop_schema.get('anyOf', []):
                         schema_type = schema.get('type')
                         if schema_type in type_mapping:
                             any_of_types.append(type_mapping[schema_type])
+
+                    # Check if anyOf contains complex types (array/object with structure)
+                    has_complex_anyof = any(
+                        s.get('type') in ('array', 'object') or 'items' in s or 'properties' in s
+                        for s in prop_schema.get('anyOf', [])
+                    )
+                    if has_complex_anyof:
+                        # Capture the full anyOf structure with resolved refs
+                        resolved_anyof = _resolve_refs(prop_schema['anyOf'], definitions)
+                        json_schema = {'anyOf': resolved_anyof}
 
                 # Get the base type of the property
                 prop_type = prop_schema.get('type')
@@ -255,6 +295,17 @@ class MCPClientManager:
                 # Extract valid values and description
                 valid_values = prop_schema.get('enum')
                 description = prop_schema.get('description')
+
+                # For array and object types without anyOf, preserve the raw JSON schema
+                if prop_type in ('array', 'object') and json_schema is None:
+                    schema_keys = {
+                        'items', 'properties', 'required', 'additionalProperties',
+                        'minItems', 'maxItems',
+                    }
+                    raw_schema = {k: v for k, v in prop_schema.items() if k in schema_keys}
+                    if raw_schema:
+                        # Resolve any $ref in the schema
+                        json_schema = _resolve_refs(raw_schema, definitions)
 
             # Clean up description if present
             if description:
@@ -266,7 +317,8 @@ class MCPClientManager:
                 required=is_required,
                 description=description,
                 valid_values=valid_values,
-                any_of=any_of_types if 'any_of_types' in locals() and any_of_types else None,
+                any_of=any_of_types if any_of_types else None,
+                json_schema=json_schema,
             )
             parameters.append(param)
 

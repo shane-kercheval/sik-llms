@@ -617,6 +617,33 @@ class Anthropic(Client):
         )
 
 
+def _apply_anthropic_object_requirements(schema: dict | list | object) -> dict | list | object:
+    """
+    Recursively apply Anthropic's requirements to all nested objects in a schema.
+
+    Similar to OpenAI, Anthropic benefits from:
+    - additionalProperties: false for all objects
+    - All properties of nested objects listed as required
+    """
+    if isinstance(schema, dict):
+        # If this is an object type with properties, apply requirements
+        if schema.get('type') == 'object' and 'properties' in schema:
+            schema['additionalProperties'] = False
+            if schema['properties']:
+                schema['required'] = list(schema['properties'].keys())
+            # Recursively apply to nested properties
+            for prop_schema in schema['properties'].values():
+                _apply_anthropic_object_requirements(prop_schema)
+        # Recursively process all values (anyOf, items, etc.)
+        for key, value in schema.items():
+            if isinstance(value, dict | list):
+                _apply_anthropic_object_requirements(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            _apply_anthropic_object_requirements(item)
+    return schema
+
+
 def _tool_to_anthropic_schema(tool: Tool) -> dict[str, object]:  # noqa: PLR0912
     """
     Convert the tool to the format expected by Anthropic API.
@@ -630,8 +657,16 @@ def _tool_to_anthropic_schema(tool: Tool) -> dict[str, object]:  # noqa: PLR0912
     required = []
 
     for param in tool.parameters:
+        json_type = None
+
+        # If we have a raw JSON schema with anyOf (from MCP tools), use it directly
+        # This preserves complex nested structures like anyOf with array items having properties
+        if param.json_schema and 'anyOf' in param.json_schema:
+            param_dict = deepcopy(param.json_schema)
+            # Apply requirements to all nested objects in the anyOf schemas
+            _apply_anthropic_object_requirements(param_dict)
         # Handle union types (any_of) by creating multiple schema options
-        if param.any_of:
+        elif param.any_of:
             any_of_schemas = []
             for union_type in param.any_of:
                 json_type, extra_props = get_json_schema_type(union_type)
@@ -646,7 +681,14 @@ def _tool_to_anthropic_schema(tool: Tool) -> dict[str, object]:  # noqa: PLR0912
             # Remove any default values from extra_props
             if 'default' in extra_props:
                 del extra_props['default']
-            param_dict = {"type": json_type, **extra_props}
+            # If we have a raw JSON schema (from MCP tools), use it instead of generated schema
+            # This preserves complex nested structures like array items with object properties
+            if param.json_schema:
+                param_dict = {"type": json_type, **param.json_schema}
+                # Apply requirements to all nested objects
+                _apply_anthropic_object_requirements(param_dict)
+            else:
+                param_dict = {"type": json_type, **extra_props}
 
         # Add description to improve usability for the LLM
         if param.description:
@@ -656,7 +698,7 @@ def _tool_to_anthropic_schema(tool: Tool) -> dict[str, object]:  # noqa: PLR0912
         if param.valid_values:
             param_dict["enum"] = param.valid_values
 
-        # Special handling for object types:
+        # Special handling for object types at the top level:
         if json_type == 'object':
             # If this is a dictionary type with value type constraints, preserve them
             if 'additionalProperties' in extra_props and isinstance(extra_props['additionalProperties'], dict):  # noqa: E501
