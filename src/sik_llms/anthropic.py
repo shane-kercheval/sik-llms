@@ -1,6 +1,10 @@
 """
 Helper functions for interacting with the Anthropic API.
 
+- https://platform.claude.com/docs/en/about-claude/pricing
+- https://platform.claude.com/docs/en/about-claude/models/overview
+- https://platform.claude.com/docs/en/about-claude/model-deprecations
+
 Prompt Caching Pricing Note:
     Anthropic offers two cache TTL options with different pricing:
     - 5-minute cache (default): write cost is 1.25x base input price
@@ -193,6 +197,24 @@ ANTHROPIC_MODEL_LOOKUPS = [
         knowledge_cutoff_date=date(year=2025, month=5, day=1),
         metadata={
             'max_output_extended_thinking': 64_000,
+        },
+    ),
+
+    ModelInfo(
+        model='claude-opus-4-6',
+        provider=ModelProvider.ANTHROPIC,
+        max_output_tokens=128_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 5.00 / 1_000_000, 'output': 25.00 / 1_000_000,
+            'cache_write': 6.25 / 1_000_000, 'cache_read': 0.50 / 1_000_000,
+        },
+        supports_tools=True,
+        supports_images=True,
+        supports_reasoning=True,
+        knowledge_cutoff_date=date(year=2025, month=5, day=1),
+        metadata={
+            'max_output_extended_thinking': 128_000,
         },
     ),
 ]
