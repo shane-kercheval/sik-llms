@@ -1,12 +1,17 @@
 """
 Helper functions for OpenAI API.
 
+- https://developers.openai.com/api/docs/models
+- https://developers.openai.com/api/docs/models/compare
+- https://openai.com/api/pricing/
+
 Prompt Caching Pricing Note:
     OpenAI offers automatic prompt caching with discounts that vary by model family:
     - GPT-4o family: 50% discount on cached input tokens
     - GPT-4.1 family: 75% discount on cached input tokens
     - GPT-5 family: 90% discount on cached input tokens
-    - o-series (o1, o3): 50% discount on cached input tokens
+    - o-series (o1, o3, o3-mini): 50% discount on cached input tokens
+    - o4-mini: 75% discount on cached input tokens
 
     Unlike Anthropic, OpenAI's caching is automatic (no explicit cache_control needed)
     and there is no cache write cost - only cache read discounts.
@@ -231,6 +236,25 @@ OPENAI_MODEL_INFOS = [
         knowledge_cutoff_date=date(year=2025, month=8, day=31),
     ),
     ####
+    # o4
+    ####
+    ModelInfo(
+        model='o4-mini-2025-04-16',
+        provider=ModelProvider.OPENAI,
+        max_output_tokens=100_000,
+        context_window_size=200_000,
+        pricing={
+            'input': 1.10 / 1_000_000, 'output': 4.40 / 1_000_000,
+            'cached': 0.275 / 1_000_000,
+        },
+        supports_reasoning=True,
+        supports_tools=True,
+        supports_structured_output=True,
+        supports_images=True,
+        supports_temperature=False,
+        knowledge_cutoff_date=date(year=2024, month=6, day=1),
+    ),
+    ####
     # o3
     ####
     ModelInfo(
@@ -297,6 +321,7 @@ SUPPORTED_OPENAI_MODELS['gpt-5-mini'] = SUPPORTED_OPENAI_MODELS['gpt-5-mini-2025
 SUPPORTED_OPENAI_MODELS['gpt-5-nano'] = SUPPORTED_OPENAI_MODELS['gpt-5-nano-2025-08-07']
 SUPPORTED_OPENAI_MODELS['gpt-5.1'] = SUPPORTED_OPENAI_MODELS['gpt-5.1-2025-11-13']
 SUPPORTED_OPENAI_MODELS['gpt-5.2'] = SUPPORTED_OPENAI_MODELS['gpt-5.2-2025-12-11']
+SUPPORTED_OPENAI_MODELS['o4-mini'] = SUPPORTED_OPENAI_MODELS['o4-mini-2025-04-16']
 SUPPORTED_OPENAI_MODELS['o3-mini'] = SUPPORTED_OPENAI_MODELS['o3-mini-2025-01-31']
 SUPPORTED_OPENAI_MODELS['o3'] = SUPPORTED_OPENAI_MODELS['o3-2025-04-16']
 SUPPORTED_OPENAI_MODELS['o1'] = SUPPORTED_OPENAI_MODELS['o1-2024-12-17']
