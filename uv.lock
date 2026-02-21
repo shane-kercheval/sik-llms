@@ -1218,7 +1218,7 @@ wheels = [
 
 [[package]]
 name = "sik-llms"
-version = "0.3.28"
+version = "0.3.30"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },

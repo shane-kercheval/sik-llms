@@ -828,20 +828,17 @@ class AnthropicTools(Client):
         response = await self.client.messages.create(**api_params)
         end_time = perf_counter()
 
-        tool_prediction = None
+        tool_predictions = []
         message = None
-        if len(response.content) > 1:
-            raise ValueError(f"Unexpected multiple content items in response: {response.content}")
-        if response.content[0].type == 'tool_use':
-            tool_prediction = ToolPrediction(
-                name=response.content[0].name,
-                arguments=response.content[0].input,
-                call_id=response.content[0].id,
-            )
-        elif response.content[0].type == 'text':
-            message = response.content[0].text
-        else:
-            raise ValueError(f"Unexpected content type: {response.content[0].type}")
+        for content_item in response.content:
+            if content_item.type == 'tool_use':
+                tool_predictions.append(ToolPrediction(
+                    name=content_item.name,
+                    arguments=content_item.input,
+                    call_id=content_item.id,
+                ))
+            elif content_item.type == 'text':
+                message = content_item.text
 
         pricing_lookup = SUPPORTED_ANTHROPIC_MODELS[self.model].pricing
         input_tokens = response.usage.input_tokens
@@ -849,7 +846,7 @@ class AnthropicTools(Client):
         cache_creation_input_tokens = response.usage.cache_creation_input_tokens
         cache_read_input_tokens = response.usage.cache_read_input_tokens
         yield ToolPredictionResponse(
-            tool_prediction=tool_prediction,
+            tool_predictions=tool_predictions,
             message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

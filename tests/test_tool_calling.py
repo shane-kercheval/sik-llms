@@ -1349,3 +1349,57 @@ class TestTools:
         # Check shipping_method
         assert "shipping_method" in args
         assert args["shipping_method"] == expected_method
+
+    @pytest.mark.parametrize('client_config', [
+        pytest.param(
+            ClientConfig(
+                client_type=RegisteredClients.OPENAI_TOOLS,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
+            ),
+            id="OpenAI",
+        ),
+        pytest.param(
+            ClientConfig(
+                client_type=RegisteredClients.ANTHROPIC_TOOLS,
+                model_name=ANTHROPIC_TEST_MODEL,
+            ),
+            id="Anthropic",
+            marks=pytest.mark.skipif(
+                os.getenv('ANTHROPIC_API_KEY') is None,
+                reason="ANTHROPIC_API_KEY is not set",
+            ),
+        ),
+    ])
+    async def test__parallel_tool_calls(
+            self,
+            simple_weather_tool: Tool,
+            restaurant_tool: Tool,
+            client_config: ClientConfig,
+        ) -> None:
+        """Test that parallel tool calls are returned in tool_predictions."""
+        client = Client.instantiate(
+            client_type=client_config.client_type,
+            model_name=client_config.model_name,
+            tools=[simple_weather_tool, restaurant_tool],
+            tool_choice=ToolChoice.AUTO,
+        )
+        response = await client.run_async(
+            messages=[
+                user_message(
+                    "This is a test of parallel tool calling. Please call BOTH of these "
+                    "tools in a single response: "
+                    "1) get_weather for Paris "
+                    "2) search_restaurants for Tokyo with cuisine=italian. "
+                    "You must call both tools at the same time.",
+                ),
+            ],
+        )
+        assert isinstance(response, ToolPredictionResponse)
+        assert len(response.tool_predictions) == 2
+        # tool_prediction should return the first one for backwards compatibility
+        assert response.tool_prediction is response.tool_predictions[0]
+        tool_names = {p.name for p in response.tool_predictions}
+        assert tool_names == {"get_weather", "search_restaurants"}
+        # each prediction should have a unique call_id
+        call_ids = {p.call_id for p in response.tool_predictions}
+        assert len(call_ids) == 2
