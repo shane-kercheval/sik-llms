@@ -430,7 +430,7 @@ class TestParameterClass:
         assert data['required'] is True
         assert data['description'] == "A test parameter"
 
-    def test_parameter_with_typing_generic(self):
+    def test_parameter_with_typing_generic(self) -> None:
         """Test Parameter with typing generics like list[str]."""
         param = Parameter(
             name="tags",

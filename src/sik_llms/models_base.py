@@ -472,11 +472,11 @@ class ToolPredictionResponse(TokenSummary):
 
     Content is filled if there is no function/call.
 
-    If a tool call is predicted, then tool_call is filled and message is None.
-    If no tool call is predicted, then tool_call is None and message is filled.
+    If tool calls are predicted, `tool_predictions` is non-empty and `message` is None.
+    If no tool calls are predicted, `tool_predictions` is empty and `message` is filled.
     """
 
-    tool_prediction: ToolPrediction | None
+    tool_predictions: list[ToolPrediction] = []
     message: str | None = None
 
 

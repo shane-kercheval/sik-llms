@@ -377,10 +377,10 @@ class ReasoningAgent(Client):
                     total_cache_read_cost += tool_response.cache_read_cost or 0
                     total_cache_write_cost += tool_response.cache_write_cost or 0
 
-                    if tool_response.tool_prediction:
+                    if tool_response.tool_predictions:
                         # Use the tool name and arguments from the prediction
-                        predicted_tool_name = tool_response.tool_prediction.name
-                        predicted_tool_args = tool_response.tool_prediction.arguments
+                        predicted_tool_name = tool_response.tool_predictions[0].name
+                        predicted_tool_args = tool_response.tool_predictions[0].arguments
 
                         # Verify the predicted tool matches the requested tool
                         if predicted_tool_name != tool_name:

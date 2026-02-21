@@ -883,18 +883,20 @@ class OpenAITools(Client):
 
         if completion.choices[0].message.tool_calls:
             message = None
-            tool_call = completion.choices[0].message.tool_calls[0]
-            tool_prediction = ToolPrediction(
-                name=tool_call.function.name,
-                arguments=json.loads(tool_call.function.arguments),
-                call_id=tool_call.id,
-            )
+            tool_predictions = [
+                ToolPrediction(
+                    name=tc.function.name,
+                    arguments=json.loads(tc.function.arguments),
+                    call_id=tc.id,
+                )
+                for tc in completion.choices[0].message.tool_calls
+            ]
         else:
             message = completion.choices[0].message.content
-            tool_prediction = None
+            tool_predictions = []
 
         yield ToolPredictionResponse(
-            tool_prediction=tool_prediction,
+            tool_predictions=tool_predictions,
             message=message,
             input_tokens=input_tokens,
             output_tokens=output_tokens,

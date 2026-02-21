@@ -784,10 +784,11 @@ class TestTools:
                 ],
             )
         assert isinstance(response, ToolPredictionResponse)
-        assert isinstance(response.tool_prediction, ToolPrediction)
-        assert response.tool_prediction.name == "get_weather"
-        assert "location" in response.tool_prediction.arguments
-        assert "Paris" in response.tool_prediction.arguments["location"]
+        assert len(response.tool_predictions) == 1
+        assert isinstance(response.tool_predictions[0], ToolPrediction)
+        assert response.tool_predictions[0].name == "get_weather"
+        assert "location" in response.tool_predictions[0].arguments
+        assert "Paris" in response.tool_predictions[0].arguments["location"]
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.input_cost > 0
@@ -831,7 +832,7 @@ class TestTools:
             ],
         )
         assert isinstance(response, ToolPredictionResponse)
-        assert response.tool_prediction is None
+        assert response.tool_predictions == []
         assert response.message
         assert response.input_tokens > 0
         assert response.output_tokens > 0
@@ -886,8 +887,8 @@ class TestTools:
                     user_message("What's the weather like in Tokyo in Celsius with forecast?"),
                 ],
             )
-        assert response.tool_prediction.name == "get_detailed_weather"
-        args = response.tool_prediction.arguments
+        assert response.tool_predictions[0].name == "get_detailed_weather"
+        args = response.tool_predictions[0].arguments
         assert "Tokyo" in args["location"]
         assert args.get("unit") in ["celsius", "fahrenheit"]
         assert args.get("include_forecast") is not None
@@ -942,8 +943,8 @@ class TestTools:
                     user_message("What's the weather like in London?"),
                 ],
             )
-        assert weather_response.tool_prediction.name == "get_weather"
-        assert "London" in weather_response.tool_prediction.arguments["location"]
+        assert weather_response.tool_predictions[0].name == "get_weather"
+        assert "London" in weather_response.tool_predictions[0].arguments["location"]
         # Restaurant query
         if is_async:
             restaurant_response = await client.run_async(
@@ -957,8 +958,8 @@ class TestTools:
                     user_message("Find me an expensive Italian restaurant in New York"),
                 ],
             )
-        assert restaurant_response.tool_prediction.name == "search_restaurants"
-        args = restaurant_response.tool_prediction.arguments
+        assert restaurant_response.tool_predictions[0].name == "search_restaurants"
+        args = restaurant_response.tool_predictions[0].arguments
         assert "New York" in args["location"]
         assert args.get("cuisine") == "italian"
         assert args.get("price_range") in ["$$", "$$$", "$$$$"]
@@ -1019,7 +1020,7 @@ class TestTools:
                 response = await client.run_async(messages=[user_message(prompt)])
             else:
                 response = client(messages=[user_message(prompt)])
-            args = response.tool_prediction.arguments
+            args = response.tool_predictions[0].arguments
             for key, value in expected_args.items():
                 assert args.get(key) == value
 
@@ -1062,8 +1063,8 @@ class TestTools:
         ))
 
         for i, response in enumerate(responses):
-            assert response.tool_prediction.name == "get_weather"
-            assert cities[i] in response.tool_prediction.arguments["location"]
+            assert response.tool_predictions[0].name == "get_weather"
+            assert cities[i] in response.tool_predictions[0].arguments["location"]
             assert response.input_tokens > 0
             assert response.output_tokens > 0
 
@@ -1129,8 +1130,8 @@ class TestTools:
         response = await client.run_async(
             messages=[user_message(prompt)],
         )
-        assert response.tool_prediction.name == "update_status"
-        args = response.tool_prediction.arguments
+        assert response.tool_predictions[0].name == "update_status"
+        args = response.tool_predictions[0].arguments
         assert "order_id" in args
         assert "status" in args
         assert args["status"] == expected_status
@@ -1211,8 +1212,8 @@ class TestTools:
         response = await client.run_async(
             messages=[user_message(prompt)],
         )
-        assert response.tool_prediction.name == "search_item"
-        args = response.tool_prediction.arguments
+        assert response.tool_predictions[0].name == "search_item"
+        args = response.tool_predictions[0].arguments
         assert "identifier" in args
 
         # Check that the identifier is of the expected type
@@ -1327,8 +1328,8 @@ class TestTools:
             messages=[user_message(prompt)],
         )
 
-        assert response.tool_prediction.name == "calculate_shipping"
-        args = response.tool_prediction.arguments
+        assert response.tool_predictions[0].name == "calculate_shipping"
+        args = response.tool_predictions[0].arguments
 
         # Check product_ids
         assert "product_ids" in args
@@ -1349,3 +1350,55 @@ class TestTools:
         # Check shipping_method
         assert "shipping_method" in args
         assert args["shipping_method"] == expected_method
+
+    @pytest.mark.parametrize('client_config', [
+        pytest.param(
+            ClientConfig(
+                client_type=RegisteredClients.OPENAI_TOOLS,
+                model_name=OPENAI_TEST_FUNCTION_CALLING,
+            ),
+            id="OpenAI",
+        ),
+        pytest.param(
+            ClientConfig(
+                client_type=RegisteredClients.ANTHROPIC_TOOLS,
+                model_name=ANTHROPIC_TEST_MODEL,
+            ),
+            id="Anthropic",
+            marks=pytest.mark.skipif(
+                os.getenv('ANTHROPIC_API_KEY') is None,
+                reason="ANTHROPIC_API_KEY is not set",
+            ),
+        ),
+    ])
+    async def test__parallel_tool_calls(
+            self,
+            simple_weather_tool: Tool,
+            restaurant_tool: Tool,
+            client_config: ClientConfig,
+        ) -> None:
+        """Test that parallel tool calls are returned in tool_predictions."""
+        client = Client.instantiate(
+            client_type=client_config.client_type,
+            model_name=client_config.model_name,
+            tools=[simple_weather_tool, restaurant_tool],
+            tool_choice=ToolChoice.AUTO,
+        )
+        response = await client.run_async(
+            messages=[
+                user_message(
+                    "This is a test of parallel tool calling. Please call BOTH of these "
+                    "tools in a single response: "
+                    "1) get_weather for Paris "
+                    "2) search_restaurants for Tokyo with cuisine=italian. "
+                    "You must call both tools at the same time.",
+                ),
+            ],
+        )
+        assert isinstance(response, ToolPredictionResponse)
+        assert len(response.tool_predictions) == 2
+        tool_names = {p.name for p in response.tool_predictions}
+        assert tool_names == {"get_weather", "search_restaurants"}
+        # each prediction should have a unique call_id
+        call_ids = {p.call_id for p in response.tool_predictions}
+        assert len(call_ids) == 2
