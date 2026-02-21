@@ -678,7 +678,7 @@ class TestAnthropicCaching:
             user_message("What's the weather like in Tokyo in Celsius with forecast?"),
         ]
         response = client(messages=messages)
-        assert response.tool_prediction
+        assert response.tool_predictions
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.cache_write_tokens > 0
@@ -706,7 +706,7 @@ class TestAnthropicCaching:
             user_message("Search for expensive italian restaurants in New York?"),
         ]
         response = client(messages=messages)
-        assert response.tool_prediction
+        assert response.tool_predictions
         assert response.input_tokens > 0
         assert response.output_tokens > 0
         assert response.cache_write_tokens == 0
