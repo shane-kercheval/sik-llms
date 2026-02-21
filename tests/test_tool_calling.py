@@ -1397,7 +1397,6 @@ class TestTools:
         )
         assert isinstance(response, ToolPredictionResponse)
         assert len(response.tool_predictions) == 2
-        # tool_prediction should return the first one for backwards compatibility
         tool_names = {p.name for p in response.tool_predictions}
         assert tool_names == {"get_weather", "search_restaurants"}
         # each prediction should have a unique call_id

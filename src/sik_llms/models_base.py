@@ -472,11 +472,8 @@ class ToolPredictionResponse(TokenSummary):
 
     Content is filled if there is no function/call.
 
-    If a tool call is predicted, then tool_prediction is filled and message is None.
-    If no tool call is predicted, then tool_prediction is None and message is filled.
-
-    When the model returns multiple tool calls (parallel tool use), all calls are available
-    in `tool_predictions`.
+    If tool calls are predicted, `tool_predictions` is non-empty and `message` is None.
+    If no tool calls are predicted, `tool_predictions` is empty and `message` is filled.
     """
 
     tool_predictions: list[ToolPrediction] = []
