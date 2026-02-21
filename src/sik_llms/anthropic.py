@@ -536,10 +536,10 @@ class Anthropic(Client):
                 refusal = None
                 response = await functions_client.run_async(messages)
                 # Extract function call result and convert to Pydantic model
-                if response.tool_prediction:
+                if response.tool_predictions:
                     try:
                         # Create instance of Pydantic model from arguments
-                        parsed = self.response_format(**response.tool_prediction.arguments)
+                        parsed = self.response_format(**response.tool_predictions[0].arguments)
                     except Exception as e:
                         # If conversion fails, set refusal with error message
                         refusal=f"Failed to parse response: response={response}, error={e!s}"

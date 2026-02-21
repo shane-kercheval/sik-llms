@@ -12,8 +12,6 @@ from sik_llms import (
     ImageContent,
     ImageSourceType,
     SUPPORTED_OPENAI_MODELS,
-    ToolPrediction,
-    ToolPredictionResponse,
 )
 from sik_llms.models_base import Parameter
 from tests.conftest import OPENAI_TEST_MODEL
@@ -442,51 +440,3 @@ class TestParameterClass:
         )
         assert param.param_type == list[str]
         assert param.required is False
-
-
-class TestToolPredictionResponse:
-    """Tests for ToolPredictionResponse backwards compatibility."""
-
-    def test_tool_prediction_property_with_single_prediction(self) -> None:
-        pred = ToolPrediction(name="get_weather", arguments={"city": "Paris"}, call_id="1")
-        response = ToolPredictionResponse(
-            tool_predictions=[pred],
-            input_tokens=10,
-            output_tokens=20,
-            duration_seconds=0.5,
-        )
-        assert response.tool_prediction is pred
-        assert response.tool_predictions == [pred]
-
-    def test_tool_prediction_property_with_multiple_predictions(self) -> None:
-        pred1 = ToolPrediction(name="get_weather", arguments={"city": "Paris"}, call_id="1")
-        pred2 = ToolPrediction(name="get_weather", arguments={"city": "London"}, call_id="2")
-        response = ToolPredictionResponse(
-            tool_predictions=[pred1, pred2],
-            input_tokens=10,
-            output_tokens=20,
-            duration_seconds=0.5,
-        )
-        assert response.tool_prediction is pred1
-        assert len(response.tool_predictions) == 2
-        assert response.tool_predictions[1] is pred2
-
-    def test_tool_prediction_property_with_no_predictions(self) -> None:
-        response = ToolPredictionResponse(
-            tool_predictions=[],
-            message="No tools needed.",
-            input_tokens=10,
-            output_tokens=20,
-            duration_seconds=0.5,
-        )
-        assert response.tool_prediction is None
-        assert response.message == "No tools needed."
-
-    def test_tool_prediction_default_empty_list(self) -> None:
-        response = ToolPredictionResponse(
-            input_tokens=10,
-            output_tokens=20,
-            duration_seconds=0.5,
-        )
-        assert response.tool_predictions == []
-        assert response.tool_prediction is None

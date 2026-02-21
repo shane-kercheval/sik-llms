@@ -476,17 +476,11 @@ class ToolPredictionResponse(TokenSummary):
     If no tool call is predicted, then tool_prediction is None and message is filled.
 
     When the model returns multiple tool calls (parallel tool use), all calls are available
-    in `tool_predictions`. The `tool_prediction` field returns the first one for backwards
-    compatibility.
+    in `tool_predictions`.
     """
 
     tool_predictions: list[ToolPrediction] = []
     message: str | None = None
-
-    @property
-    def tool_prediction(self) -> ToolPrediction | None:
-        """Return the first tool prediction, or None if there are no predictions."""
-        return self.tool_predictions[0] if self.tool_predictions else None
 
 
 ClientType = TypeVar('ClientType', bound='Client')
