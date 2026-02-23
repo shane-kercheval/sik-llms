@@ -68,6 +68,23 @@ def _resolve_refs(schema: dict | list | object, definitions: dict) -> dict | lis
     return schema
 
 
+_STRUCTURAL_SCHEMA_KEYS = frozenset({
+    'items', 'properties', 'required', 'additionalProperties',
+    'minItems', 'maxItems',
+})
+
+
+def _extract_structural_schema(
+    schema: dict,
+    definitions: dict,
+) -> dict | None:
+    """Extract and resolve structural JSON Schema keys from a property schema."""
+    raw = {k: v for k, v in schema.items() if k in _STRUCTURAL_SCHEMA_KEYS}
+    if not raw:
+        return None
+    return _resolve_refs(raw, definitions)
+
+
 class MCPClientManager:
     """Manages connections to MCP servers."""
 
@@ -263,12 +280,9 @@ class MCPClientManager:
                         # For object types, capture the full resolved schema
                         if prop_type == 'object':
                             resolved_def = _resolve_refs(definition, definitions)
-                            schema_keys = {
-                                'properties', 'required', 'additionalProperties',
-                            }
-                            json_schema = {
-                                k: v for k, v in resolved_def.items() if k in schema_keys
-                            }
+                            json_schema = _extract_structural_schema(
+                                resolved_def, definitions,
+                            )
             else:
                 # Handle regular properties (non-references)
                 if 'anyOf' in prop_schema:
@@ -302,15 +316,8 @@ class MCPClientManager:
                     if has_complex:
                         # Build anyOf-wrapped json_schema so serializers preserve
                         # nested structure (items/properties)
-                        schema_keys = {
-                            'items', 'properties', 'required', 'additionalProperties',
-                            'minItems', 'maxItems',
-                        }
-                        raw_schema = {
-                            k: v for k, v in prop_schema.items() if k in schema_keys
-                        }
-                        if raw_schema:
-                            resolved = _resolve_refs(raw_schema, definitions)
+                        resolved = _extract_structural_schema(prop_schema, definitions)
+                        if resolved:
                             anyof_entries = []
                             for t in prop_type:
                                 if t in ('array', 'object'):
@@ -330,14 +337,7 @@ class MCPClientManager:
 
                 # For array and object types without anyOf, preserve the raw JSON schema
                 if prop_type in ('array', 'object') and json_schema is None:
-                    schema_keys = {
-                        'items', 'properties', 'required', 'additionalProperties',
-                        'minItems', 'maxItems',
-                    }
-                    raw_schema = {k: v for k, v in prop_schema.items() if k in schema_keys}
-                    if raw_schema:
-                        # Resolve any $ref in the schema
-                        json_schema = _resolve_refs(raw_schema, definitions)
+                    json_schema = _extract_structural_schema(prop_schema, definitions)
 
             # Clean up description if present
             if description:
