@@ -225,6 +225,7 @@ class MCPClientManager:
             'boolean': bool,
             'array': list,
             'object': dict,
+            'null': type(None),
         }
 
         for prop_name, prop_schema in properties.items():

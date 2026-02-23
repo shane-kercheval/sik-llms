@@ -121,6 +121,10 @@ class Person(BaseModel):  # noqa: D101
 
 class Test_get_json_schema_type:  # noqa: D101, N801
 
+    def test_none_type(self) -> None:
+        """Test conversion of NoneType to JSON Schema null type."""
+        assert get_json_schema_type(type(None)) == ('null', {})
+
     def test_primitive_types(self):
         """Test conversion of primitive Python types to JSON Schema types."""
         assert get_json_schema_type(str) == ('string', {})
@@ -247,6 +251,15 @@ class Test_get_json_schema_type:  # noqa: D101, N801
         assert type_name == 'anyOf'
         assert any(schema['type'] == 'string' for schema in props['anyOf'])
         assert any(schema['type'] == 'integer' for schema in props['anyOf'])
+
+    def test_multi_type_nullable_union(self) -> None:
+        """Test that Union[str, int, None] preserves null in anyOf."""
+        type_name, props = get_json_schema_type(Union[str, int, None])  # noqa: UP007
+        assert type_name == 'anyOf'
+        type_names = [s['type'] for s in props['anyOf']]
+        assert 'string' in type_names
+        assert 'integer' in type_names
+        assert 'null' in type_names
 
     def test_complex_union_types(self):
         """Test conversion of complex Union types with multiple nested types."""

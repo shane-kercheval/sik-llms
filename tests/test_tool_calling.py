@@ -511,6 +511,28 @@ class TestPydanticModelToParameters:
         assert openai_format["function"]["parameters"]["properties"]["id"]["description"] == "ID value"  # noqa: E501
         assert openai_format['function']["description"] == "Get an item"
 
+    def test_parameter_to_openai_with_nullable_any_of(self) -> None:
+        """Test that any_of with null type emits anyOf with null in OpenAI format."""
+        param = Parameter(
+            name="value",
+            param_type=str,
+            required=False,
+            description="A nullable string",
+            any_of=[str, type(None)],
+        )
+        tool = Tool(
+            name="test_nullable",
+            parameters=[param],
+            description="Test nullable",
+            func=lambda value: value,
+        )
+        openai_format = _tool_to_openai_schema(tool)
+        prop = openai_format["function"]["parameters"]["properties"]["value"]
+        assert "anyOf" in prop
+        schemas = prop["anyOf"]
+        assert {"type": "string"} in schemas
+        assert {"type": "null"} in schemas
+
     def test_openai_schema_has_no_defaults(self):
         """Test that the OpenAI schema doesn't contain any default values."""
         class ConfigModel(BaseModel):
@@ -586,6 +608,28 @@ class TestPydanticModelToParameters:
         assert "anyOf" in anthropic_format["input_schema"]["properties"]["id"]
         assert len(anthropic_format["input_schema"]["properties"]["id"]["anyOf"]) == 2
         assert anthropic_format["input_schema"]["properties"]["id"]["description"] == "ID value"
+
+    def test_parameter_to_anthropic_with_nullable_any_of(self) -> None:
+        """Test that any_of with null type emits anyOf with null in Anthropic format."""
+        param = Parameter(
+            name="value",
+            param_type=str,
+            required=False,
+            description="A nullable string",
+            any_of=[str, type(None)],
+        )
+        tool = Tool(
+            name="test_nullable",
+            parameters=[param],
+            description="Test nullable",
+            func=lambda value: value,
+        )
+        anthropic_format = _tool_to_anthropic_schema(tool)
+        prop = anthropic_format["input_schema"]["properties"]["value"]
+        assert "anyOf" in prop
+        schemas = prop["anyOf"]
+        assert {"type": "string"} in schemas
+        assert {"type": "null"} in schemas
 
     def test_anthropic_schema_has_no_defaults(self):
         """Test that the Anthropic schema doesn't contain any default values."""

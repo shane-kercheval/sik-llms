@@ -122,14 +122,17 @@ def get_json_schema_type(annotation: type) -> tuple[str, dict[str, Any]]:  # noq
         # For unions with multiple types that aren't Optional
         any_of_schemas = []
         for arg in args:
-            if arg is not type(None):
-                try:
-                    type_name, props = get_json_schema_type(arg)
-                    any_of_schemas.append({"type": type_name, **props})
-                except ValueError:
-                    # Skip unsupported types in unions - this makes it more robust
-                    continue
+            try:
+                type_name, props = get_json_schema_type(arg)
+                any_of_schemas.append({"type": type_name, **props})
+            except ValueError:
+                # Skip unsupported types in unions - this makes it more robust
+                continue
         return "anyOf", {"anyOf": any_of_schemas}
+
+    # Handle null/NoneType
+    if annotation is type(None):
+        return "null", {}
 
     # Handle primitive types
     if annotation is str or annotation is str:

@@ -52,7 +52,7 @@ async def test__mcp_manager__type_array_string_null(mcp_fake_server_config: dict
         tool = manager._convert_to_tool(mock_tool)
         param = next(p for p in tool.parameters if p.name == 'name')
         assert param.param_type is str
-        assert param.any_of == [str]
+        assert param.any_of == [str, type(None)]
         assert param.json_schema is None
 
 
@@ -76,7 +76,7 @@ async def test__mcp_manager__type_array_integer_null(mcp_fake_server_config: dic
         tool = manager._convert_to_tool(mock_tool)
         param = next(p for p in tool.parameters if p.name == 'count')
         assert param.param_type is int
-        assert param.any_of == [int]
+        assert param.any_of == [int, type(None)]
         assert param.json_schema is None
 
 
@@ -103,7 +103,7 @@ async def test__mcp_manager__type_array_complex_array_null(
         tool = manager._convert_to_tool(mock_tool)
         param = next(p for p in tool.parameters if p.name == 'tags')
         assert param.param_type is list
-        assert param.any_of == [list]
+        assert param.any_of == [list, type(None)]
         # json_schema must have anyOf key so serializers (openai/anthropic) hit the
         # correct branch and preserve nested structure
         assert param.json_schema is not None
@@ -113,6 +113,29 @@ async def test__mcp_manager__type_array_complex_array_null(
         null_schema = next(s for s in anyof_schemas if s.get('type') == 'null')
         assert array_schema['items'] == {'type': 'string'}
         assert null_schema == {'type': 'null'}
+
+
+@pytest.mark.asyncio
+async def test__mcp_manager__anyof_string_null(mcp_fake_server_config: dict) -> None:
+    """Test that anyOf with string and null preserves null in any_of."""
+    mock_tool = MockMCPTool(
+        name="test_tool",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "description": "A nullable string via anyOf",
+                },
+            },
+            "required": ["name"],
+        },
+    )
+    async with MCPClientManager(mcp_fake_server_config) as manager:
+        tool = manager._convert_to_tool(mock_tool)
+        param = next(p for p in tool.parameters if p.name == 'name')
+        assert param.param_type is str
+        assert param.any_of == [str, type(None)]
 
 
 @pytest.mark.asyncio
