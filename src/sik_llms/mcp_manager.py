@@ -289,6 +289,38 @@ class MCPClientManager:
 
                 # Get the base type of the property
                 prop_type = prop_schema.get('type')
+
+                if isinstance(prop_type, list):
+                    # JSON Schema type array shorthand, e.g. ["string", "null"]
+                    # Normalize to the same handling as anyOf
+                    for t in prop_type:
+                        if t in type_mapping:
+                            any_of_types.append(type_mapping[t])
+                    # Check for complex types (array/object with structure)
+                    has_complex = any(t in ('array', 'object') for t in prop_type)
+                    if has_complex:
+                        # Build anyOf-wrapped json_schema so serializers preserve
+                        # nested structure (items/properties)
+                        schema_keys = {
+                            'items', 'properties', 'required', 'additionalProperties',
+                            'minItems', 'maxItems',
+                        }
+                        raw_schema = {
+                            k: v for k, v in prop_schema.items() if k in schema_keys
+                        }
+                        if raw_schema:
+                            resolved = _resolve_refs(raw_schema, definitions)
+                            anyof_entries = []
+                            for t in prop_type:
+                                if t in ('array', 'object'):
+                                    anyof_entries.append({'type': t, **resolved})
+                                else:
+                                    anyof_entries.append({'type': t})
+                            json_schema = {'anyOf': anyof_entries}
+                    # Use the first non-null type as the primary type
+                    non_null = [t for t in prop_type if t != 'null']
+                    prop_type = non_null[0] if non_null else 'string'
+
                 param_type = type_mapping.get(prop_type, str)
 
                 # Extract valid values and description

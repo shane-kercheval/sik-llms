@@ -23,6 +23,98 @@ from tests.conftest import (
 )
 
 
+class MockMCPTool:
+    """Mock MCP tool object for testing _convert_to_tool directly."""
+
+    def __init__(self, name: str, input_schema: dict, description: str = "test tool") -> None:
+        self.name = name
+        self.inputSchema = input_schema
+        self.description = description
+
+
+@pytest.mark.asyncio
+async def test__mcp_manager__type_array_string_null(mcp_fake_server_config: dict) -> None:
+    """Test that type array shorthand ["string", "null"] is handled correctly."""
+    mock_tool = MockMCPTool(
+        name="test_tool",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": ["string", "null"],
+                    "description": "A nullable string",
+                },
+            },
+            "required": ["name"],
+        },
+    )
+    async with MCPClientManager(mcp_fake_server_config) as manager:
+        tool = manager._convert_to_tool(mock_tool)
+        param = next(p for p in tool.parameters if p.name == 'name')
+        assert param.param_type is str
+        assert param.any_of == [str]
+        assert param.json_schema is None
+
+
+@pytest.mark.asyncio
+async def test__mcp_manager__type_array_integer_null(mcp_fake_server_config: dict) -> None:
+    """Test that type array shorthand ["integer", "null"] is handled correctly."""
+    mock_tool = MockMCPTool(
+        name="test_tool",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": ["integer", "null"],
+                    "description": "A nullable integer",
+                },
+            },
+            "required": ["count"],
+        },
+    )
+    async with MCPClientManager(mcp_fake_server_config) as manager:
+        tool = manager._convert_to_tool(mock_tool)
+        param = next(p for p in tool.parameters if p.name == 'count')
+        assert param.param_type is int
+        assert param.any_of == [int]
+        assert param.json_schema is None
+
+
+@pytest.mark.asyncio
+async def test__mcp_manager__type_array_complex_array_null(
+    mcp_fake_server_config: dict,
+) -> None:
+    """Test that type array shorthand ["array", "null"] with items is handled correctly."""
+    mock_tool = MockMCPTool(
+        name="test_tool",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "tags": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                    "description": "A nullable list of strings",
+                },
+            },
+            "required": ["tags"],
+        },
+    )
+    async with MCPClientManager(mcp_fake_server_config) as manager:
+        tool = manager._convert_to_tool(mock_tool)
+        param = next(p for p in tool.parameters if p.name == 'tags')
+        assert param.param_type is list
+        assert param.any_of == [list]
+        # json_schema must have anyOf key so serializers (openai/anthropic) hit the
+        # correct branch and preserve nested structure
+        assert param.json_schema is not None
+        assert 'anyOf' in param.json_schema
+        anyof_schemas = param.json_schema['anyOf']
+        array_schema = next(s for s in anyof_schemas if s.get('type') == 'array')
+        null_schema = next(s for s in anyof_schemas if s.get('type') == 'null')
+        assert array_schema['items'] == {'type': 'string'}
+        assert null_schema == {'type': 'null'}
+
+
 @pytest.mark.asyncio
 async def test__mcp_manager__preserves_complex_array_schema(
     mcp_complex_types_server_config: dict,
