@@ -173,6 +173,8 @@ class TestClientRegistration:
         assert Client.is_registered('MockClient')
         # Test registration with enum
         assert Client.is_registered(RegisteredClients.OPENAI)
+        assert Client.is_registered(RegisteredClients.AZURE_OPENAI)
+        assert Client.is_registered(RegisteredClients.AZURE_OPENAI_TOOLS)
         # Test unregistered client
         assert not Client.is_registered('UnknownClient')
 
