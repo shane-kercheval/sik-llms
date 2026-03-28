@@ -37,11 +37,17 @@ from sik_llms.anthropic import (
     AnthropicTools,
     SUPPORTED_ANTHROPIC_MODELS,
 )
+from sik_llms.gemini import (
+    Gemini,
+    GeminiTools,
+    SUPPORTED_GEMINI_MODELS,
+)
 from sik_llms.reasoning_agent import ReasoningAgent
 
 SUPPORTED_MODELS: dict[str, ModelInfo] = {
     **SUPPORTED_OPENAI_MODELS,
     **SUPPORTED_ANTHROPIC_MODELS,
+    **SUPPORTED_GEMINI_MODELS,
 }
 
 def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | Enum:
@@ -51,6 +57,8 @@ def _get_client_type(model_name: str, client_type: str | Enum | None) -> str | E
         return RegisteredClients.OPENAI
     if model_name in SUPPORTED_ANTHROPIC_MODELS:
         return RegisteredClients.ANTHROPIC
+    if model_name in SUPPORTED_GEMINI_MODELS:
+        return RegisteredClients.GEMINI
     raise ValueError(f"Unknown model name '{model_name}'")
 
 def create_client(
@@ -116,4 +124,6 @@ __all__ = [  # noqa: RUF022
     'OpenAITools',
     'Anthropic',
     'AnthropicTools',
+    'Gemini',
+    'GeminiTools',
 ]
